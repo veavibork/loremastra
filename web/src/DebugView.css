@@ -1,0 +1,40 @@
+.debug-view {
+  padding: 0.5rem 0;
+}
+
+.slots-bar {
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.jobs-table th,
+.jobs-table td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.job-pending {
+  opacity: 0.6;
+}
+
+.job-running {
+  color: #7ec8e3;
+}
+
+.job-failed {
+  color: #ff9b9b;
+}
+
+.job-error {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

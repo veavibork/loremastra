@@ -1,0 +1,61 @@
+.saves-view {
+  padding: 0.5rem 0;
+}
+
+.saves-new-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.saves-new-form input {
+  flex: 1;
+}
+
+.saves-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.saves-list li {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.saves-list li.active {
+  border-color: #4a7ab5;
+}
+
+.saves-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.current-badge {
+  font-size: 0.65rem;
+  background: #2a4a6b;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+.fork-note {
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.saves-row-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}

@@ -1,0 +1,30 @@
+{
+  "name": "loremaster",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "db:init": "tsx scripts/init-db.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "server:restart": "node scripts/dev-restart.mjs",
+    "server:reset-db": "node scripts/dev-reset-db.mjs",
+    "server:fresh": "node scripts/dev-reset-db.mjs && node scripts/dev-restart.mjs",
+    "mcp": "tsx src/mcp/dev-server.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.6",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^11.3.0",
+    "hono": "^4.6.3",
+    "uuid": "^11.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.7.4",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
+  }
+}

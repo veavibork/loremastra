@@ -1,0 +1,26 @@
+.logs-view {
+  padding: 0.5rem 0;
+}
+
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.logs-table th,
+.logs-table td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid #333;
+  vertical-align: top;
+}
+
+.logs-content {
+  max-width: 420px;
+  white-space: pre-wrap;
+}
+
+.logs-row-hidden {
+  opacity: 0.45;
+}

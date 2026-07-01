@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "loremaster-dev": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/dev-server.ts"]
+    }
+  }
+}

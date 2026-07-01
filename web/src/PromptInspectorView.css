@@ -1,0 +1,32 @@
+.prompt-inspector {
+  padding: 0.5rem 0;
+}
+
+.prompt-inspector-note {
+  font-size: 0.8rem;
+  opacity: 0.65;
+  margin-bottom: 1rem;
+}
+
+.prompt-message {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.prompt-message-role {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+.prompt-message p {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+}
+
+.prompt-message-system {
+  border-color: #4a4a6b;
+}

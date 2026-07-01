@@ -1,0 +1,74 @@
+.setup-view {
+  display: flex;
+  flex: 1;
+  gap: 1.5rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.setup-chat {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.setup-chat .log {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+}
+
+.kickoff-button {
+  margin-top: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+.setup-worldbook {
+  flex: 1;
+  min-width: 0;
+  border-left: 1px solid #333;
+  padding-left: 1.5rem;
+  display: flex;
+}
+
+.setup-worldbook .lore-view {
+  flex: 1;
+}
+
+.kickoff-preview {
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.opening-post {
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.opening-post p {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.guidance-input {
+  margin-top: 0.75rem;
+  min-height: 3rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.kickoff-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
