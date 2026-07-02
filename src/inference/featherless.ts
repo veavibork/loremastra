@@ -1,14 +1,7 @@
 import type { AgentProfile } from "../config.js";
 import { FEATHERLESS_API_KEY, FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from "./featherless-config.js";
-import { getStopPhrases } from "../services/stop-list.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { recordModelOutcome } from "../db/model-config-store.js";
-
-/** `undefined` (key omitted) rather than `[]` when there's nothing to ban — an empty `stop` array is untested against Featherless and not worth the risk of an unexpected rejection. */
-function stopParam(): { stop: string[] } | Record<string, never> {
-  const phrases = getStopPhrases();
-  return phrases.length ? { stop: phrases } : {};
-}
 
 /** Optional sampler params (Config > Agents), omitted entirely rather than sent as null/0 when unset — see docs' completions parameter list. */
 function samplerParams(profile: AgentProfile): Record<string, number> {
@@ -191,7 +184,6 @@ export async function streamInference(
         temperature: profile.temperature,
         max_tokens: profile.responseLimit,
         stream: true,
-        ...stopParam(),
         ...samplerParams(profile),
       }),
       signal: timeout.signal,
@@ -325,7 +317,6 @@ export async function callWithForcedTool(
         stream: false,
         tools: [{ type: "function", function: tool }],
         tool_choice: { type: "function", function: { name: tool.name } },
-        ...stopParam(),
         ...samplerParams(profile),
       }),
       signal: timeout.signal,
@@ -404,7 +395,6 @@ export async function callWithTools(
         tool_choice: options?.forceToolName
           ? { type: "function", function: { name: options.forceToolName } }
           : "auto",
-        ...stopParam(),
         ...samplerParams(profile),
       }),
       signal: timeout.signal,

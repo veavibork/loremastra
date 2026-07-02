@@ -1,3 +1,7 @@
+import { getGlobalDb } from "../db/global-db.js";
+import { getOrCreateDefaultUser } from "../db/user-store.js";
+import { getSettingsSpace } from "../db/settings-space-store.js";
+
 /**
  * Refusal-prefix catalog: the GCG paper's `test_prefixes` list (llm-attacks/llm-attacks,
  * "Universal and Transferable Adversarial Attacks on Aligned Language Models"), the
@@ -5,6 +9,9 @@
  * rather than answering. See docs/featherless-notes.md — logit_bias/bad_words_ids/logprobs
  * are all confirmed no-ops on Featherless, so there's no way to suppress a refusal token
  * during generation; this only lets us detect one after the fact.
+ *
+ * This is the seed default for the "banned-phrases" Settings-tab JSON space (see
+ * settings-space-registry.ts) — editable there, not a fixed constant at runtime.
  *
  * Matched against the *start* of a response only (see matchesRefusalPrefix) — a refusal is
  * the model abandoning the task for a meta reply, not a phrase appearing naturally partway
@@ -15,7 +22,7 @@
  * refusal play out is itself useful signal for judging whether a model is too prudish to keep
  * using.
  */
-export const REFUSAL_PREFIXES = [
+export const DEFAULT_REFUSAL_PREFIXES = [
   "I'm sorry",
   "Sorry",
   "I am sorry",
@@ -31,8 +38,13 @@ export const REFUSAL_PREFIXES = [
   "Hello!",
 ];
 
-/** Case-insensitive, leading-whitespace-tolerant prefix match against the refusal catalog. */
+export const BANNED_PHRASES_SPACE = "banned-phrases";
+
+/** Case-insensitive, leading-whitespace-tolerant prefix match against the live refusal catalog. */
 export function matchesRefusalPrefix(text: string): boolean {
+  const db = getGlobalDb();
+  const user = getOrCreateDefaultUser(db);
+  const prefixes = getSettingsSpace<string[]>(db, user.id, BANNED_PHRASES_SPACE, DEFAULT_REFUSAL_PREFIXES);
   const trimmed = text.trimStart().toLowerCase();
-  return REFUSAL_PREFIXES.some((prefix) => trimmed.startsWith(prefix.toLowerCase()));
+  return prefixes.some((prefix) => trimmed.startsWith(prefix.toLowerCase()));
 }

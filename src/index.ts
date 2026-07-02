@@ -4,7 +4,7 @@ import { storiesRoute } from "./routes/stories.js";
 import { layoutRoute } from "./routes/layout.js";
 import { agentsRoute } from "./routes/agents.js";
 import { promptsRoute } from "./routes/prompts.js";
-import { bannedPhrasesRoute } from "./routes/banned-phrases.js";
+import { settingsSpacesRoute } from "./routes/settings-spaces.js";
 import { clientErrorsRoute } from "./routes/client-errors.js";
 import { sessionsRoute } from "./routes/sessions.js";
 import { sessionGuard } from "./middleware/session-guard.js";
@@ -19,7 +19,7 @@ const app = new Hono();
 // dead code for OPTIONS specifically. This one has to list every method any route uses.
 app.use("*", async (c, next) => {
   c.header("Access-Control-Allow-Origin", "*");
-  c.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+  c.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   c.header("Access-Control-Allow-Headers", "Content-Type, X-Loremaster-Session, X-Loremaster-Interaction");
   if (c.req.method === "OPTIONS") return c.body(null, 204);
   await next();
@@ -33,7 +33,7 @@ app.route("/api/stories", storiesRoute);
 app.route("/api/layout", layoutRoute);
 app.route("/api/agents", agentsRoute);
 app.route("/api/prompts", promptsRoute);
-app.route("/api/banned-phrases", bannedPhrasesRoute);
+app.route("/api/settings", settingsSpacesRoute);
 app.route("/api/client-errors", clientErrorsRoute);
 app.get("/api/worldbook-schemas", (c) => c.json({ schemas: WORLDBOOK_FIELD_SCHEMAS }));
 app.get("/api/debug/slots", (c) => c.json({ used: getSlotsInUse(), max: getMaxSlots() }));

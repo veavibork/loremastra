@@ -13,6 +13,8 @@ import {
 } from "./api";
 import ClaimGate, { type GateReason } from "./ClaimGate";
 import Nav from "./Nav";
+import { useGlobalCssSettings } from "./globalCssSettings";
+import { PlayTabProvider } from "./playTabSettings";
 import "./App.css";
 
 interface GateState {
@@ -27,6 +29,8 @@ export default function App() {
   const [story, setStory] = useState<Story | null>(null);
   const [phase, setPhase] = useState<StoryPhase | null>(null);
   const [layout, setLayout] = useState<LayoutConfigData | null>(null);
+
+  useGlobalCssSettings(!gate);
 
   useEffect(() => onSuperseded((info) => setGate({ reason: info.reason, info })), []);
 
@@ -51,20 +55,22 @@ export default function App() {
   if (!layout) return null;
 
   return (
-    <div className="story-app">
-      <header className="app-header">
-        <h1>{story?.name ?? "Loremaster"}</h1>
-      </header>
+    <PlayTabProvider>
+      <div className="story-app">
+        <header className="app-header">
+          <h1>{story?.name ?? "Loremaster"}</h1>
+        </header>
 
-      <Nav
-        config={layout}
-        panelProps={{
-          story,
-          phase,
-          onStoryChange: setStory,
-          onPhaseChange: setPhase,
-        }}
-      />
-    </div>
+        <Nav
+          config={layout}
+          panelProps={{
+            story,
+            phase,
+            onStoryChange: setStory,
+            onPhaseChange: setPhase,
+          }}
+        />
+      </div>
+    </PlayTabProvider>
   );
 }

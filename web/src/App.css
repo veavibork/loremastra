@@ -63,7 +63,7 @@
   flex-direction: column;
   gap: 0.15rem;
   text-align: left;
-  font-size: 15px;
+  font-size: var(--entry-font-size, 15px);
   overflow-wrap: break-word;
   min-width: 0;
 }
@@ -88,7 +88,7 @@
 
 .entry-agent p,
 .entry-agent .entry-content {
-  font-style: italic;
+  font-style: var(--entry-editor-style, italic);
 }
 
 .entry-pending p,

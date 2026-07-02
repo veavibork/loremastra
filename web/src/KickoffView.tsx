@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { approveKickoff, backToSetup, fetchLog, retryKickoff, streamJob, type LogEntry } from "./api";
+import { RoleLabel } from "./playTabSettings";
 import "./SetupView.css";
 
 export default function KickoffView({
@@ -93,7 +94,7 @@ export default function KickoffView({
         <div className="log">
           {setupHistory.map((entry) => (
             <div key={entry.pageId} className={`entry entry-${entry.role}`}>
-              <span className="entry-role">{entry.role === "agent" ? "editor" : entry.role}</span>
+              <RoleLabel role={entry.role} />
               <p>{entry.content ?? "…"}</p>
             </div>
           ))}

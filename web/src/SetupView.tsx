@@ -13,6 +13,7 @@ import {
   type Position,
 } from "./api";
 import EntryContent from "./EntryContent";
+import { RoleLabel } from "./playTabSettings";
 import "./StoryView.css";
 import "./SetupView.css";
 
@@ -157,7 +158,7 @@ export default function SetupView({ storyId, onKickoff }: { storyId: string; onK
             const isFuture = currentIdx >= 0 && idx > currentIdx;
             return (
               <div key={entry.pageId} className={`entry entry-${entry.role} ${isFuture ? "entry-future" : ""}`}>
-                <span className="entry-role">{entry.role === "agent" ? "editor" : entry.role}</span>
+                <RoleLabel role={entry.role} />
                 {editingPageId === entry.pageId ? (
                   <div className="edit-box">
                     <textarea value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
@@ -225,7 +226,7 @@ export default function SetupView({ storyId, onKickoff }: { storyId: string; onK
           })}
           {pendingReply && (
             <div className="entry entry-agent entry-pending">
-              <span className="entry-role">editor</span>
+              <RoleLabel role="agent" />
               {pendingReply.text ? <EntryContent content={pendingReply.text} /> : <p>{pendingReply.label}</p>}
             </div>
           )}

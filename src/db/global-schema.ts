@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS layout_configs (
 );
 CREATE INDEX IF NOT EXISTS idx_layout_configs_user ON layout_configs(user_id);
 
+-- Generic key-value JSON storage for Settings-tab spaces (Global CSS, Play tab display,
+-- refusal-detection phrases) — see src/db/settings-space-store.ts. One row per (space, user),
+-- with previous_json_blob holding exactly one prior value for a one-step "revert to last
+-- saved" per space. Layout config is NOT stored here — it predates this table and has its
+-- own multi-config/active-switching semantics (layout_configs below).
+CREATE TABLE IF NOT EXISTS settings_spaces (
+  space TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  json_blob TEXT NOT NULL,
+  previous_json_blob TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (space, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS preference_profiles (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
@@ -88,18 +102,6 @@ CREATE TABLE IF NOT EXISTS model_configs (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_model_configs_user ON model_configs(user_id);
-
--- Global reject-list applied as the "stop" parameter on every Featherless completion call
--- (Author/Worker/Editor alike) — see src/services/stop-list.ts. Not per-story: this is a
--- standing content-safety preference, same scope as agent_configs above.
-CREATE TABLE IF NOT EXISTS banned_phrases (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id),
-  phrase TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  UNIQUE (user_id, phrase)
-);
-CREATE INDEX IF NOT EXISTS idx_banned_phrases_user ON banned_phrases(user_id);
 
 CREATE TABLE IF NOT EXISTS stories (
   id TEXT PRIMARY KEY,

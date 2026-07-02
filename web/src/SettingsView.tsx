@@ -1,112 +1,142 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  createBannedPhrase,
-  deleteBannedPhrase,
-  fetchBannedPhrases,
   fetchLayout,
   updateLayout,
-  type BannedPhrase,
+  fetchSettingsSpace,
+  saveSettingsSpace,
+  revertSettingsSpace,
+  type LayoutConfigData,
 } from "./api";
+import SettingsTreeEditor, { type JsonData, type SettingsSection } from "./SettingsTreeEditor";
+import { applyGlobalCssSettings, GLOBAL_CSS_SPACE, type GlobalCssSettings } from "./globalCssSettings";
+import { PLAY_TAB_SPACE, useSetPlayTabSettings, type PlayTabSettings } from "./playTabSettings";
 import "./SettingsView.css";
 
-export default function SettingsView() {
-  const [raw, setRaw] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+const BANNED_PHRASES_SPACE = "banned-phrases";
 
-  const [bannedPhrases, setBannedPhrases] = useState<BannedPhrase[]>([]);
-  const [newPhrase, setNewPhrase] = useState("");
-  const [bannedError, setBannedError] = useState<string | null>(null);
+export default function SettingsView() {
+  const [layout, setLayout] = useState<LayoutConfigData | null>(null);
+  const [bannedPhrases, setBannedPhrases] = useState<string[] | null>(null);
+  const [globalCss, setGlobalCss] = useState<GlobalCssSettings | null>(null);
+  const [playTab, setPlayTab] = useState<PlayTabSettings | null>(null);
+  const setLivePlayTabSettings = useSetPlayTabSettings();
 
   useEffect(() => {
-    void fetchLayout().then((res) => setRaw(JSON.stringify(res.config, null, 2)));
-    void reloadBannedPhrases();
+    void fetchLayout().then((res) => setLayout(res.config));
+    void fetchSettingsSpace<string[]>(BANNED_PHRASES_SPACE).then(setBannedPhrases);
+    void fetchSettingsSpace<GlobalCssSettings>(GLOBAL_CSS_SPACE).then(setGlobalCss);
+    void fetchSettingsSpace<PlayTabSettings>(PLAY_TAB_SPACE).then(setPlayTab);
   }, []);
 
-  async function reloadBannedPhrases() {
-    setBannedPhrases(await fetchBannedPhrases());
+  // Live edits to Global CSS / Play tab apply immediately (see each section's onChange below);
+  // if the user navigates away from Settings without saving, re-apply whatever was last
+  // actually persisted so the preview doesn't linger.
+  const persistedGlobalCss = useRef<GlobalCssSettings | null>(null);
+  useEffect(() => {
+    persistedGlobalCss.current = globalCss;
+  }, [globalCss]);
+  const persistedPlayTab = useRef<PlayTabSettings | null>(null);
+  useEffect(() => {
+    persistedPlayTab.current = playTab;
+  }, [playTab]);
+  useEffect(() => {
+    return () => {
+      if (persistedGlobalCss.current) applyGlobalCssSettings(persistedGlobalCss.current);
+      if (persistedPlayTab.current) setLivePlayTabSettings(persistedPlayTab.current);
+    };
+  }, [setLivePlayTabSettings]);
+
+  if (!bannedPhrases || !globalCss || !playTab || !layout) {
+    return (
+      <div className="settings-view">
+        <h2>Settings</h2>
+        <p className="settings-note">Loading…</p>
+      </div>
+    );
   }
 
-  async function handleSave() {
-    setError(null);
-    setSaved(false);
-    try {
-      const parsed = JSON.parse(raw);
-      await updateLayout(parsed);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function handleAddBannedPhrase(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newPhrase.trim()) return;
-    setBannedError(null);
-    try {
-      await createBannedPhrase(newPhrase.trim());
-      setNewPhrase("");
-      await reloadBannedPhrases();
-    } catch (err) {
-      console.error(err);
-      setBannedError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function handleRemoveBannedPhrase(id: string) {
-    try {
-      await deleteBannedPhrase(id);
-      await reloadBannedPhrases();
-    } catch (err) {
-      console.error(err);
-      setBannedError(err instanceof Error ? err.message : String(err));
-    }
-  }
+  const sections: SettingsSection[] = [
+    {
+      key: BANNED_PHRASES_SPACE,
+      title: "Banned words/phrases",
+      description:
+        "Matched (case-insensitively) against the start of Worker/Editor compress and archive replies only — " +
+        "these summaries feed the worldbook and are never shown to you directly. A match is treated as the model " +
+        "refusing the task and triggers a retry. Not applied to live Author prose or the Editor's visible setup " +
+        "replies, and not sent as a generation-time stop list.",
+      value: bannedPhrases as unknown as JsonData,
+      onSave: async (value) => {
+        const saved = await saveSettingsSpace(BANNED_PHRASES_SPACE, value);
+        setBannedPhrases(saved as string[]);
+        return saved as unknown as JsonData;
+      },
+      onRevert: async () => {
+        const reverted = await revertSettingsSpace<string[]>(BANNED_PHRASES_SPACE);
+        setBannedPhrases(reverted);
+        return reverted as unknown as JsonData;
+      },
+    },
+    {
+      key: GLOBAL_CSS_SPACE,
+      title: "Global CSS",
+      description:
+        "Light/dark color variables, root font size, and the narrow-screen breakpoint used across the whole app. " +
+        "Edits apply immediately as a preview; navigating away without saving reverts them.",
+      value: globalCss as unknown as JsonData,
+      onChange: (value) => applyGlobalCssSettings(value as unknown as GlobalCssSettings),
+      onSave: async (value) => {
+        const saved = await saveSettingsSpace(GLOBAL_CSS_SPACE, value);
+        setGlobalCss(saved as unknown as GlobalCssSettings);
+        return saved as unknown as JsonData;
+      },
+      onRevert: async () => {
+        const reverted = await revertSettingsSpace<GlobalCssSettings>(GLOBAL_CSS_SPACE);
+        setGlobalCss(reverted);
+        applyGlobalCssSettings(reverted);
+        return reverted as unknown as JsonData;
+      },
+    },
+    {
+      key: PLAY_TAB_SPACE,
+      title: "Play tab",
+      description:
+        "Controls how posts render in Play/Setup/Kickoff: post font size, whether the user/editor role labels " +
+        "are shown at all, what text they use, and whether editor posts render in italics. Edits apply " +
+        "immediately as a preview; navigating away without saving reverts them.",
+      value: playTab as unknown as JsonData,
+      onChange: (value) => setLivePlayTabSettings(value as unknown as PlayTabSettings),
+      onSave: async (value) => {
+        const saved = await saveSettingsSpace(PLAY_TAB_SPACE, value);
+        setPlayTab(saved as unknown as PlayTabSettings);
+        return saved as unknown as JsonData;
+      },
+      onRevert: async () => {
+        const reverted = await revertSettingsSpace<PlayTabSettings>(PLAY_TAB_SPACE);
+        setPlayTab(reverted);
+        setLivePlayTabSettings(reverted);
+        return reverted as unknown as JsonData;
+      },
+    },
+    {
+      key: "layout",
+      title: "Layout",
+      description:
+        "Phase 1's layout system is config-driven but read-only — no drag-and-drop editor yet. Rearranging " +
+        "sections/tabs is a direct JSON edit, per loremaster.md's UI Structure section. No one-step undo here " +
+        "(unlike the other three spaces).",
+      value: layout as unknown as JsonData,
+      onSave: async (value) => {
+        const res = await updateLayout(value as unknown as LayoutConfigData);
+        setLayout(res.config);
+        return res.config as unknown as JsonData;
+      },
+    },
+  ];
 
   return (
     <div className="settings-view">
       <h2>Settings</h2>
-
-      <section>
-        <h3>Banned words/phrases</h3>
-        <p className="settings-note">
-          Passed as the "stop" parameter on every Author/Worker/Editor call — generation halts the
-          instant one of these would be produced. Featherless's real tokenize endpoint doesn't expose
-          token ids (confirmed live, contradicts its own docs), so this is string-based only; there's no
-          stop_token_ids equivalent to layer on top.
-        </p>
-        {bannedError && <div className="error-banner">{bannedError}</div>}
-        <form className="banned-phrase-form" onSubmit={handleAddBannedPhrase}>
-          <input value={newPhrase} onChange={(e) => setNewPhrase(e.target.value)} placeholder="phrase to ban" />
-          <button type="submit">Add</button>
-        </form>
-        <div className="banned-phrase-row">
-          {bannedPhrases.length === 0 && <span className="settings-note">None banned yet.</span>}
-          {bannedPhrases.map((p) => (
-            <span key={p.id} className="banned-phrase-bubble">
-              {p.phrase}
-              <button type="button" onClick={() => handleRemoveBannedPhrase(p.id)} aria-label={`Remove ${p.phrase}`}>
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h3>Layout</h3>
-        <p className="settings-note">
-          Phase 1's layout system is config-driven but read-only — no drag-and-drop editor yet.
-          Rearranging sections/tabs is a direct JSON edit, per loremaster.md's UI Structure section.
-        </p>
-        {error && <div className="error-banner">{error}</div>}
-        <textarea className="layout-json" value={raw} onChange={(e) => setRaw(e.target.value)} spellCheck={false} />
-        <button type="button" onClick={handleSave}>
-          {saved ? "Saved" : "Save layout"}
-        </button>
-      </section>
+      <SettingsTreeEditor sections={sections} />
     </div>
   );
 }

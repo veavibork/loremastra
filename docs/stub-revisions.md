@@ -83,22 +83,29 @@ second roadmap.
 
 - **Input bar "weapon wheel"** (length/mood/param/model/effort toggles) — genuinely not
   started, doc's bespoke touch-first design deferred entirely in favor of plain controls.
-- **Settings has no UI-preference controls** (dark/light, font size, etc.) or
-  preference-profile CRUD — only the layout JSON editor exists.
+- **Settings gained a generic JSON-space tree editor** (2026-07-02, `web/src/JsonSpaceEditor.tsx`
+  + `src/db/settings-space-store.ts`) covering Banned words/phrases, Global CSS (light/dark
+  color vars, root font size, narrow-screen breakpoint), Play tab (post font size, user/editor
+  label visibility + text, editor-italics toggle), and Layout — collapsible tree view, a raw
+  "JSON edit" fallback, save/cancel only when dirty, and a decline-not-throw on invalid JSON.
+  Global CSS and Play tab also live-preview unsaved edits and one-step "revert to last saved."
+  Still no **preference-profile CRUD** (named snapshots of the full settings state,
+  `preference_profiles` table exists but unused) — that's the remaining gap from the original
+  item.
 - **Debug is scoped to the current story only**, not a cross-story view.
 - **Logs telemetry only covers prose (story) posts.** `gen_metrics` isn't populated for
   compress/archive jobs, so queue-wide telemetry is incomplete.
 
 ## Infra / provider
 
-- **Settings > banned words/phrases is string-`stop`-only, no `stop_token_ids`** (2026-07-02,
-  `src/services/stop-list.ts`). Tested Featherless's `/v1/tokenize` live to build a
-  token-id-based reject list on top of the string one — it only returns `{count, model}`,
-  no token array, contradicting the (already-flagged-unverified) doc note. See
-  `docs/featherless-notes.md`'s `/v1/tokenize` entry. Verified the string-`stop` path works
-  as-is: a real completion call halted output immediately before emitting a banned phrase.
-  Don't re-attempt `stop_token_ids` without evidence Featherless's tokenize response
-  actually changed.
+- **Retired: the `stop`-parameter banned-phrases mechanism** (was `src/services/stop-list.ts`,
+  removed 2026-07-02). Confirmed to have no practical use once refusal-prefix detection
+  (`src/services/refusal-detection.ts`) covered the only case that mattered; the global
+  generation-time `stop` list added risk (an unexpected mid-prose halt) for no real benefit.
+  Settings' "Banned words/phrases" JSON space now edits the refusal-detection prefix list
+  directly instead. `stop_token_ids` remains unimplementable per the `/v1/tokenize` finding
+  in `docs/featherless-notes.md` — moot now that there's no string-`stop` feature to layer it
+  on top of.
 - **Agent slot costs are hardcoded**, not read from Featherless's real per-model
   `concurrency_cost` field (`docs/featherless-notes.md` TODOs).
 - **`src/queue/slots.ts` is a local in-memory counter**, not backed by Featherless's real

@@ -15,6 +15,7 @@ import {
   type Position,
 } from "./api";
 import EntryContent from "./EntryContent";
+import { RoleLabel } from "./playTabSettings";
 import "./StoryView.css";
 
 export default function StoryView({ storyId }: { storyId: string }) {
@@ -178,7 +179,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
           const isFuture = currentIdx >= 0 && idx > currentIdx;
           return (
             <div key={entry.pageId} className={`entry entry-${entry.role} ${isFuture ? "entry-future" : ""}`}>
-              <span className="entry-role">{entry.role}</span>
+              <RoleLabel role={entry.role} />
               {editingPageId === entry.pageId ? (
                 <div className="edit-box">
                   <textarea value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
@@ -254,7 +255,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
         })}
         {pendingReply && (
           <div className="entry entry-agent entry-pending">
-            <span className="entry-role">agent</span>
+            <RoleLabel role="agent" />
             {pendingReply.text ? <EntryContent content={pendingReply.text} /> : <p>…</p>}
           </div>
         )}
