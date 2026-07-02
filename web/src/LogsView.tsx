@@ -22,6 +22,9 @@ export default function LogsView({ story }: PanelProps) {
 
   if (!story) return <div className="logs-view">No active story.</div>;
 
+  // buildLogView returns oldest-first (it's also used to render the chat log in reading order) — reverse for display here.
+  const mostRecentFirst = [...entries].reverse();
+
   return (
     <div className="logs-view">
       <h2>Logs</h2>
@@ -37,7 +40,7 @@ export default function LogsView({ story }: PanelProps) {
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry) => {
+          {mostRecentFirst.map((entry) => {
             const m = metrics(entry);
             return (
               <tr key={entry.pageId} className={entry.hidden ? "logs-row-hidden" : ""}>

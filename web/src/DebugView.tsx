@@ -55,6 +55,7 @@ export default function DebugView({ story }: PanelProps) {
       <table className="jobs-table">
         <thead>
           <tr>
+            <th>Created</th>
             <th>Type</th>
             <th>Status</th>
             <th>Model</th>
@@ -68,6 +69,7 @@ export default function DebugView({ story }: PanelProps) {
         <tbody>
           {jobs.map((job) => (
             <tr key={job.id} className={`job-row job-${job.status}`}>
+              <td>{new Date(job.createdAt).toLocaleString()}</td>
               <td>{job.jobType}</td>
               <td>{job.status}</td>
               <td className="job-model">{job.model ?? "—"}</td>

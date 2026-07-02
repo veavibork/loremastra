@@ -98,11 +98,11 @@ export default function SettingsView() {
     },
     {
       key: PLAY_TAB_SPACE,
-      title: "Play tab",
+      title: "Story tab",
       description:
-        "Controls how posts render in Play/Setup/Kickoff: post font size, whether the user/editor role labels " +
-        "are shown at all, what text they use, and whether editor posts render in italics. Edits apply " +
-        "immediately as a preview; navigating away without saving reverts them.",
+        "Controls how posts render in the Story tab's OOC and IC modes: post font size, whether the user/editor " +
+        "role labels are shown at all, what text they use, and whether editor posts render in italics. Edits " +
+        "apply immediately as a preview; navigating away without saving reverts them.",
       value: playTab as unknown as JsonData,
       onChange: (value) => setLivePlayTabSettings(value as unknown as PlayTabSettings),
       onSave: async (value) => {
@@ -121,9 +121,10 @@ export default function SettingsView() {
       key: "layout",
       title: "Layout",
       description:
-        "Phase 1's layout system is config-driven but read-only — no drag-and-drop editor yet. Rearranging " +
-        "sections/tabs is a direct JSON edit, per loremaster.md's UI Structure section. No one-step undo here " +
-        "(unlike the other three spaces).",
+        "A flat, ordered list of tabs — this order is exactly the tab bar's render order, top to bottom in " +
+        "this list, left to right in the bar. No nested containers/grouping at this time. Config-driven but " +
+        "read-only — no drag-and-drop editor yet, so reordering is a direct JSON edit, per loremaster.md's UI " +
+        "Structure section. No one-step undo here (unlike the other three spaces).",
       value: layout as unknown as JsonData,
       onSave: async (value) => {
         const res = await updateLayout(value as unknown as LayoutConfigData);

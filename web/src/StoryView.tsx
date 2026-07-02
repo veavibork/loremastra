@@ -1,35 +1,111 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   continuePost,
   editPost,
   fetchLog,
   fetchPosition,
   forkStory,
-  jumpToPosition,
+  kickoff,
   postMessage,
+  postSetupMessage,
   redoPosition,
   retryPost,
   streamJob,
   undoPosition,
   type LogEntry,
   type Position,
+  type StoryPhase,
 } from "./api";
 import EntryContent from "./EntryContent";
 import { RoleLabel } from "./playTabSettings";
 import "./StoryView.css";
 
-export default function StoryView({ storyId }: { storyId: string }) {
+/** Grows with its content instead of scrolling internally — used for both the composer and
+ * inline post editing so neither ever shows a stale, pre-resize box on first paint. Measuring in
+ * useLayoutEffect (before the browser paints) rather than useEffect (after) is what avoids a
+ * one-frame flash of the wrong size. */
+function AutoGrowTextarea({
+  value,
+  onChange,
+  onKeyDown,
+  onFocus,
+  className,
+  placeholder,
+  disabled,
+  autoFocus,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const resize = () => {
+      // scrollHeight reflects whatever's rendered inside the box, including a wrapped
+      // placeholder — for the composer's long instructional placeholder that inflated an
+      // empty box to 2-3 lines tall. Hide it for the measurement so height only ever tracks
+      // the actual value.
+      const placeholder = el.placeholder;
+      el.placeholder = "";
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+      el.placeholder = placeholder;
+    };
+    resize();
+    // Catches late metric shifts (e.g. Global CSS's async root-font-size override landing after
+    // this first measurement) that the value-keyed effect above has no other reason to rerun for.
+    const raf = requestAnimationFrame(resize);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      className={className}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      onFocus={onFocus}
+      placeholder={placeholder}
+      disabled={disabled}
+      autoFocus={autoFocus}
+    />
+  );
+}
+
+export default function StoryView({
+  storyId,
+  phase,
+  onKickedOff,
+}: {
+  storyId: string;
+  phase: StoryPhase;
+  onKickedOff?: () => void;
+}) {
+  const [mode, setMode] = useState<"guide" | "play">(() => (phase === "setup" ? "guide" : "play"));
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [position, setPosition] = useState<Position | null>(null);
   const [draft, setDraft] = useState("");
-  const [pendingReply, setPendingReply] = useState<{ pageId: string; text: string } | null>(null);
+  const [pendingReply, setPendingReply] = useState<{ pageId: string; text: string; progress?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [editingPageId, setEditingPageId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState("");
-  const [guidingPageId, setGuidingPageId] = useState<string | "continue" | null>(null);
-  const [guidanceDraft, setGuidanceDraft] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const [editDrafts, setEditDrafts] = useState<Record<string, string>>({});
+  const [forkMode, setForkMode] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  // Tracks whichever edit-mode textarea last had focus, so the toolbar's Delete button knows
+  // which draft/selection to act on (touch keyboards sometimes drop their key-entry UI on a
+  // text selection, leaving Cut as the only native option — this does a real delete instead).
+  const activeEditRef = useRef<{ pageId: string; el: HTMLTextAreaElement } | null>(null);
 
   async function refresh() {
     setEntries(await fetchLog(storyId));
@@ -44,15 +120,18 @@ export default function StoryView({ storyId }: { storyId: string }) {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, pendingReply]);
 
-  function watchJob(jobId: string, pageId: string) {
+  function watchJob(jobId: string, pageId: string, onDone?: () => void) {
     setPendingReply({ pageId, text: "" });
     streamJob(storyId, jobId, (event) => {
       if (event.type === "token") {
         setPendingReply((prev) => (prev ? { ...prev, text: prev.text + event.text } : prev));
+      } else if (event.type === "progress") {
+        setPendingReply((prev) => (prev ? { ...prev, progress: event.label } : prev));
       } else if (event.type === "done") {
         setPendingReply(null);
         void refresh();
         setBusy(false);
+        onDone?.();
       } else if (event.type === "error") {
         setPendingReply(null);
         setError(event.message);
@@ -61,9 +140,9 @@ export default function StoryView({ storyId }: { storyId: string }) {
     });
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!draft.trim() || busy) return;
+  async function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!draft.trim() || busy || editMode) return;
 
     const content = draft.trim();
     setDraft("");
@@ -71,9 +150,26 @@ export default function StoryView({ storyId }: { storyId: string }) {
     setError(null);
 
     try {
-      const { jobId, agentPageId } = await postMessage(storyId, content);
+      const { jobId, agentPageId } = mode === "guide" ? await postSetupMessage(storyId, content) : await postMessage(storyId, content);
       await refresh();
       watchJob(jobId, agentPageId);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  }
+
+  async function handleKickoff() {
+    setBusy(true);
+    setError(null);
+    try {
+      const { jobId, agentPageId } = await kickoff(storyId);
+      await refresh();
+      watchJob(jobId, agentPageId, () => {
+        setMode("play");
+        onKickedOff?.();
+      });
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
@@ -84,7 +180,6 @@ export default function StoryView({ storyId }: { storyId: string }) {
   async function handleContinue(guidance?: string) {
     setBusy(true);
     setError(null);
-    setGuidingPageId(null);
     try {
       const { jobId, agentPageId } = await continuePost(storyId, guidance);
       await refresh();
@@ -99,7 +194,6 @@ export default function StoryView({ storyId }: { storyId: string }) {
   async function handleRetry(pageId: string, guidance?: string) {
     setBusy(true);
     setError(null);
-    setGuidingPageId(null);
     try {
       const { jobId } = await retryPost(storyId, pageId, guidance);
       watchJob(jobId, pageId);
@@ -110,20 +204,77 @@ export default function StoryView({ storyId }: { storyId: string }) {
     }
   }
 
-  async function handleSaveEdit(pageId: string) {
-    try {
-      await editPost(storyId, pageId, editDraft);
-      setEditingPageId(null);
-      await refresh();
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+  function handleContinueClick() {
+    const guidance = draft.trim() || undefined;
+    setDraft("");
+    void handleContinue(guidance);
+  }
+
+  function handleRetryClick(pageId: string) {
+    const guidance = draft.trim() || undefined;
+    setDraft("");
+    void handleRetry(pageId, guidance);
+  }
+
+  async function toggleEditMode() {
+    if (!editMode) {
+      const seeded: Record<string, string> = {};
+      for (const entry of shown) seeded[entry.pageId] = entry.content ?? "";
+      setEditDrafts(seeded);
+      setEditMode(true);
+      return;
     }
+
+    const changed = shown.filter((entry) => {
+      const value = editDrafts[entry.pageId];
+      return value !== undefined && value !== (entry.content ?? "");
+    });
+    setEditMode(false);
+    if (changed.length > 0) {
+      try {
+        await Promise.all(changed.map((entry) => editPost(storyId, entry.pageId, editDrafts[entry.pageId])));
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+    setEditDrafts({});
+    activeEditRef.current = null;
+  }
+
+  /** Performs an actual forward-delete on whichever edit box was last focused, bypassing
+   * whatever native key-entry UI the platform did or didn't show for the current selection.
+   * Routed through execCommand (deprecated but still broadly supported, including Android Chrome)
+   * rather than a direct value splice, since only edits made that way register in the browser's
+   * own undo stack — a plain state update wouldn't be Ctrl+Z-able the way a real keypress is. */
+  function handleDeleteKey() {
+    const active = activeEditRef.current;
+    if (!active) return;
+    const { pageId, el } = active;
+    el.focus();
+    const hasSelection = el.selectionStart !== el.selectionEnd;
+    const handled = document.execCommand(hasSelection ? "delete" : "forwardDelete");
+    if (handled) {
+      setEditDrafts((prev) => ({ ...prev, [pageId]: el.value }));
+      return;
+    }
+    // Fallback for environments without execCommand support — same net result, just not undoable.
+    const value = editDrafts[pageId] ?? "";
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const next = start === end ? value.slice(0, start) + value.slice(start + 1) : value.slice(0, start) + value.slice(end);
+    setEditDrafts((prev) => ({ ...prev, [pageId]: next }));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start, start);
+    });
   }
 
   async function handleUndo() {
     try {
       setPosition(await undoPosition(storyId));
+      await refresh();
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
@@ -133,15 +284,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
   async function handleRedo() {
     try {
       setPosition(await redoPosition(storyId));
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  async function handleJump(pageId: string) {
-    try {
-      setPosition(await jumpToPosition(storyId, pageId));
+      await refresh();
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
@@ -149,6 +292,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
   }
 
   async function handleFork(pageId: string) {
+    setForkMode(false);
     try {
       const forked = await forkStory(storyId, pageId);
       setError(null);
@@ -159,104 +303,45 @@ export default function StoryView({ storyId }: { storyId: string }) {
     }
   }
 
-  const visible = entries.filter((e) => !e.hidden && e.pageId !== pendingReply?.pageId);
+  // Guide/OOC shows the pre-kickoff conversation even after finalizeSetup hides it from Play/the
+  // Author's context — Play/IC keeps the normal !hidden filter.
+  const visible = entries.filter((e) => (mode === "play" ? !e.hidden : true) && e.pageId !== pendingReply?.pageId);
   const currentIdx = position?.currentPageId ? visible.findIndex((e) => e.pageId === position.currentPageId) : -1;
+  // Rewound past this point? Don't render what comes after — Redo is the only way forward.
+  const shown = currentIdx >= 0 ? visible.slice(0, currentIdx + 1) : visible;
+  const lastEntry = shown[shown.length - 1];
+  const canRetry = !!lastEntry && lastEntry.role === "agent";
 
   return (
-    <>
-      <div className="undo-redo-bar">
-        <button type="button" onClick={handleUndo} disabled={busy}>
-          ↶ Undo
-        </button>
-        <button type="button" onClick={handleRedo} disabled={busy || position?.atHead}>
-          ↷ Redo
-        </button>
-        {position && !position.atHead && <span className="rewind-note">Viewing an earlier point — new posts will branch from here.</span>}
-      </div>
-
+    <div className="story-view">
       <div className="log">
-        {visible.map((entry, idx) => {
-          const isFuture = currentIdx >= 0 && idx > currentIdx;
-          return (
-            <div key={entry.pageId} className={`entry entry-${entry.role} ${isFuture ? "entry-future" : ""}`}>
-              <RoleLabel role={entry.role} />
-              {editingPageId === entry.pageId ? (
-                <div className="edit-box">
-                  <textarea value={editDraft} onChange={(e) => setEditDraft(e.target.value)} />
-                  <div className="post-controls">
-                    <button type="button" onClick={() => handleSaveEdit(entry.pageId)}>
-                      Save
-                    </button>
-                    <button type="button" onClick={() => setEditingPageId(null)}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <EntryContent content={entry.content ?? "…"} />
-                  <div className="post-controls">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingPageId(entry.pageId);
-                        setEditDraft(entry.content ?? "");
-                      }}
-                    >
-                      Edit
-                    </button>
-                    {entry.role === "agent" && (
-                      <button type="button" onClick={() => handleRetry(entry.pageId)} disabled={busy}>
-                        Retry
-                      </button>
-                    )}
-                    {entry.role === "agent" && (
-                      <button type="button" onClick={() => setGuidingPageId(entry.pageId)} disabled={busy}>
-                        Guided retry
-                      </button>
-                    )}
-                    {isFuture && (
-                      <button type="button" onClick={() => handleJump(entry.pageId)}>
-                        Jump here
-                      </button>
-                    )}
-                    <button type="button" onClick={() => handleFork(entry.pageId)}>
-                      Fork from here
-                    </button>
-                  </div>
-                  {guidingPageId === entry.pageId && (
-                    <div className="guidance-box">
-                      <textarea
-                        className="guidance-input"
-                        value={guidanceDraft}
-                        onChange={(e) => setGuidanceDraft(e.target.value)}
-                        placeholder="Direction for the retry…"
-                      />
-                      <div className="post-controls">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void handleRetry(entry.pageId, guidanceDraft.trim() || undefined);
-                            setGuidanceDraft("");
-                          }}
-                        >
-                          Go
-                        </button>
-                        <button type="button" onClick={() => setGuidingPageId(null)}>
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          );
-        })}
+        {shown.map((entry) => (
+          <div key={entry.pageId} className={`entry entry-${entry.role}`}>
+            <RoleLabel role={entry.role} mode={mode} />
+            {editMode ? (
+              <AutoGrowTextarea
+                className="edit-box-textarea"
+                value={editDrafts[entry.pageId] ?? entry.content ?? ""}
+                onChange={(value) => setEditDrafts((prev) => ({ ...prev, [entry.pageId]: value }))}
+                onFocus={(e) => { activeEditRef.current = { pageId: entry.pageId, el: e.currentTarget }; }}
+              />
+            ) : (
+              <>
+                <EntryContent content={entry.content ?? "…"} />
+                {forkMode && (
+                  <button type="button" className="fork-point-btn" onClick={() => void handleFork(entry.pageId)}>
+                    ⑂ fork from here
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        ))}
         {pendingReply && (
           <div className="entry entry-agent entry-pending">
-            <RoleLabel role="agent" />
+            <RoleLabel role="agent" mode={mode} />
             {pendingReply.text ? <EntryContent content={pendingReply.text} /> : <p>…</p>}
+            {pendingReply.progress && <p className="pending-progress">{pendingReply.progress}</p>}
           </div>
         )}
         <div ref={logEndRef} />
@@ -264,48 +349,83 @@ export default function StoryView({ storyId }: { storyId: string }) {
 
       {error && <div className="error-banner">{error}</div>}
 
-      {guidingPageId === "continue" ? (
-        <div className="guidance-box">
-          <textarea
-            className="guidance-input"
-            value={guidanceDraft}
-            onChange={(e) => setGuidanceDraft(e.target.value)}
-            placeholder="Direction for the continuation…"
-          />
-          <div className="post-controls">
-            <button
-              type="button"
-              onClick={() => {
-                void handleContinue(guidanceDraft.trim() || undefined);
-                setGuidanceDraft("");
-              }}
-            >
-              Go
-            </button>
-            <button type="button" onClick={() => setGuidingPageId(null)}>
-              Cancel
-            </button>
-          </div>
+      <div className="play-toolbar">
+        <div className="mode-toggle">
+          <button type="button" className={mode === "guide" ? "active" : ""} onClick={() => setMode("guide")} disabled={busy || editMode}>
+            OOC
+          </button>
+          <button type="button" className={mode === "play" ? "active" : ""} onClick={() => setMode("play")} disabled={busy || editMode}>
+            IC
+          </button>
         </div>
-      ) : (
-        <form className="composer" onSubmit={handleSubmit}>
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Say something…"
-            disabled={busy}
-          />
-          <button type="submit" disabled={busy || !draft.trim()}>
-            {busy ? "…" : "Send"}
+        <button type="button" onClick={handleUndo} disabled={busy || editMode || !position?.canUndo}>
+          ↶ Undo
+        </button>
+        <button type="button" onClick={handleRedo} disabled={busy || editMode || !position?.canRedo}>
+          ↷ Redo
+        </button>
+        <button
+          type="button"
+          onClick={() => lastEntry && handleRetryClick(lastEntry.pageId)}
+          disabled={busy || editMode || !canRetry}
+        >
+          Retry
+        </button>
+        <button type="button" onClick={handleContinueClick} disabled={busy || editMode}>
+          Continue
+        </button>
+        <button type="button" onClick={() => void toggleEditMode()} disabled={busy}>
+          {editMode ? "Done editing" : "Edit"}
+        </button>
+        {editMode && (
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleDeleteKey}>
+            Delete
           </button>
-          <button type="button" onClick={() => handleContinue()} disabled={busy}>
-            Continue
+        )}
+        <button
+          type="button"
+          className={forkMode ? "active" : ""}
+          onClick={() => setForkMode((f) => !f)}
+          disabled={busy || editMode}
+        >
+          Fork
+        </button>
+        {mode === "guide" && phase === "setup" && (
+          <button type="button" onClick={() => void handleKickoff()} disabled={busy || editMode}>
+            Kickoff →
           </button>
-          <button type="button" onClick={() => setGuidingPageId("continue")} disabled={busy}>
-            Guided continue
-          </button>
-        </form>
-      )}
-    </>
+        )}
+        {position && !position.atHead && (
+          <span className="rewind-note">Viewing an earlier point — new posts will branch from here.</span>
+        )}
+      </div>
+
+      <form className="composer" onSubmit={handleSubmit}>
+        <AutoGrowTextarea
+          value={draft}
+          onChange={setDraft}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (busy || editMode) return;
+              if (draft.trim()) {
+                void handleSubmit();
+              } else {
+                handleContinueClick();
+              }
+            }
+          }}
+          placeholder={
+            mode === "guide"
+              ? "Tell the Editor about your story… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
+              : "Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
+          }
+          disabled={busy || editMode}
+        />
+        <button type="submit" disabled={busy || editMode || !draft.trim()}>
+          {busy ? "…" : "Send"}
+        </button>
+      </form>
+    </div>
   );
 }

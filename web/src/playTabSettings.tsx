@@ -7,8 +7,10 @@ export interface PlayTabSettings {
   fontSize: number;
   showUserLabel: boolean;
   showEditorLabel: boolean;
+  showAuthorLabel: boolean;
   userLabel: string;
   editorLabel: string;
+  authorLabel: string;
   italicizeEditor: boolean;
 }
 
@@ -16,8 +18,10 @@ export const DEFAULT_PLAY_TAB_SETTINGS: PlayTabSettings = {
   fontSize: 15,
   showUserLabel: true,
   showEditorLabel: true,
+  showAuthorLabel: true,
   userLabel: "user",
   editorLabel: "editor",
+  authorLabel: "author",
   italicizeEditor: true,
 };
 
@@ -66,17 +70,19 @@ export function useSetPlayTabSettings(): (settings: PlayTabSettings) => void {
 
 /**
  * Renders the role label for a log entry per the Play tab settings — resolves both whether to
- * show it at all and its display text. Centralizes what StoryView/KickoffView/SetupView used
- * to each do slightly differently (StoryView showed the raw "agent" role; the other two
- * hardcoded a rename to "editor") into one place driven by user settings.
+ * show it at all and its display text. The DB role is always "agent" regardless of Guide vs.
+ * Play; mode is what decides whether that's displayed as the Editor or the Author.
  */
-export function RoleLabel({ role }: { role: string }) {
+export function RoleLabel({ role, mode }: { role: string; mode: "guide" | "play" }) {
   const settings = usePlayTabSettings();
   if (role === "user") {
     return settings.showUserLabel ? <span className="entry-role">{settings.userLabel}</span> : null;
   }
   if (role === "agent") {
-    return settings.showEditorLabel ? <span className="entry-role">{settings.editorLabel}</span> : null;
+    if (mode === "guide") {
+      return settings.showEditorLabel ? <span className="entry-role">{settings.editorLabel}</span> : null;
+    }
+    return settings.showAuthorLabel ? <span className="entry-role">{settings.authorLabel}</span> : null;
   }
   return <span className="entry-role">{role}</span>;
 }

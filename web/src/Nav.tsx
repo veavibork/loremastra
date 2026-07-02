@@ -4,23 +4,8 @@ import { resolvePanel } from "./registry";
 import type { PanelProps } from "./panel-types";
 import "./Nav.css";
 
-interface FlatTab {
-  id: string; // `${sectionId}:${tabId}`
-  label: string;
-  sectionId: string;
-  tabId: string;
-}
-
 const OPEN_TABS_STORAGE_KEY = "loremaster.openTabs";
 const MIN_COLUMN_PERCENT = 12;
-
-function flattenTabs(config: LayoutConfigData): FlatTab[] {
-  return config.sections.flatMap((section) =>
-    section.tabs.length
-      ? section.tabs.map((tab) => ({ id: `${section.id}:${tab.id}`, label: tab.label, sectionId: section.id, tabId: tab.id }))
-      : [{ id: `${section.id}:`, label: section.label, sectionId: section.id, tabId: "" }]
-  );
-}
 
 /**
  * Click a tab to open it as a column, click again to close it — any number of tabs can be
@@ -31,7 +16,7 @@ function flattenTabs(config: LayoutConfigData): FlatTab[] {
  * preserve a dragged ratio across additions/removals — simpler, and good enough for now.
  */
 export default function Nav({ config, panelProps }: { config: LayoutConfigData; panelProps: PanelProps }) {
-  const allTabs = flattenTabs(config);
+  const allTabs = config.tabs;
 
   const [openIds, setOpenIds] = useState<string[]>(() => {
     try {
@@ -97,7 +82,7 @@ export default function Nav({ config, panelProps }: { config: LayoutConfigData; 
         {openIds.length === 0 && <p className="nav-empty">No panels open — click a tab above.</p>}
         {openIds.map((id, i) => {
           const tab = allTabs.find((t) => t.id === id);
-          const Panel = tab ? resolvePanel(tab.sectionId, tab.tabId) : null;
+          const Panel = tab ? resolvePanel(tab.id) : null;
           return (
             <div key={id} className="nav-column-group" style={{ flexBasis: `${widths[id] ?? 100 / openIds.length}%` }}>
               <div className="nav-column">
@@ -107,7 +92,9 @@ export default function Nav({ config, panelProps }: { config: LayoutConfigData; 
                     ×
                   </button>
                 </div>
-                <div className="nav-column-body">{Panel ? <Panel {...panelProps} /> : <p>Nothing configured here yet.</p>}</div>
+                <div className="nav-column-body">
+                  {Panel ? <Panel {...panelProps} /> : <p>Nothing configured here yet.</p>}
+                </div>
               </div>
               {i < openIds.length - 1 && (
                 <div className="nav-resize-handle" onMouseDown={(e) => startResize(e, id, openIds[i + 1])} />

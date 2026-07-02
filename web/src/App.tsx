@@ -22,6 +22,8 @@ interface GateState {
   info: SupersededInfo | null;
 }
 
+const SELECTED_STORY_STORAGE_KEY = "loremaster.selectedStoryId";
+
 export default function App() {
   const [gate, setGate] = useState<GateState | null>(() =>
     getSessionId() ? null : { reason: "no-session", info: null }
@@ -32,6 +34,11 @@ export default function App() {
 
   useGlobalCssSettings(!gate);
 
+  function selectStory(next: Story) {
+    localStorage.setItem(SELECTED_STORY_STORAGE_KEY, next.id);
+    setStory(next);
+  }
+
   useEffect(() => onSuperseded((info) => setGate({ reason: info.reason, info })), []);
 
   useEffect(() => {
@@ -39,8 +46,9 @@ export default function App() {
     void (async () => {
       try {
         const stories = await listStories();
-        const active = stories[0] ?? (await createStory("Default Story"));
-        setStory(active);
+        const savedId = localStorage.getItem(SELECTED_STORY_STORAGE_KEY);
+        const active = stories.find((s) => s.id === savedId) ?? stories[0] ?? (await createStory("Default Story"));
+        selectStory(active);
         setPhase((await fetchPhase(active.id)).phase);
         setLayout((await fetchLayout()).config);
       } catch {
@@ -66,7 +74,7 @@ export default function App() {
           panelProps={{
             story,
             phase,
-            onStoryChange: setStory,
+            onStoryChange: selectStory,
             onPhaseChange: setPhase,
           }}
         />

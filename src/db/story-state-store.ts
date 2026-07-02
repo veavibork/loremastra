@@ -36,3 +36,15 @@ export function setKickoffPageId(db: Database.Database, pageId: string | null): 
 export function setCurrentPageId(db: Database.Database, pageId: string | null): void {
   db.prepare(`UPDATE story_state SET current_page_id = ? WHERE id = 1`).run(pageId);
 }
+
+/** How far along the unified Undo/Redo ledger (history_event) the user currently is. 0 = before the first event. */
+export function getHistoryCursorSeq(db: Database.Database): number {
+  const row = db.prepare(`SELECT history_cursor_seq FROM story_state WHERE id = 1`).get() as
+    | { history_cursor_seq: number }
+    | undefined;
+  return row?.history_cursor_seq ?? 0;
+}
+
+export function setHistoryCursorSeq(db: Database.Database, seq: number): void {
+  db.prepare(`UPDATE story_state SET history_cursor_seq = ? WHERE id = 1`).run(seq);
+}

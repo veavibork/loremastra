@@ -7,7 +7,7 @@ import { listWorldbookEntries } from "../db/worldbook-store.js";
 import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { tryAcquireSlots, releaseSlots } from "./slots.js";
-import { publishToken, publishProgress, publishDone, publishError } from "./job-events.js";
+import { publishToken, publishDone, publishError } from "./job-events.js";
 import {
   streamInference,
   callWithForcedTool,
@@ -205,12 +205,13 @@ async function executeProseJob(
     const targetPage = getPage(db, targetText.pageId);
     if (!targetPage) throw new Error("target page no longer exists");
 
-    // Kickoff's opening post (and any guided retry of it) is the only prose job that
-    // runs during the 'kickoff' phase — see loremaster.md's Story Flow: the author
-    // generates it from the worldbook alone, not the setup conversation's chat log.
-    const phase = getStoryState(db).phase;
+    // The kickoff page (and any later Retry/Guided Retry of it) always generates from the
+    // worldbook alone, never the setup conversation's chat log — checked by page identity,
+    // not current phase, since phase moves on to "story" immediately after kickoff fires but
+    // the opening post can still be regenerated any time after that.
+    const kickoffPageId = getStoryState(db).kickoffPageId;
     let history: ChatMessage[];
-    if (phase === "kickoff") {
+    if (targetPage.id === kickoffPageId) {
       const worldbook = getBookByType(db, "worldbook");
       if (!worldbook) throw new Error("worldbook not found");
       history = assembleKickoffPrompt(db, worldbook.id);
@@ -297,12 +298,14 @@ async function executeSetupJob(
     const tokenEstimate = Math.ceil(reply.length / 4);
     fillTextGeneration(db, targetTextId, { genPackage: reply, genMetrics: JSON.stringify({ tokenEstimate }) });
 
-    publishProgress(jobId, "Updating worldbook...");
     try {
-      await runWorldbookExtraction(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), [
-        ...conversation,
-        { role: "assistant", content: reply },
-      ]);
+      await runWorldbookExtraction(
+        db,
+        worldbook.id,
+        getTagScopeBookId(db, targetPage.bookId),
+        [...conversation, { role: "assistant", content: reply }],
+        jobId
+      );
     } catch (err) {
       console.error(`[setup ${jobId}] worldbook extraction failed, reply still stands:`, err);
     }

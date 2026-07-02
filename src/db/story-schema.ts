@@ -126,6 +126,24 @@ CREATE TABLE IF NOT EXISTS story_state (
 -- of DDL differences, so an old table only gets the column via the ALTER migration.
 INSERT OR IGNORE INTO story_state (id, phase, kickoff_page_id) VALUES (1, 'setup', NULL);
 
+-- The Play tab's unified Undo/Redo stack: one flat, chronological ledger covering both page
+-- navigation (send/continue/rewind) and text-version changes (retry/edit), so Undo reverses
+-- whatever happened most recently regardless of which kind of action it was. story_state's
+-- history_cursor_seq (see ensureColumn in story-db.ts) says how far along this ledger the
+-- user currently is; 0 means "before the first event." Creating a new event past the cursor
+-- (i.e. doing something new after undoing) prunes anything after the cursor first, the same
+-- "orphan, don't destroy" way a new page/text version already silently strands old forks.
+CREATE TABLE IF NOT EXISTS history_event (
+  id TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('page','text')),
+  page_id TEXT NOT NULL REFERENCES page(id),
+  from_value TEXT,
+  to_value TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_history_event_seq ON history_event(seq);
+
 -- A job targets exactly one of target_text_id (compress/prose/setup) or
 -- target_archive_id (archive) — enforced at the application layer in
 -- job-store.ts, not here, since SQLite's CHECK can't easily express "exactly

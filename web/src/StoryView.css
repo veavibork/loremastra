@@ -1,8 +1,23 @@
-.undo-redo-bar {
+/*
+ * The shared panel shell (.nav-column-body, see Nav.css) is itself the scrollable region for
+ * every tab type, which is fine for panels that are just flowing content. The Play tab isn't —
+ * its toolbar and composer need to stay put while only the log scrolls. Filling the panel
+ * height here and making .log the flex child that scrolls (App.css) keeps .nav-column-body's
+ * own overflow inert (this fills it exactly), rather than fighting it with position: sticky.
+ */
+.story-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.play-toolbar {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .rewind-note {
@@ -10,29 +25,58 @@
   opacity: 0.7;
 }
 
-.entry-future {
-  opacity: 0.45;
-}
-
-.post-controls {
+.mode-toggle {
   display: flex;
-  gap: 0.4rem;
-  margin-top: 0.2rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.post-controls button {
+.mode-toggle button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mode-toggle button.active {
+  background: #3a3a3a;
+}
+
+.play-toolbar button.active {
+  background: #3a3a3a;
+}
+
+.pending-progress {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.fork-point-btn {
+  align-self: flex-start;
+  margin-top: 0.2rem;
   font-size: 0.7rem;
   padding: 0.2rem 0.5rem;
 }
 
-.edit-box textarea,
-.guidance-box textarea {
+/* Edit mode swaps rendered markdown for this in place — same font/size/flow as .entry-content,
+   no visible chrome, so the box doesn't change size or jump when toggling edit on/off. */
+.edit-box-textarea {
+  display: block;
   width: 100%;
-  min-height: 3rem;
   font-family: inherit;
-  resize: vertical;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  margin: 0 0 0.6em;
+  resize: none;
+  overflow: hidden;
 }
 
-.guidance-box {
-  margin-top: 0.35rem;
+.edit-box-textarea:focus {
+  outline: 1px dashed rgba(255, 255, 255, 0.3);
 }

@@ -23,6 +23,7 @@
 
 .log {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
@@ -31,29 +32,22 @@
   padding-bottom: 1rem;
 }
 
-/* Thin, muted scrollbar instead of the browser default — applies to any scrollable panel, not just .log. */
-.log,
-.setup-worldbook,
-.opening-post {
+/* Thin, muted scrollbar instead of the browser default — applies to every scrollable element. */
+* {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
 
-.log::-webkit-scrollbar,
-.setup-worldbook::-webkit-scrollbar,
-.opening-post::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 
-.log::-webkit-scrollbar-track,
-.setup-worldbook::-webkit-scrollbar-track,
-.opening-post::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.log::-webkit-scrollbar-thumb,
-.setup-worldbook::-webkit-scrollbar-thumb,
-.opening-post::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background-color: var(--border);
   border-radius: 4px;
 }
@@ -103,20 +97,29 @@
   border-radius: 6px;
   margin-bottom: 0.5rem;
   font-size: 0.85rem;
+  flex-shrink: 0;
 }
 
 .composer {
   display: flex;
   gap: 0.5rem;
+  align-items: flex-end;
+  flex-shrink: 0;
 }
 
-.composer input {
+.composer textarea {
   flex: 1;
+  box-sizing: border-box;
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
   border: 1px solid #444;
   background: #1a1a1a;
   color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  resize: none;
+  overflow-y: auto;
+  max-height: 40vh;
 }
 
 .composer button {

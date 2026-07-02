@@ -261,15 +261,6 @@ export default function SettingsTreeEditor({ sections }: { sections: SettingsSec
         </div>
       </div>
 
-      <ul className="settings-tree-legend">
-        {sections.map((s) => (
-          <li key={s.key}>
-            <strong>{s.title}</strong>
-            {s.description && <span> — {s.description}</span>}
-          </li>
-        ))}
-      </ul>
-
       {error && <div className="error-banner">{error}</div>}
 
       {rawMode ? (
@@ -312,6 +303,15 @@ export default function SettingsTreeEditor({ sections }: { sections: SettingsSec
           ))}
         </div>
       )}
+
+      <ul className="settings-tree-legend">
+        {sections.map((s) => (
+          <li key={s.key}>
+            <strong>{s.title}</strong>
+            {s.description && <span> — {s.description}</span>}
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

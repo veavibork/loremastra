@@ -24,6 +24,7 @@ import {
   type WorldbookEntryType,
 } from "../db/worldbook-store.js";
 import { getStoryState, setStoryPhase, setKickoffPageId, setCurrentPageId } from "../db/story-state-store.js";
+import { recordHistoryEvent, undoHistory, redoHistory, canUndoHistory, canRedoHistory } from "../db/history-store.js";
 import { finalizeSetup } from "../services/kickoff.js";
 import { forkStory } from "../services/fork.js";
 import { trackStoryDb, untrackStoryDb, setJobGuidance } from "../queue/pipeline-runner.js";
@@ -85,7 +86,7 @@ storiesRoute.patch("/:id", async (c) => {
   return c.json({ story: getStory(globalDb, id) });
 });
 
-storiesRoute.delete("/:id", (c) => {
+storiesRoute.delete("/:id", async (c) => {
   const globalDb = getGlobalDb();
   const id = c.req.param("id");
   const story = getStory(globalDb, id);
@@ -94,11 +95,26 @@ storiesRoute.delete("/:id", (c) => {
   closeStoryDb(id);
   untrackStoryDb(id);
   deleteStory(globalDb, id);
+
+  // The DB row above is the authoritative delete — it already succeeded by this point. WAL mode's
+  // -wal/-shm sidecars can stay briefly locked on Windows even after close() returns (checkpoint
+  // flush, AV scan, etc.), so a stubborn file is retried a few times and then just logged rather
+  // than failing a request whose real work is already done.
   for (const suffix of ["", "-wal", "-shm"]) {
-    try {
-      unlinkSync(story.filePath + suffix);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        unlinkSync(story.filePath + suffix);
+        break;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") break;
+        if (code === "EBUSY" && attempt < 4) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
+        console.error(`[stories] failed to delete story file ${story.filePath}${suffix}:`, err);
+        break;
+      }
     }
   }
 
@@ -170,6 +186,7 @@ storiesRoute.post("/:id/messages", async (c) => {
     role: "agent",
   });
   setCurrentPageId(storyDb, null);
+  recordHistoryEvent(storyDb, { kind: "page", pageId: agentPage.id, fromValue: attachAt, toValue: agentPage.id });
 
   const job = createJob(storyDb, { targetTextId: agentText.id, jobType: "prose", slotCost: 4, priority: 10 });
   enqueueEligibleCompressJobs(storyDb, logbook.id);
@@ -208,6 +225,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
     priorTextId: currentText.id,
     role: "agent",
   });
+  recordHistoryEvent(storyDb, { kind: "text", pageId, fromValue: currentText.id, toValue: newText.id });
   const job = createJob(storyDb, {
     targetTextId: newText.id,
     jobType: isSetupPage ? "setup" : "prose",
@@ -240,6 +258,7 @@ storiesRoute.post("/:id/posts/:pageId/edit", async (c) => {
     role: currentText.role,
     genPackage: content,
   });
+  recordHistoryEvent(storyDb, { kind: "text", pageId, fromValue: currentText.id, toValue: newText.id });
   indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, page.bookId), newText.id);
 
   return c.json({ ok: true, textId: newText.id });
@@ -249,8 +268,9 @@ storiesRoute.post("/:id/posts/:pageId/edit", async (c) => {
 storiesRoute.post("/:id/continue", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { guidance?: string };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
-  if (getStoryState(storyDb).phase !== "story") {
-    return c.json({ error: "story hasn't reached story phase yet" }, 400);
+  const phase = getStoryState(storyDb).phase;
+  if (phase !== "setup" && phase !== "story") {
+    return c.json({ error: "story isn't in a phase that can continue" }, 400);
   }
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
@@ -258,51 +278,53 @@ storiesRoute.post("/:id/continue", async (c) => {
   const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
   const { page, text } = createPageWithText(storyDb, { bookId: logbook.id, prevPageId: attachAt, role: "agent" });
   setCurrentPageId(storyDb, null);
+  recordHistoryEvent(storyDb, { kind: "page", pageId: page.id, fromValue: attachAt, toValue: page.id });
 
-  const job = createJob(storyDb, { targetTextId: text.id, jobType: "prose", slotCost: 4, priority: 10 });
+  const job = createJob(storyDb, {
+    targetTextId: text.id,
+    jobType: phase === "setup" ? "setup" : "prose",
+    slotCost: 4,
+    priority: 10,
+  });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim());
 
   return c.json({ agentPageId: page.id, jobId: job.id });
 });
+
+function currentPositionResponse(storyDb: ReturnType<typeof getStoryDb>) {
+  const logbook = getBookByType(storyDb, "logbook");
+  const headPageId = logbook ? findHeadPageId(storyDb, logbook.id) : null;
+  const currentPageId = getStoryState(storyDb).currentPageId ?? headPageId;
+  return {
+    currentPageId,
+    headPageId,
+    atHead: currentPageId === headPageId,
+    canUndo: canUndoHistory(storyDb),
+    canRedo: canRedoHistory(storyDb),
+  };
+}
 
 /** Where the "cursor" is right now — the head unless Undo/Redo/Rewind has moved it. See loremaster.md's Post Controls: Undo/Redo. */
 storiesRoute.get("/:id/position", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  const headPageId = findHeadPageId(storyDb, logbook.id);
-  const currentPageId = getStoryState(storyDb).currentPageId ?? headPageId;
-  return c.json({ currentPageId, headPageId, atHead: currentPageId === headPageId });
+  return c.json(currentPositionResponse(storyDb));
 });
 
+/** Reverses whatever happened most recently on the unified history ledger — navigation, retry, or edit. See history-store.ts. */
 storiesRoute.post("/:id/position/undo", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  const headPageId = findHeadPageId(storyDb, logbook.id);
-  const currentPageId = getStoryState(storyDb).currentPageId ?? headPageId;
-  const current = currentPageId ? getPage(storyDb, currentPageId) : null;
-  if (!current?.prevPageId) return c.json({ error: "already at the beginning" }, 400);
-
-  setCurrentPageId(storyDb, current.prevPageId);
-  return c.json({ currentPageId: current.prevPageId });
+  const result = undoHistory(storyDb);
+  if (!result) return c.json({ error: "already at the beginning" }, 400);
+  return c.json(currentPositionResponse(storyDb));
 });
 
 storiesRoute.post("/:id/position/redo", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  const headPageId = findHeadPageId(storyDb, logbook.id);
-  const currentPageId = getStoryState(storyDb).currentPageId ?? headPageId;
-  const current = currentPageId ? getPage(storyDb, currentPageId) : null;
-  if (!current?.selectedForkPageId) return c.json({ error: "nothing to redo" }, 400);
-
-  const target = current.selectedForkPageId;
-  setCurrentPageId(storyDb, target === headPageId ? null : target);
-  return c.json({ currentPageId: target });
+  const result = redoHistory(storyDb);
+  if (!result) return c.json({ error: "nothing to redo" }, 400);
+  return c.json(currentPositionResponse(storyDb));
 });
 
 /** Rewind directly to any page in the current head's history (not just one step) — same underlying cursor as Undo/Redo, just a bigger jump. */
@@ -322,8 +344,10 @@ storiesRoute.post("/:id/position", async (c) => {
     return c.json({ error: "that page isn't part of the current story's history" }, 400);
   }
 
+  const fromPageId = getStoryState(storyDb).currentPageId ?? headPageId;
   setCurrentPageId(storyDb, body.pageId === headPageId ? null : body.pageId);
-  return c.json({ currentPageId: body.pageId });
+  recordHistoryEvent(storyDb, { kind: "page", pageId: body.pageId, fromValue: fromPageId, toValue: body.pageId });
+  return c.json(currentPositionResponse(storyDb));
 });
 
 /** Genuinely new save slot — a full copy of the story file, truncated after the fork point. */
@@ -387,76 +411,31 @@ storiesRoute.post("/:id/setup/messages", async (c) => {
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
 });
 
-storiesRoute.post("/:id/kickoff/start", (c) => {
+/**
+ * One-shot kickoff: generates the opening post and immediately moves the story into story
+ * phase — no separate review/approve step. If the result isn't right, the normal
+ * Retry/Guided Retry on this page (via /posts/:pageId/retry) regenerates it; pipeline-runner
+ * keys the worldbook-only kickoff prompt off kickoffPageId identity, not current phase, so
+ * that keeps working correctly after this point.
+ */
+storiesRoute.post("/:id/kickoff", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const state = getStoryState(storyDb);
-  if (state.phase !== "setup") return c.json({ error: "story is not in setup phase" }, 400);
+  if (getStoryState(storyDb).phase !== "setup") return c.json({ error: "story is not in setup phase" }, 400);
 
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
-  // Reuse the same page across kickoff attempts (e.g. after Back to Setup) via
-  // createRetryText — a new version, not a new log entry each time.
-  let pageId: string;
-  let textId: string;
-  if (state.kickoffPageId) {
-    const page = getPage(storyDb, state.kickoffPageId);
-    if (!page?.selectedTextId) return c.json({ error: "kickoff page is missing its current text" }, 500);
-    const text = createRetryText(storyDb, { pageId: page.id, priorTextId: page.selectedTextId, role: "agent" });
-    pageId = page.id;
-    textId = text.id;
-  } else {
-    const headPageId = findHeadPageId(storyDb, logbook.id);
-    const { page, text } = createPageWithText(storyDb, { bookId: logbook.id, prevPageId: headPageId, role: "agent" });
-    pageId = page.id;
-    textId = text.id;
-    setKickoffPageId(storyDb, page.id);
-  }
+  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
+  const { page, text } = createPageWithText(storyDb, { bookId: logbook.id, prevPageId: attachAt, role: "agent" });
 
-  setStoryPhase(storyDb, "kickoff");
-  const job = createJob(storyDb, { targetTextId: textId, jobType: "prose", slotCost: 4, priority: 10 });
-  return c.json({ jobId: job.id, kickoffPageId: pageId });
-});
-
-storiesRoute.post("/:id/kickoff/retry", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { guidance?: string };
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const state = getStoryState(storyDb);
-  if (state.phase !== "kickoff" || !state.kickoffPageId) {
-    return c.json({ error: "story is not in kickoff phase" }, 400);
-  }
-
-  const page = getPage(storyDb, state.kickoffPageId);
-  if (!page?.selectedTextId) return c.json({ error: "kickoff page is missing its current text" }, 500);
-
-  const text = createRetryText(storyDb, { pageId: page.id, priorTextId: page.selectedTextId, role: "agent" });
-  const job = createJob(storyDb, { targetTextId: text.id, jobType: "prose", slotCost: 4, priority: 10 });
-  if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim());
-
-  return c.json({ jobId: job.id, kickoffPageId: page.id });
-});
-
-storiesRoute.post("/:id/kickoff/back", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  if (getStoryState(storyDb).phase !== "kickoff") {
-    return c.json({ error: "story is not in kickoff phase" }, 400);
-  }
-  setStoryPhase(storyDb, "setup");
-  return c.json({ ok: true });
-});
-
-storiesRoute.post("/:id/kickoff/approve", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const state = getStoryState(storyDb);
-  if (state.phase !== "kickoff" || !state.kickoffPageId) {
-    return c.json({ error: "story is not in kickoff phase" }, 400);
-  }
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  finalizeSetup(storyDb, logbook.id, state.kickoffPageId);
+  setKickoffPageId(storyDb, page.id);
+  finalizeSetup(storyDb, logbook.id, page.id);
   setStoryPhase(storyDb, "story");
-  return c.json({ ok: true });
+  setCurrentPageId(storyDb, null);
+  recordHistoryEvent(storyDb, { kind: "page", pageId: page.id, fromValue: attachAt, toValue: page.id });
+
+  const job = createJob(storyDb, { targetTextId: text.id, jobType: "prose", slotCost: 4, priority: 10 });
+  return c.json({ agentPageId: page.id, jobId: job.id });
 });
 
 storiesRoute.get("/:id/tags", (c) => {
@@ -604,9 +583,18 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
     const finish = async (event: JobEvent | { type: "error"; message: string }) => {
       if (settled) return;
       settled = true;
+      clearInterval(heartbeat);
       await sse.writeSSE({ data: JSON.stringify(event) });
       await sse.writeSSE({ data: "[DONE]" });
     };
+
+    // Long generations can sit silent between tokens for a while; an idle connection with no
+    // bytes flowing is what an idle-socket timeout (browser/OS/AV) can kill without either side
+    // seeing an "error" worth reacting to. A raw SSE comment line (ignored by EventSource's
+    // onmessage) keeps the socket demonstrably alive without changing the event contract.
+    const heartbeat = setInterval(() => {
+      void sse.write(": ping\n\n");
+    }, 15000);
 
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribeJob(jobId, (event) => {

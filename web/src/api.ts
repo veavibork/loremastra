@@ -64,6 +64,18 @@ async function apiFetch(path: string, init: RequestInit = {}, opts?: { backgroun
   }
   if (res.status >= 500) {
     console.error(`apiFetch: ${path} returned ${res.status}`);
+    // Framework-level error pages (e.g. an unhandled exception's default response) aren't
+    // necessarily JSON — surface a clean Error here instead of letting every call site's own
+    // res.json() crash on it with a confusing "unexpected character" parse error.
+    const text = await res.text().catch(() => "");
+    let message = text;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (parsed?.error) message = parsed.error;
+    } catch {
+      // not JSON — use the raw text as-is
+    }
+    throw new Error(message || `request failed (${res.status})`);
   }
   if (res.status === 409) {
     const body = (await res.json().catch(() => ({}))) as Partial<SupersededInfo> & { error?: SupersededReason };
@@ -95,18 +107,14 @@ export interface Story {
 }
 
 export interface LayoutTab {
+  /** Registry key the tab resolves to (e.g. "story:play") — also its stable identity for open-tab persistence. */
   id: string;
   label: string;
-}
-
-export interface LayoutSection {
-  id: string;
-  label: string;
-  tabs: LayoutTab[];
 }
 
 export interface LayoutConfigData {
-  sections: LayoutSection[];
+  /** Flat and ordered — this order is exactly the tab bar's render order, no implied grouping/nesting. */
+  tabs: LayoutTab[];
 }
 
 export interface LayoutConfigResponse {
@@ -327,37 +335,12 @@ export async function postSetupMessage(
   return data;
 }
 
-export async function startKickoff(storyId: string): Promise<{ jobId: string; kickoffPageId: string }> {
-  const res = await apiFetch(`/api/stories/${storyId}/kickoff/start`, { method: "POST" });
+/** One-shot: generates the opening post and moves the story into story phase immediately. */
+export async function kickoff(storyId: string): Promise<{ agentPageId: string; jobId: string }> {
+  const res = await apiFetch(`/api/stories/${storyId}/kickoff`, { method: "POST" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
-}
-
-export async function retryKickoff(
-  storyId: string,
-  guidance?: string
-): Promise<{ jobId: string; kickoffPageId: string }> {
-  const res = await apiFetch(`/api/stories/${storyId}/kickoff/retry`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ guidance }),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  return data;
-}
-
-export async function approveKickoff(storyId: string): Promise<void> {
-  const res = await apiFetch(`/api/stories/${storyId}/kickoff/approve`, { method: "POST" });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-}
-
-export async function backToSetup(storyId: string): Promise<void> {
-  const res = await apiFetch(`/api/stories/${storyId}/kickoff/back`, { method: "POST" });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
 }
 
 export async function listStories(): Promise<Story[]> {
@@ -443,6 +426,8 @@ export interface Position {
   currentPageId: string | null;
   headPageId: string | null;
   atHead: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export async function fetchPosition(storyId: string): Promise<Position> {
@@ -593,25 +578,68 @@ export type JobStreamEvent =
   | { type: "done"; fullText: string }
   | { type: "error"; message: string };
 
+/**
+ * The stream route sends a periodic SSE comment as a heartbeat (see src/routes/stories.ts) so an
+ * idle-socket timeout during a long, mostly-silent generation is unlikely — but if the
+ * connection still drops before the final "done"/"error" message arrives, EventSource's
+ * onerror gives no detail at all. Rather than leave the caller stuck forever (the "pending
+ * reply never locks in" bug), reconcile against the job's own persisted status and either
+ * reconnect (still in flight) or synthesize the terminal event (already resolved).
+ */
 export function streamJob(
   storyId: string,
   jobId: string,
   onEvent: (event: JobStreamEvent) => void
 ): () => void {
-  // EventSource can't set custom headers, so the session id rides as a query param instead —
-  // the guard checks both (see src/middleware/session-guard.ts).
-  const sessionId = getSessionId();
-  const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
-  const source = new EventSource(`${API_BASE}/api/stories/${storyId}/jobs/${jobId}/stream${query}`);
-  source.onmessage = (message) => {
-    if (message.data === "[DONE]") {
-      source.close();
-      return;
+  let closed = false;
+  let source: EventSource;
+
+  async function reconcile() {
+    if (closed) return;
+    try {
+      const res = await apiFetch(`/api/stories/${storyId}/jobs/${jobId}`);
+      const data = (await res.json()) as { job?: { status: string; error: string | null }; error?: string };
+      if (closed) return;
+      if (!res.ok || !data.job) {
+        onEvent({ type: "error", message: data.error ?? "job not found" });
+        return;
+      }
+      if (data.job.status === "queued" || data.job.status === "running") {
+        connect();
+        return;
+      }
+      if (data.job.status === "done") {
+        onEvent({ type: "done", fullText: "" });
+      } else {
+        onEvent({ type: "error", message: data.job.error ?? "job failed" });
+      }
+    } catch (err) {
+      if (!closed) onEvent({ type: "error", message: err instanceof Error ? err.message : String(err) });
     }
-    onEvent(JSON.parse(message.data) as JobStreamEvent);
-  };
-  source.onerror = () => {
+  }
+
+  function connect() {
+    // EventSource can't set custom headers, so the session id rides as a query param instead —
+    // the guard checks both (see src/middleware/session-guard.ts).
+    const sessionId = getSessionId();
+    const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
+    source = new EventSource(`${API_BASE}/api/stories/${storyId}/jobs/${jobId}/stream${query}`);
+    source.onmessage = (message) => {
+      if (message.data === "[DONE]") {
+        source.close();
+        return;
+      }
+      onEvent(JSON.parse(message.data) as JobStreamEvent);
+    };
+    source.onerror = () => {
+      source.close();
+      void reconcile();
+    };
+  }
+
+  connect();
+  return () => {
+    closed = true;
     source.close();
   };
-  return () => source.close();
 }

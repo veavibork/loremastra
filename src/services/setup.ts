@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { callWithTools, withModelFallback, type ChatMessage, type ToolCall, type ToolDefinition } from "../inference/featherless.js";
 import { getAgentProfile } from "./agent-config.js";
+import { publishProgress } from "../queue/job-events.js";
 import {
   createWorldbookEntry,
   listWorldbookEntries,
@@ -229,11 +230,13 @@ export async function runWorldbookExtraction(
   db: Database.Database,
   worldbookBookId: string,
   tagScopeBookId: string,
-  conversation: ChatMessage[]
+  conversation: ChatMessage[],
+  jobId: string
 ): Promise<void> {
   const messages: ChatMessage[] = [{ role: "system", content: EXTRACTION_SYSTEM_PROMPT }, ...conversation];
 
   for (let i = 0; i < MAX_ENTRY_ITERATIONS; i++) {
+    publishProgress(jobId, `Checking worldbook for updates (${i + 1}/${MAX_ENTRY_ITERATIONS})...`);
     let call: ToolCall | null = null;
     let content: string | null = null;
     for (let attempt = 1; attempt <= EXTRACTION_MAX_ATTEMPTS_PER_STEP && !call; attempt++) {
@@ -251,6 +254,9 @@ export async function runWorldbookExtraction(
     }
     if (!call) break;
     if (call.arguments.done === true) break;
+
+    const entryName = typeof call.arguments.name === "string" ? call.arguments.name.trim() : "";
+    publishProgress(jobId, entryName ? `Recording worldbook entry: ${entryName}...` : "Recording worldbook entry...");
 
     executeUpsertWorldbookEntry(db, worldbookBookId, tagScopeBookId, call.arguments);
     messages.push({ role: "assistant", content, toolCalls: [call] });
