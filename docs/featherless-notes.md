@@ -101,14 +101,38 @@ immediately since a different model wouldn't fix those. Status-code-aware *retry
 opposed to model fallback) for 500/503 specifically is still open — right now a 500/503 either
 succeeds on a fallback model or fails the job outright, with no same-model retry-after-wait.
 
-## Concurrency stream — `GET /v1/account/concurrency` (SSE or single-poll)
+## Concurrency stream — `GET /account/concurrency` (SSE or single-poll)
 
-Not yet integrated. Reports real-time `limit`, `used_cost`, `request_count`, and a `requests[]` array
-(id, cost, model, started_at, duration_ms) for the whole account. This is authoritative ground truth
-for what's actually in flight — a real upgrade over our local in-memory slot counter
-(`src/queue/slots.ts`), which can drift from reality (e.g., blind to other processes using the same
-key, or to Featherless's own accounting). Worth switching to before this matters in practice (multiple
-concurrent users). Not urgent while it's a single local dev instance.
+**Path corrected 2026-07-02** — no `/v1` prefix. The original note had it as `/v1/account/concurrency`,
+which 404s; every other endpoint in this file lives under `/v1`, so that prefix was an easy
+transcription slip. Re-confirmed live: reports real-time `limit`, `used_cost`, `request_count`, and a
+`requests[]` array (id, cost, model, started_at, duration_ms) for the whole account. This is
+authoritative ground truth for what's actually in flight — a real upgrade over our local in-memory
+slot counter (`src/queue/slots.ts`), which can drift from reality (e.g., blind to other processes using
+the same key, or to Featherless's own accounting). Worth switching to before this matters in practice
+(multiple concurrent users). Not urgent while it's a single local dev instance.
+
+### Aborting a stream client-side does NOT cancel it server-side
+
+**Tested live 2026-07-02.** Started a streaming completion with a long `max_tokens`, forcibly killed
+the client connection 2 seconds in (`timeout 2 curl ...`), then polled `/account/concurrency` once a
+second afterward. The request stayed listed as in-flight — `duration_ms` climbing continuously — for
+21+ seconds after the client had already disconnected, still consuming its `used_cost` slot the whole
+time. **Featherless keeps generating (and billing the concurrency slot) for the full original
+duration regardless of the client dropping the connection.** This matches what was seen manually in
+KAI: stopping and retrying a generation there produced concurrency warnings consistent with the
+original request still being counted server-side.
+
+Practical implication: any client-side abort (a `fetch` `AbortController`, whether from
+`armTimeout`'s idle timeout or a deliberate cancel) stops *us* from waiting on or displaying unwanted
+output, and frees *our own* local slot counter (`src/queue/slots.ts`) immediately — but does **not**
+free the real Featherless-side concurrency slot, which stays occupied until the original generation
+finishes on its own. This is exactly the drift scenario the section above already warned about,
+except now confirmed to be actively happening on every timeout/abort we already do today, not just a
+theoretical future risk. Doesn't block using abort for UX/local-bookkeeping reasons (it's still
+strictly better than waiting out the full generation before retrying), but reinforces that the
+TODO below (switch to real `/account/concurrency` polling) is closer to "load-bearing" than
+"someday," once multiple concurrent generations are common enough for the drift to cause real 503s.
 
 ## `/v1/tokenize`
 
@@ -121,6 +145,50 @@ the string-based `stop` parameter is usable for reject-on-phrase behavior (Setti
 words/phrases feature, `src/services/stop-list.ts`, uses `stop` only for this reason). Revisit only if
 Featherless ships a real tokenize response — don't re-attempt `stop_token_ids` without new evidence
 this changed.
+
+## `logit_bias`, `bad_words_ids`, and `logprobs` on `/v1/chat/completions` — all silent no-ops
+
+**Tested live 2026-07-02.** These three OpenAI/HF-standard params are accepted in the request body
+(no validation error, even with deliberately malformed types — a string where `logit_bias` expects
+an object, a string where `bad_words_ids` expects an array of arrays) but have **zero effect** on
+generation:
+
+- `logit_bias`: sent `{"0": -100, "1": -100, ..., "49999": -100}` (every token id 0–49,999 banned at
+  the maximum magnitude) at `temperature: 0`. Output was fully coherent English
+  ("The sun shone brightly in the clear blue sky, warming the earth below.") — byte-for-byte
+  identical whether 2,000 or 50,000 low-id tokens were banned. If this were doing anything, banning
+  the 50,000 most common token ids should make normal English impossible to generate.
+- `bad_words_ids`: same test (`[[0],[1],...,[49999]]`), same identical output.
+- `logprobs: true, top_logprobs: 3`: requested, but the response has no `logprobs` field at all —
+  silently dropped, not even an empty stub.
+
+**Conclusion: there is no way to get real per-token generation control (ban/bias a specific token
+without halting the response) through Featherless's exposed API, full stop.** This isn't a "wrong
+token id" problem — the test didn't depend on knowing the right id, since banning the *entire* low
+end of the vocab would break any tokenizer's ability to produce ordinary English if the param were
+honored at all. Combined with `/v1/tokenize` never returning real token ids (see above) and
+`logprobs` not echoing tokens either, there is no path — direct or indirect — to token-level control
+via this API today. The `stop`-based banned-phrase feature (halts generation entirely on match,
+`src/services/stop-list.ts`) remains the only working mechanism; true "suppress this word but keep
+generating" is not achievable against Featherless as it currently behaves. Revisit only with new
+evidence (e.g. Featherless changelog, or a model class observed behaving differently) — don't
+re-attempt without a specific reason to think this has changed.
+
+**If word-level suppression without halting is still wanted**, the only remaining path is running
+inference through something other than Featherless's chat-completions endpoint for the specific
+agent role that needs it (e.g., a local tokenizer to pre/post-process text, or a different provider
+that honors `logit_bias`) — this is a scope decision, not a code fix, since it changes what
+"suppress a filler word" costs to build.
+
+**Decision 2026-07-02:** dropped the user-configurable banned-phrase feature's original motivation
+(word suppression) as unachievable per the above. Kept one narrower use of the same "detect a
+refusal" idea: `src/services/refusal-detection.ts` catalogs the GCG paper's `test_prefixes` refusal
+list and prefix-matches it against Worker/Editor compress and archive summaries (see
+`executeCompressJob`/`executeArchiveJob` in `src/queue/pipeline-runner.ts`) — those feed the
+worldbook/memory silently, so a refusal masquerading as a summary needs to fail the job rather than
+poison stored lore. Deliberately *not* applied to Author prose or the Editor's setup replies, which
+stay untouched and visible to the user via the existing manual Stop/Retry controls — watching a
+refusal play out there is itself useful signal for judging a model's prudishness.
 
 ## `chat_template_kwargs`
 
@@ -144,6 +212,6 @@ like their dataset exports).
 
 - [ ] Read `concurrency_cost` from the models catalog instead of hardcoding `slotCost: 4` / `slotCost: 1` in `createJob` calls.
 - [x] Swap `WORKER_MODEL` away from the Heretic variant to a tool-calling-reputable standard instruct model. — done, `NousResearch/Hermes-3-Llama-3.1-8B`.
-- [ ] Consider replacing `src/queue/slots.ts`'s local counter with the real `/v1/account/concurrency` feed.
+- [ ] Replace `src/queue/slots.ts`'s local counter with the real `/account/concurrency` feed — confirmed 2026-07-02 that aborted requests keep occupying their Featherless-side slot for the full original duration, so local/real slot counts actively drift on every abort today, not just hypothetically.
 - [x] Ranked-choice model fallback on 400/403/404/503 — done 2026-07-01, `withModelFallback` in `src/inference/featherless.ts`, configurable per-agent via Config > Agents.
 - [ ] Same-model retry-after-backoff for 500/503 (distinct from *falling back to a different model*, which is now handled) — still open.

@@ -21,6 +21,7 @@ import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history
 import { EDITOR_SETUP_SYSTEM_PROMPT, runWorldbookExtraction } from "../services/setup.js";
 import { indexTextAgainstAllTags } from "../services/tag-index.js";
 import { getAgentProfile } from "../services/agent-config.js";
+import { matchesRefusalPrefix } from "../services/refusal-detection.js";
 
 const SCAN_INTERVAL_MS = 500;
 const CLAIMABLE_JOB_TYPES: JobType[] = ["prose", "compress", "archive", "setup"];
@@ -373,7 +374,9 @@ async function executeCompressJob(
           return callWithForcedTool(profile, compressMessages, SUMMARY_TOOL);
         });
         const candidate = typeof args.summary === "string" ? args.summary.trim() : "";
-        if (withinWordLimit(candidate, COMPRESS_MAX_WORDS)) {
+        if (matchesRefusalPrefix(candidate)) {
+          lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
+        } else if (withinWordLimit(candidate, COMPRESS_MAX_WORDS)) {
           summary = candidate;
         } else {
           lastError = `invalid summary on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
@@ -435,7 +438,9 @@ async function executeArchiveJob(
           );
         });
         const candidate = typeof args.summary === "string" ? args.summary.trim() : "";
-        if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {
+        if (matchesRefusalPrefix(candidate)) {
+          lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
+        } else if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {
           summary = candidate;
         } else {
           lastError = `invalid summary on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
