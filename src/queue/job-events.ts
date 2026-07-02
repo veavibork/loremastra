@@ -13,6 +13,11 @@ export function publishToken(jobId: string, text: string): void {
   emitter.emit(jobId, { type: "token", text });
 }
 
+/** For non-streaming jobs (e.g. the Editor's tool-calling setup turn) that have no tokens to emit but do have real intermediate steps worth narrating instead of a dead "…". */
+export function publishProgress(jobId: string, label: string): void {
+  emitter.emit(jobId, { type: "progress", label });
+}
+
 export function publishDone(jobId: string, fullText: string): void {
   emitter.emit(jobId, { type: "done", fullText });
 }
@@ -23,6 +28,7 @@ export function publishError(jobId: string, message: string): void {
 
 export type JobEvent =
   | { type: "token"; text: string }
+  | { type: "progress"; label: string }
   | { type: "done"; fullText: string }
   | { type: "error"; message: string };
 

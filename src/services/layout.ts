@@ -38,6 +38,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
       id: "lore",
       label: "Lore",
       tabs: [
+        { id: "tags", label: "Tags" },
         { id: "worldbook", label: "Worldbook" },
         { id: "memory", label: "Memory" },
       ],

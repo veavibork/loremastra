@@ -51,6 +51,7 @@ export default function KickoffView({
       setGuidance("");
       watchJob(jobId);
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
@@ -63,6 +64,7 @@ export default function KickoffView({
       await approveKickoff(storyId);
       onApproved();
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
@@ -75,6 +77,7 @@ export default function KickoffView({
       await backToSetup(storyId);
       onBack();
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }

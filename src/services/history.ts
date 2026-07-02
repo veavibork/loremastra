@@ -69,7 +69,7 @@ function tagNamesForEntry(db: Database.Database, worldbookBookId: string, pageId
  * convention — an open question pending real play-testing, see
  * docs/stub-revisions.md.
  */
-const AUTHOR_SYSTEM_PROMPT = `You are the Game Master for the player's solo roleplay session. Three jobs at once:
+export const AUTHOR_SYSTEM_PROMPT = `You are the Game Master for the player's solo roleplay session. Three jobs at once:
 narrating what the player perceives, voicing every NPC with distinct wants and reactions,
 and tracking what's happening in the world beyond what's directly seen — how it shifts in
 response to what the player does.
@@ -150,10 +150,18 @@ have lives, not quest-dispensers.`;
  * only way that surface area reaches the prompt). Token counting is a
  * chars/4 estimate, not real tokenization.
  */
+/**
+ * `overrideTagIds`, when passed (even as an empty array), replaces the real trigger-post
+ * tag matches entirely — this is what lets the Memory panel simulate "what if these tags
+ * were active" independent of actual game state, starting from a true zero-match baseline
+ * rather than whatever the last real post happened to match. Real generation calls never
+ * pass this, so they're unaffected.
+ */
 export function assembleAuthorPrompt(
   db: Database.Database,
   logbookId: string,
-  fromPageId: string | null
+  fromPageId: string | null,
+  overrideTagIds?: string[]
 ): ChatMessage[] {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const cutoffIdx = fromPageId ? pages.findIndex((p) => p.id === fromPageId) : pages.length - 1;
@@ -163,9 +171,11 @@ export function assembleAuthorPrompt(
   const authorProfile = getAgentProfile("author");
   let remaining = authorProfile.contextLimit - authorProfile.responseLimit;
 
-  // "Tagged" = matches a tag found in the post that's triggering this generation.
+  // "Tagged" = matches a tag found in the post that's triggering this generation —
+  // unless overridden (see doc comment above).
   const triggerText = historyPages[historyPages.length - 1].selectedTextId;
-  const triggerTagIds = triggerText ? listTagIdsForText(db, triggerText) : [];
+  const triggerTagIds =
+    overrideTagIds !== undefined ? overrideTagIds : triggerText ? listTagIdsForText(db, triggerText) : [];
 
   // Step 3-4: worldbook injection. No worldbook book yet (older test stories, or a
   // story mid-setup) just means these steps contribute nothing — not an error.
@@ -315,7 +325,7 @@ export function assembleAuthorPrompt(
   ];
 }
 
-const KICKOFF_INSTRUCTION =
+export const KICKOFF_INSTRUCTION =
   "Generate the opening post for this story based on the worldbook above. Write in the register and " +
   "voice described. End at a natural moment that invites the player to act.";
 

@@ -71,3 +71,7 @@ export function renameStory(db: Database.Database, id: string, name: string): St
 export function setStoryHidden(db: Database.Database, id: string, hidden: boolean): void {
   db.prepare(`UPDATE stories SET hidden = ?, updated_at = ? WHERE id = ?`).run(hidden ? 1 : 0, nowIso(), id);
 }
+
+export function deleteStory(db: Database.Database, id: string): void {
+  db.prepare(`DELETE FROM stories WHERE id = ?`).run(id);
+}

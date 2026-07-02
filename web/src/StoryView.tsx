@@ -14,6 +14,7 @@ import {
   type LogEntry,
   type Position,
 } from "./api";
+import EntryContent from "./EntryContent";
 import "./StoryView.css";
 
 export default function StoryView({ storyId }: { storyId: string }) {
@@ -73,6 +74,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
       await refresh();
       watchJob(jobId, agentPageId);
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
@@ -87,6 +89,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
       await refresh();
       watchJob(jobId, agentPageId);
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
@@ -100,6 +103,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
       const { jobId } = await retryPost(storyId, pageId, guidance);
       watchJob(jobId, pageId);
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
@@ -111,6 +115,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
       setEditingPageId(null);
       await refresh();
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -119,6 +124,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
     try {
       setPosition(await undoPosition(storyId));
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -127,6 +133,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
     try {
       setPosition(await redoPosition(storyId));
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -135,6 +142,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
     try {
       setPosition(await jumpToPosition(storyId, pageId));
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -145,11 +153,12 @@ export default function StoryView({ storyId }: { storyId: string }) {
       setError(null);
       alert(`Forked as "${forked.name}". Switch stories to play it (Saves UI isn't built yet).`);
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  const visible = entries.filter((e) => !e.hidden);
+  const visible = entries.filter((e) => !e.hidden && e.pageId !== pendingReply?.pageId);
   const currentIdx = position?.currentPageId ? visible.findIndex((e) => e.pageId === position.currentPageId) : -1;
 
   return (
@@ -184,7 +193,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
                 </div>
               ) : (
                 <>
-                  <p>{entry.content ?? "…"}</p>
+                  <EntryContent content={entry.content ?? "…"} />
                   <div className="post-controls">
                     <button
                       type="button"
@@ -246,7 +255,7 @@ export default function StoryView({ storyId }: { storyId: string }) {
         {pendingReply && (
           <div className="entry entry-agent entry-pending">
             <span className="entry-role">agent</span>
-            <p>{pendingReply.text || "…"}</p>
+            {pendingReply.text ? <EntryContent content={pendingReply.text} /> : <p>…</p>}
           </div>
         )}
         <div ref={logEndRef} />

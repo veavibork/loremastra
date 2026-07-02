@@ -1,40 +1,86 @@
 import { Hono } from "hono";
 import { getGlobalDb } from "../db/global-db.js";
 import { getOrCreateDefaultUser } from "../db/user-store.js";
-import { setAgentConfigOverride, type AgentRole } from "../db/agent-config-store.js";
+import {
+  listModelConfigs,
+  createModelConfig,
+  updateModelConfig,
+  deleteModelConfig,
+  reorderModelConfigs,
+  type ModelConfigInput,
+} from "../db/model-config-store.js";
 import { getAgentProfile } from "../services/agent-config.js";
-import type { AgentProfile } from "../config.js";
 
 export const agentsRoute = new Hono();
 
-const ROLES: AgentRole[] = ["author", "worker", "editor"];
+const DEFAULT_NEW_MODEL: ModelConfigInput = {
+  model: "",
+  temperature: 1.0,
+  responseLimit: 4096,
+  contextLimit: 32000,
+  useAuthor: false,
+  useEditor: false,
+  useWorker: false,
+  active: true,
+};
 
-agentsRoute.get("/", (c) => {
-  const profiles: Record<AgentRole, AgentProfile> = {
-    author: getAgentProfile("author"),
-    worker: getAgentProfile("worker"),
-    editor: getAgentProfile("editor"),
-  };
-  return c.json({ profiles });
-});
+function toPatch(body: Record<string, unknown>): Partial<ModelConfigInput> {
+  const patch: Partial<ModelConfigInput> = {};
+  if (typeof body.model === "string") patch.model = body.model.trim();
+  if (typeof body.temperature === "number") patch.temperature = body.temperature;
+  if (typeof body.responseLimit === "number") patch.responseLimit = body.responseLimit;
+  if (typeof body.contextLimit === "number") patch.contextLimit = body.contextLimit;
+  if (typeof body.presencePenalty === "number" || body.presencePenalty === null) patch.presencePenalty = body.presencePenalty;
+  if (typeof body.frequencyPenalty === "number" || body.frequencyPenalty === null) patch.frequencyPenalty = body.frequencyPenalty;
+  if (typeof body.repetitionPenalty === "number" || body.repetitionPenalty === null) patch.repetitionPenalty = body.repetitionPenalty;
+  if (typeof body.topP === "number" || body.topP === null) patch.topP = body.topP;
+  if (typeof body.topK === "number" || body.topK === null) patch.topK = body.topK;
+  if (typeof body.minP === "number" || body.minP === null) patch.minP = body.minP;
+  if (typeof body.useAuthor === "boolean") patch.useAuthor = body.useAuthor;
+  if (typeof body.useEditor === "boolean") patch.useEditor = body.useEditor;
+  if (typeof body.useWorker === "boolean") patch.useWorker = body.useWorker;
+  if (typeof body.active === "boolean") patch.active = body.active;
+  return patch;
+}
 
-agentsRoute.patch("/:role", async (c) => {
-  const role = c.req.param("role") as AgentRole;
-  if (!ROLES.includes(role)) return c.json({ error: `invalid role "${role}"` }, 400);
-
-  const body = (await c.req.json().catch(() => ({}))) as Partial<AgentProfile>;
-  const current = getAgentProfile(role);
-  const next: AgentProfile = {
-    model: body.model?.trim() || current.model,
-    temperature: typeof body.temperature === "number" ? body.temperature : current.temperature,
-    responseLimit: typeof body.responseLimit === "number" ? body.responseLimit : current.responseLimit,
-    contextLimit: typeof body.contextLimit === "number" ? body.contextLimit : current.contextLimit,
-    fallbackModels: Array.isArray(body.fallbackModels) ? body.fallbackModels : current.fallbackModels,
-  };
-
+// Ensures Config > Agents always reflects the current live state (including the one-time
+// migration from the old per-role table) before any read/write below touches the list.
+function ensureSeeded(): { db: ReturnType<typeof getGlobalDb>; userId: string } {
   const db = getGlobalDb();
   const user = getOrCreateDefaultUser(db);
-  setAgentConfigOverride(db, role, user.id, next);
+  getAgentProfile("author"); // triggers ensureModelConfigsSeeded as a side effect
+  return { db, userId: user.id };
+}
 
-  return c.json({ profile: next });
+agentsRoute.get("/", (c) => {
+  const { db, userId } = ensureSeeded();
+  return c.json({ configs: listModelConfigs(db, userId) });
+});
+
+agentsRoute.post("/", (c) => {
+  const { db, userId } = ensureSeeded();
+  const created = createModelConfig(db, userId, DEFAULT_NEW_MODEL);
+  return c.json({ config: created });
+});
+
+agentsRoute.patch("/:id", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { db } = ensureSeeded();
+  const updated = updateModelConfig(db, c.req.param("id"), toPatch(body));
+  if (!updated) return c.json({ error: "model config not found" }, 404);
+  return c.json({ config: updated });
+});
+
+agentsRoute.delete("/:id", (c) => {
+  const { db } = ensureSeeded();
+  deleteModelConfig(db, c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+agentsRoute.post("/reorder", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { orderedIds?: string[] };
+  if (!Array.isArray(body.orderedIds)) return c.json({ error: "orderedIds is required" }, 400);
+  const { db, userId } = ensureSeeded();
+  reorderModelConfigs(db, userId, body.orderedIds);
+  return c.json({ configs: listModelConfigs(db, userId) });
 });

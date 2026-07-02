@@ -3,13 +3,22 @@ import { claimNextJob, finishJob, type JobType } from "../db/job-store.js";
 import { fillTextExtract, fillTextGeneration, getText } from "../db/text-store.js";
 import { getPage, listChronologicalPages } from "../db/page-store.js";
 import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
+import { listWorldbookEntries } from "../db/worldbook-store.js";
 import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { tryAcquireSlots, releaseSlots } from "./slots.js";
-import { publishToken, publishDone, publishError } from "./job-events.js";
-import { streamInference, callWithForcedTool, withModelFallback, type ChatMessage, type ToolDefinition } from "../inference/featherless.js";
+import { publishToken, publishProgress, publishDone, publishError } from "./job-events.js";
+import {
+  streamInference,
+  callWithForcedTool,
+  withModelFallback,
+  FeatherlessError,
+  type ChatMessage,
+  type ToolDefinition,
+} from "../inference/featherless.js";
+import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
-import { runEditorSetupTurn } from "../services/setup.js";
+import { EDITOR_SETUP_SYSTEM_PROMPT, runWorldbookExtraction } from "../services/setup.js";
 import { indexTextAgainstAllTags } from "../services/tag-index.js";
 import { getAgentProfile } from "../services/agent-config.js";
 
@@ -31,19 +40,22 @@ const COMPRESS_MAX_WORDS = 60; // generous ceiling — a real ~20-token summary 
 const ARCHIVE_MAX_ATTEMPTS = 3;
 const ARCHIVE_MAX_WORDS = 150; // generous ceiling for a ~60-token narrative summary
 
-const COMPRESS_SYSTEM_PROMPT =
+export const COMPRESS_SYSTEM_PROMPT =
   "You compress a single roleplay post into a short, dense, factual summary of about 20 tokens. " +
   "State only what happened. If you're given what happened just before this post, frame this post as " +
-  "what changed or followed from that (but/therefore) rather than an isolated fact. No commentary, no " +
-  "scene-setting, no dialogue quoting.";
+  "what changed or followed from that (but/therefore) rather than an isolated fact. Replace pronouns " +
+  "(he/him/she/her/they/them) with the actual character name they refer to — use the character roster " +
+  "and prior context you're given to figure out who's meant. The summary has to name who did what on " +
+  "its own; other systems match character names against it later and can't resolve a pronoun back to a " +
+  "post they never see. No commentary, no scene-setting, no dialogue quoting.";
 
-const ARCHIVE_SYSTEM_PROMPT =
+export const ARCHIVE_SYSTEM_PROMPT =
   "You write a short narrative summary (about 60 tokens) of a block of roleplay posts, given as a " +
   "sequence of factual compressed lines. Weave them into a causal throughline — this happened, BUT this " +
   "complicated it, THEREFORE this followed — not a flat list of events. Preserve who did what to whom; " +
   "don't blur which character acted and which reacted. No commentary, no meta-text.";
 
-const SUMMARY_TOOL: ToolDefinition = {
+export const SUMMARY_TOOL: ToolDefinition = {
   name: "submit_summary",
   description: "Submit the compressed factual summary of the post.",
   parameters: {
@@ -51,14 +63,16 @@ const SUMMARY_TOOL: ToolDefinition = {
     properties: {
       summary: {
         type: "string",
-        description: "A short, dense, factual summary of about 20 tokens. State only what happened.",
+        description:
+          "A short, dense, factual summary of about 20 tokens. State only what happened. Use character " +
+          "names, not pronouns.",
       },
     },
     required: ["summary"],
   },
 };
 
-const ARCHIVE_TOOL: ToolDefinition = {
+export const ARCHIVE_TOOL: ToolDefinition = {
   name: "submit_archive_summary",
   description: "Submit the narrative summary of this block of posts.",
   parameters: {
@@ -77,12 +91,57 @@ function withinWordLimit(text: string, maxWords: number): boolean {
   return !!text && text.split(/\s+/).length <= maxWords;
 }
 
+/**
+ * Streams a reply with model fallback, treating an empty-but-error-free completion as a
+ * retriable failure rather than a valid (if useless) result. Providers sometimes signal
+ * overload by closing the stream immediately with zero content chunks instead of a clean
+ * HTTP error (observed live with Kimi-K2-Instruct returning a 503 on a plain non-streaming
+ * call, moments after a streaming call to the same model produced zero tokens with no
+ * error) — without this, that failure mode would silently bypass withModelFallback
+ * entirely, since the emptiness was only ever checked after it had already returned.
+ */
+async function streamWithFallback(
+  profile: AgentProfile,
+  messages: ChatMessage[],
+  jobId: string
+): Promise<{ text: string; model: string }> {
+  let reply = "";
+  let usedModel = profile.model;
+  await withModelFallback(profile, (candidate) => {
+    reply = "";
+    usedModel = candidate.model;
+    return new Promise<void>((resolve, reject) => {
+      void streamInference(candidate, messages, {
+        onToken: (text) => {
+          reply += text;
+          publishToken(jobId, text);
+        },
+        onDone: () => {
+          if (reply.trim()) resolve();
+          else reject(new FeatherlessError(503, `${candidate.model} returned an empty completion`));
+        },
+        onError: reject,
+      });
+    });
+  });
+  return { text: reply, model: usedModel };
+}
+
+// Deliberately not gated by src/middleware/session-guard.ts — this loop isn't an HTTP
+// request, and per the single-active-session design a job a since-superseded session
+// started still runs to completion; claiming only changes who's allowed to submit *new*
+// interactions, not what happens to work already in flight.
 let timer: NodeJS.Timeout | null = null;
 const trackedDbs = new Map<string, Database.Database>();
 
 /** The pipeline runner only scans stories the API has actually touched this process lifetime — fine for a handful of users, one active story each. */
 export function trackStoryDb(storyId: string, db: Database.Database): void {
   trackedDbs.set(storyId, db);
+}
+
+/** Must be called whenever a story's underlying DB handle is closed (e.g. story deletion) — otherwise the next scan tick hits a closed better-sqlite3 connection and throws inside a bare setInterval callback, which is fatal to the whole process (see stub-revisions.md, 2026-07-02). */
+export function untrackStoryDb(storyId: string): void {
+  trackedDbs.delete(storyId);
 }
 
 export function startPipelineRunner(): void {
@@ -96,13 +155,27 @@ export function stopPipelineRunner(): void {
 }
 
 function scanOnce(): void {
-  for (const db of trackedDbs.values()) {
+  for (const [storyId, db] of trackedDbs) {
+    // Belt-and-suspenders on top of untrackStoryDb: a closed connection (or any other
+    // per-story fault) must never take down the shared setInterval loop that every other
+    // tracked story depends on. An uncaught throw here is fatal to the whole process — this
+    // is exactly what happened before untrackStoryDb existed (see stub-revisions.md).
+    try {
+      scanStory(db);
+    } catch (err) {
+      if (!db.open) trackedDbs.delete(storyId);
+      console.error(`pipeline scan failed for story ${storyId}:`, err instanceof Error ? err.message : err);
+    }
+  }
+}
+
+function scanStory(db: Database.Database): void {
     const job = claimNextJob(db, CLAIMABLE_JOB_TYPES);
-    if (!job) continue;
+    if (!job) return;
     if (!tryAcquireSlots(job.slotCost)) {
       // Claimed but no slot free right now — put it back rather than block the scan loop.
       db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
-      continue;
+      return;
     }
     if (job.jobType === "compress" && job.targetTextId) {
       void executeCompressJob(db, job.id, job.targetTextId, job.slotCost);
@@ -116,7 +189,6 @@ function scanOnce(): void {
       finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
       releaseSlots(job.slotCost);
     }
-  }
 }
 
 async function executeProseJob(
@@ -151,32 +223,15 @@ async function executeProseJob(
       history = [...history, { role: "system", content: `Guidance for this generation: ${guidance}` }];
     }
 
-    let fullText = "";
-
-    await withModelFallback(getAgentProfile("author"), (profile) => {
-      fullText = ""; // reset in case a prior candidate model failed before streaming any tokens
-      return new Promise<void>((resolve, reject) => {
-        void streamInference(profile, history, {
-          onToken: (text) => {
-            fullText += text;
-            publishToken(jobId, text);
-          },
-          onDone: resolve,
-          onError: reject,
-        });
-      });
-    });
-
-    if (!fullText.trim()) {
-      throw new Error("model returned an empty reply");
-    }
+    const { text: fullText, model } = await streamWithFallback(getAgentProfile("author"), history, jobId);
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —
     // not a real tokenizer, good enough for the Logs telemetry view's ballpark numbers.
-    const metrics = { elapsedMs: Date.now() - startedAt, tokenEstimate: Math.ceil(fullText.length / 4) };
+    const tokenEstimate = Math.ceil(fullText.length / 4);
+    const metrics = { elapsedMs: Date.now() - startedAt, tokenEstimate };
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify(metrics) });
     indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
-    finishJob(db, jobId, "done");
+    finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
     publishDone(jobId, fullText);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -204,10 +259,14 @@ function buildSetupConversation(db: Database.Database, logbookId: string, uptoPa
 }
 
 /**
- * The Editor's setup turn: unlike prose/compress/archive, this isn't a single
- * inference call — runEditorSetupTurn loops through tool calls (creating or
- * updating worldbook entries and tags) until the model responds with plain
- * text, and that text is what gets stored as this turn's reply.
+ * The Editor's setup turn — a volley, not one call: the Editor (DeepSeek, streamed like
+ * prose) generates the conversational reply the user actually reads, then the Worker's
+ * model reads the exchange and records any worldbook facts via one forced tool call.
+ * Splitting it this way keeps DeepSeek's established creative/content-boundary voice for
+ * the visible reply while routing structured extraction to the model already proven
+ * reliable at forced tool-calling (compress/archive) — see docs/stub-revisions.md. If
+ * extraction fails, the conversational reply still stands; a background-extraction
+ * hiccup shouldn't erase what the user already sees.
  */
 async function executeSetupJob(
   db: Database.Database,
@@ -224,11 +283,30 @@ async function executeSetupJob(
     const worldbook = getBookByType(db, "worldbook");
     if (!worldbook) throw new Error("worldbook not found");
 
-    const conversation = buildSetupConversation(db, targetPage.bookId, targetPage.prevPageId);
-    const reply = await runEditorSetupTurn(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), conversation);
+    let conversation = buildSetupConversation(db, targetPage.bookId, targetPage.prevPageId);
+    const guidance = jobGuidance.get(jobId);
+    if (guidance) {
+      jobGuidance.delete(jobId);
+      conversation = [...conversation, { role: "system", content: `Guidance for this reply: ${guidance}` }];
+    }
 
-    fillTextGeneration(db, targetTextId, { genPackage: reply });
-    finishJob(db, jobId, "done");
+    const editorMessages: ChatMessage[] = [{ role: "system", content: EDITOR_SETUP_SYSTEM_PROMPT }, ...conversation];
+    const { text: reply, model } = await streamWithFallback(getAgentProfile("editor"), editorMessages, jobId);
+
+    const tokenEstimate = Math.ceil(reply.length / 4);
+    fillTextGeneration(db, targetTextId, { genPackage: reply, genMetrics: JSON.stringify({ tokenEstimate }) });
+
+    publishProgress(jobId, "Updating worldbook...");
+    try {
+      await runWorldbookExtraction(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), [
+        ...conversation,
+        { role: "assistant", content: reply },
+      ]);
+    } catch (err) {
+      console.error(`[setup ${jobId}] worldbook extraction failed, reply still stands:`, err);
+    }
+
+    finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
     publishDone(jobId, reply);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -270,18 +348,30 @@ async function executeCompressJob(
     const priorText = priorPage?.selectedTextId ? getText(db, priorPage.selectedTextId) : null;
     const priorSummary = priorText?.genExtract ?? null;
 
+    const worldbook = getBookByType(db, "worldbook");
+    const characterNames = worldbook
+      ? listWorldbookEntries(db, worldbook.id, { includeHidden: false })
+          .filter((entry) => entry.entryType === "character")
+          .map((entry) => entry.name)
+      : [];
+
     const compressMessages: ChatMessage[] = [{ role: "system", content: COMPRESS_SYSTEM_PROMPT }];
+    if (characterNames.length) {
+      compressMessages.push({ role: "system", content: `Character roster for this story: ${characterNames.join(", ")}.` });
+    }
     if (priorSummary) compressMessages.push({ role: "system", content: `What just happened, for context: ${priorSummary}` });
     compressMessages.push({ role: "user", content: targetText.genPackage });
 
     let summary: string | null = null;
+    let usedModel = "";
     let lastError = "unknown error";
 
     for (let attempt = 1; attempt <= COMPRESS_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const args = await withModelFallback(getAgentProfile("worker"), (profile) =>
-          callWithForcedTool(profile, compressMessages, SUMMARY_TOOL)
-        );
+        const args = await withModelFallback(getAgentProfile("worker"), (profile) => {
+          usedModel = profile.model;
+          return callWithForcedTool(profile, compressMessages, SUMMARY_TOOL);
+        });
         const candidate = typeof args.summary === "string" ? args.summary.trim() : "";
         if (withinWordLimit(candidate, COMPRESS_MAX_WORDS)) {
           summary = candidate;
@@ -296,7 +386,7 @@ async function executeCompressJob(
     if (!summary) throw new Error(`compression failed after ${COMPRESS_MAX_ATTEMPTS} attempts — ${lastError}`);
 
     fillTextExtract(db, targetTextId, summary);
-    finishJob(db, jobId, "done");
+    finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate: Math.ceil(summary.length / 4) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
@@ -328,20 +418,22 @@ async function executeArchiveJob(
     if (!compressedLines.length) throw new Error("no compressed member content to summarize");
 
     let summary: string | null = null;
+    let usedModel = "";
     let lastError = "unknown error";
 
     for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const args = await withModelFallback(getAgentProfile("editor"), (profile) =>
-          callWithForcedTool(
+        const args = await withModelFallback(getAgentProfile("editor"), (profile) => {
+          usedModel = profile.model;
+          return callWithForcedTool(
             profile,
             [
               { role: "system", content: ARCHIVE_SYSTEM_PROMPT },
               { role: "user", content: compressedLines.join("\n") },
             ],
             ARCHIVE_TOOL
-          )
-        );
+          );
+        });
         const candidate = typeof args.summary === "string" ? args.summary.trim() : "";
         if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {
           summary = candidate;
@@ -356,7 +448,7 @@ async function executeArchiveJob(
     if (!summary) throw new Error(`archiving failed after ${ARCHIVE_MAX_ATTEMPTS} attempts — ${lastError}`);
 
     fillArchiveSummary(db, targetArchiveId, summary);
-    finishJob(db, jobId, "done");
+    finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate: Math.ceil(summary.length / 4) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);

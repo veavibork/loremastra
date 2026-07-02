@@ -1,0 +1,37 @@
+.memory-view {
+  padding: 0.5rem 0;
+  text-align: left;
+  font-size: 15px;
+}
+
+.memory-view h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.memory-note {
+  font-size: 0.75rem;
+  opacity: 0.65;
+  margin-bottom: 0.75rem;
+}
+
+.memory-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.memory-tag-bubble {
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  border: 1px solid #444;
+  background: transparent;
+  cursor: pointer;
+}
+
+.memory-tag-bubble.active {
+  background: #2a4a6b;
+  border-color: #4a7ab5;
+}

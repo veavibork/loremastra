@@ -1,19 +1,16 @@
 import type { ComponentType } from "react";
-import LoreView from "./LoreView";
+import TagsView from "./TagsView";
+import WorldbookView from "./WorldbookView";
 import StoryPlayPanel from "./StoryPlayPanel";
 import SavesView from "./SavesView";
 import LogsView from "./LogsView";
 import DebugView from "./DebugView";
 import AgentsView from "./AgentsView";
 import PromptInspectorView from "./PromptInspectorView";
+import MemoryView from "./MemoryView";
 import PromptsView from "./PromptsView";
 import SettingsView from "./SettingsView";
 import type { PanelProps } from "./panel-types";
-
-function LoreWorldbookPanel({ story }: PanelProps) {
-  if (!story) return null;
-  return <LoreView storyId={story.id} />;
-}
 
 /**
  * Which component renders for a given (section, tab) pair is data (the layout
@@ -25,8 +22,9 @@ const REGISTRY: Record<string, ComponentType<PanelProps>> = {
   "story:play": StoryPlayPanel,
   "story:saves": SavesView,
   "story:logs": LogsView,
-  "lore:worldbook": LoreWorldbookPanel,
-  "lore:memory": PromptInspectorView,
+  "lore:tags": TagsView,
+  "lore:worldbook": WorldbookView,
+  "lore:memory": MemoryView,
   "config:agents": AgentsView,
   "config:preview": PromptInspectorView,
   "config:prompts": PromptsView,

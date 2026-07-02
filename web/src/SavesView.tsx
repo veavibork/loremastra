@@ -1,13 +1,19 @@
 import { useEffect, useState } from "react";
-import { createStory, fetchPhase, listStories, renameStory, type Story } from "./api";
+import { createStory, deleteStory, fetchPhase, listStories, renameStory, type Story } from "./api";
 import type { PanelProps } from "./panel-types";
 import "./SavesView.css";
+
+function formatLastPlayed(iso: string | null): string {
+  if (!iso) return "never played";
+  return new Date(iso).toLocaleString();
+}
 
 export default function SavesView({ story, onStoryChange, onPhaseChange }: PanelProps) {
   const [stories, setStories] = useState<Story[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [newName, setNewName] = useState("");
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function reload() {
@@ -30,6 +36,7 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
       setRenamingId(null);
       await reload();
     } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -42,6 +49,23 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
       await reload();
       await handleSwitch(created);
     } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await deleteStory(id);
+      setConfirmingDeleteId(null);
+      if (story?.id === id) {
+        const remaining = await listStories();
+        const next = remaining[0] ?? (await createStory("Default Story"));
+        await handleSwitch(next);
+      }
+      await reload();
+    } catch (err) {
+      console.error(err);
       setError(err instanceof Error ? err.message : String(err));
     }
   }
@@ -81,29 +105,50 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
                 </button>
               </>
             ) : (
-              <>
+              <div className="saves-row-top">
                 <div className="saves-row-main">
                   <strong>{s.name}</strong>
                   {s.id === story?.id && <span className="current-badge">current</span>}
                   {parentName(s.parentStoryId) && (
                     <span className="fork-note">forked from {parentName(s.parentStoryId)}</span>
                   )}
+                  {s.stats && (
+                    <span className="saves-row-stats">
+                      {s.stats.chatRows} chat rows &middot; {s.stats.worldbookRows} worldbook entries &middot;{" "}
+                      {formatLastPlayed(s.stats.lastPlayedAt)}
+                    </span>
+                  )}
                 </div>
-                <div className="saves-row-actions">
-                  <button type="button" onClick={() => handleSwitch(s)} disabled={s.id === story?.id}>
-                    Switch
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenamingId(s.id);
-                      setRenameDraft(s.name);
-                    }}
-                  >
-                    Rename
-                  </button>
-                </div>
-              </>
+                {confirmingDeleteId === s.id ? (
+                  <div className="saves-row-actions">
+                    <span className="delete-confirm-label">Delete "{s.name}" permanently?</span>
+                    <button type="button" className="danger" onClick={() => handleDelete(s.id)}>
+                      Yes, delete
+                    </button>
+                    <button type="button" onClick={() => setConfirmingDeleteId(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="saves-row-actions">
+                    <button type="button" onClick={() => handleSwitch(s)} disabled={s.id === story?.id}>
+                      Switch
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenamingId(s.id);
+                        setRenameDraft(s.name);
+                      }}
+                    >
+                      Rename
+                    </button>
+                    <button type="button" className="danger" onClick={() => setConfirmingDeleteId(s.id)}>
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </li>
         ))}

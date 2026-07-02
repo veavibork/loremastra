@@ -1,0 +1,61 @@
+import type Database from "better-sqlite3";
+import { newId } from "../uuid.js";
+import { nowIso } from "./time.js";
+
+export interface SessionRow {
+  id: string;
+  userId: string;
+  createdAt: string;
+  lastSeenAt: string;
+  revokedAt: string | null;
+}
+
+interface RawSessionRow {
+  id: string;
+  user_id: string;
+  created_at: string;
+  last_seen_at: string;
+  revoked_at: string | null;
+}
+
+function mapRow(row: RawSessionRow): SessionRow {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
+    revokedAt: row.revoked_at,
+  };
+}
+
+/** Atomically evicts whichever session currently holds the claim (if any) and installs a new one — this is "claim." */
+export function createSession(db: Database.Database, userId: string): SessionRow {
+  const id = newId();
+  const now = nowIso();
+  const tx = db.transaction(() => {
+    db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`).run(now, userId);
+    db.prepare(
+      `INSERT INTO sessions (id, user_id, created_at, last_seen_at, revoked_at) VALUES (?, ?, ?, ?, NULL)`
+    ).run(id, userId, now, now);
+  });
+  tx();
+  return getSession(db, id)!;
+}
+
+/** The currently-live claim, if any. At most one row should ever match; ORDER BY/LIMIT is defensive, not load-bearing. */
+export function getActiveSession(db: Database.Database, userId: string): SessionRow | null {
+  const row = db
+    .prepare(`SELECT * FROM sessions WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1`)
+    .get(userId) as RawSessionRow | undefined;
+  return row ? mapRow(row) : null;
+}
+
+/** Any session by id, revoked or not — used to show a superseded session's own last-seen time even after eviction. */
+export function getSession(db: Database.Database, id: string): SessionRow | null {
+  const row = db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(id) as RawSessionRow | undefined;
+  return row ? mapRow(row) : null;
+}
+
+export function touchSession(db: Database.Database, id: string): void {
+  db.prepare(`UPDATE sessions SET last_seen_at = ? WHERE id = ?`).run(nowIso(), id);
+}

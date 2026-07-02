@@ -18,6 +18,8 @@ export interface JobRow {
   finishedAt: string | null;
   error: string | null;
   cancelRequested: boolean;
+  model: string | null;
+  tokenEstimate: number | null;
 }
 
 interface RawJobRow {
@@ -33,6 +35,8 @@ interface RawJobRow {
   finished_at: string | null;
   error: string | null;
   cancel_requested: number;
+  model: string | null;
+  token_estimate: number | null;
 }
 
 function mapJobRow(row: RawJobRow): JobRow {
@@ -49,6 +53,8 @@ function mapJobRow(row: RawJobRow): JobRow {
     finishedAt: row.finished_at,
     error: row.error,
     cancelRequested: !!row.cancel_requested,
+    model: row.model,
+    tokenEstimate: row.token_estimate,
   };
 }
 
@@ -139,11 +145,19 @@ export function claimNextJob(db: Database.Database, jobTypes: JobType[]): JobRow
   return claim();
 }
 
-export function finishJob(db: Database.Database, id: string, status: "done" | "failed", error?: string): void {
-  db.prepare(`UPDATE jobs SET status = ?, finished_at = ?, error = ? WHERE id = ?`).run(
+export function finishJob(
+  db: Database.Database,
+  id: string,
+  status: "done" | "failed",
+  error?: string,
+  meta?: { model?: string; tokenEstimate?: number }
+): void {
+  db.prepare(`UPDATE jobs SET status = ?, finished_at = ?, error = ?, model = COALESCE(?, model), token_estimate = COALESCE(?, token_estimate) WHERE id = ?`).run(
     status,
     nowIso(),
     error ?? null,
+    meta?.model ?? null,
+    meta?.tokenEstimate ?? null,
     id
   );
 }

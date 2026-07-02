@@ -1,63 +1,12 @@
-.lore-view {
-  display: flex;
-  flex: 1;
-  gap: 1.5rem;
-  min-height: 0;
-  overflow: hidden;
+.worldbook-view {
+  padding: 0.5rem 0;
+  text-align: left;
+  font-size: 15px;
 }
 
-.tag-cloud {
-  width: 220px;
-  flex-shrink: 0;
-  overflow-y: auto;
-  border-right: 1px solid #333;
-  padding-right: 1rem;
-}
-
-.tag-cloud h2,
-.worldbook-panel h2 {
+.worldbook-view h2 {
   font-size: 1rem;
   margin: 0 0 0.5rem;
-}
-
-.tag-new-form {
-  display: flex;
-  gap: 0.35rem;
-  margin-bottom: 0.75rem;
-}
-
-.tag-new-form input {
-  flex: 1;
-  min-width: 0;
-}
-
-.tag-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.tag-list li {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.tag-name-input {
-  font-size: 0.85rem;
-}
-
-.tag-hidden {
-  opacity: 0.5;
-}
-
-.worldbook-panel {
-  flex: 1;
-  overflow-y: auto;
-  padding-bottom: 1rem;
 }
 
 .worldbook-header {
@@ -75,7 +24,7 @@
 }
 
 .entry-card {
-  border: 1px solid #333;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.5rem 0.75rem;
   margin-bottom: 0.5rem;
@@ -115,7 +64,7 @@
 }
 
 .entry-form {
-  border: 1px solid #444;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.75rem;
   margin-bottom: 1rem;

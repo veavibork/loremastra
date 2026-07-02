@@ -11,6 +11,17 @@ export interface AgentProfile {
   contextLimit: number;
   /** Ranked-choice fallback (loremaster.md's Provider Abstraction section) — tried in order if model is unavailable (see FeatherlessError/withModelFallback in inference/featherless.ts). Empty/absent means no fallback. */
   fallbackModels?: string[];
+  /** Optional sampler params (Featherless completions API) — omitted from the request body entirely when undefined, not sent as null. */
+  presencePenalty?: number;
+  frequencyPenalty?: number;
+  repetitionPenalty?: number;
+  topP?: number;
+  topK?: number;
+  minP?: number;
+  /** The model_configs row backing `model` above, when built from Config > Agents' DB-backed list — lets withModelFallback attribute success/fail/token stats to the right row. Absent for the hardcoded defaults below (only used as a last resort if that table is somehow empty). */
+  configId?: string;
+  /** Parallel to fallbackModels — the model_configs row id for each fallback candidate, same order. */
+  fallbackConfigIds?: string[];
 }
 
 // Defaults, used when Config > Agents has no saved override yet (src/services/agent-config.ts

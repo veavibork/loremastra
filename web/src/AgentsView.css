@@ -1,41 +1,86 @@
 .agents-view {
   padding: 0.5rem 0;
-  max-width: 500px;
+  max-width: 100%;
+  text-align: left;
+  font-size: 15px;
 }
 
-.agent-card {
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.agent-card-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.agent-description {
+.agents-note {
   font-size: 0.75rem;
   opacity: 0.65;
+  margin-bottom: 0.75rem;
+  max-width: 800px;
 }
 
-.agent-card label {
+.agents-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+}
+
+.agents-table {
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.agents-table th,
+.agents-table td {
+  border: 1px solid #333;
+  padding: 0.25rem 0.35rem;
+  text-align: left;
+}
+
+.agents-table th {
+  opacity: 0.7;
+  font-weight: normal;
+}
+
+.row-inactive {
+  opacity: 0.45;
+}
+
+.model-input {
+  width: 220px;
+  font-size: 0.75rem;
+}
+
+.num-input {
+  width: 55px;
+  font-size: 0.75rem;
+}
+
+.num-input.narrow {
+  width: 42px;
+}
+
+.checkbox-cell {
+  text-align: center;
+}
+
+.reorder-cell {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.8rem;
+  gap: 0.1rem;
 }
 
-.agent-numeric-row {
-  display: flex;
-  gap: 0.75rem;
+.reorder-cell button {
+  font-size: 0.6rem;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
 }
 
-.agent-numeric-row label {
-  flex: 1;
+.stats-cell {
+  font-size: 0.7rem;
+  opacity: 0.75;
+  line-height: 1.3;
+}
+
+.agents-table button.danger {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+}
+
+button.danger {
+  color: #d9534f;
+  border-color: #d9534f;
 }

@@ -32,9 +32,22 @@
   color: #ff9b9b;
 }
 
-.job-error {
+.job-model {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono, monospace);
+  font-size: 0.75rem;
+}
+
+.job-response {
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.job-response-error {
+  color: #ff9b9b;
 }

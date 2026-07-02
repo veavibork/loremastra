@@ -5,10 +5,11 @@ a minimal real UI) and **Phase 1 Complete** (everything loremaster.md scopes to 
 Future Phases appendix). Still building one step at a time — this exists so "push on to something else"
 has a target, not so we jump ahead of confirming each step.
 
-**Current status (2026-07-01): Vertical Slice reached. Milestones A-E and G done. Only Milestone F
-(Security) stands between here and Phase 1 Complete** — deliberately paused before it per explicit
-instruction, not because of a blocker. Everything below this line reflects that state; see each
-milestone's own section for what "done" actually covers and what's explicitly still missing within it.
+**Current status (2026-07-02): Vertical Slice reached. Milestones A-E and G done. Milestone F
+(Security) is partially done** — single-active-session eviction is built and verified; real
+password auth and encryption at rest remain deliberately deferred, not blockers. Everything below
+this line reflects that state; see each milestone's own section for what "done" actually covers and
+what's explicitly still missing within it.
 
 ## Done so far (proven, not full-featured)
 
@@ -184,10 +185,25 @@ controls (dark/light, font size, etc.) or preference-profile CRUD yet, only the 
 telemetry only covers prose (story) posts, not compress/archive job metrics. Debug is scoped to whichever
 story is currently active, not a cross-story view.
 
-**F. Security**
-- Real auth: password-derived key (PBKDF2 or similar), replacing the current pre-auth default-user placeholder.
-- Encryption at rest for story content and user metadata.
-- Session tokens with single-active-session eviction (explicit signal on evict, not silent failure).
+**F. Security** — partially done, 2026-07-02.
+- ~~Session tokens with single-active-session eviction (explicit signal on evict, not silent failure).~~
+  — done, but decoupled from the password-login step this bullet originally assumed: a manual "claim"
+  button triggers eviction instead. `src/db/session-store.ts` (built on the previously-100%-dead
+  `sessions` table), `src/middleware/session-guard.ts` (global Hono middleware, 409 on any mismatch —
+  applies to *all* HTTP access, curl/dev scripts included, no bypass), `POST /api/sessions/claim`,
+  frontend `ClaimGate.tsx` gating all of `App.tsx`. This is concurrency/data-integrity arbitration
+  between one trusted user's own devices, **not access control** — the API still takes zero credentials,
+  exactly as before. Verified end-to-end live: unclaimed → 409, claim → 200, second claim evicts the
+  first with both sessions' real last-seen timestamps returned, a job started by a session evicted mid-
+  flight ran to completion and produced a real reply, background polls confirmed *not* to refresh a
+  session's last-seen time (only real interactions do). Known accepted gap: direct in-process DB/script
+  access (ad hoc `.mts` test scripts, the MCP dev-server tools) never touches Hono, so it bypasses this
+  entirely — mitigated by habit (claim a throwaway session after such work if the browser should notice),
+  not code, since closing it fully would mean hooking every mutating DB-store call.
+- Real auth: password-derived key (PBKDF2 or similar), replacing the current pre-auth default-user
+  placeholder. **Still not started** — deliberately deferred, not a blocker.
+- Encryption at rest for story content and user metadata. **Still not started** — deliberately deferred,
+  not a blocker.
 
 **G. Remaining Phase 1 requirements** — ✅ done, 2026-07-01.
 - ~~Config-driven layout system~~ — done, pulled forward ahead of E (see above).
@@ -213,10 +229,40 @@ story is currently active, not a cross-story view.
   `streamInference`/`callWithForcedTool`/`callWithTools`/`withModelFallback` with a provider-agnostic
   `AgentProfile` + `ChatMessage[]`.
 
-**→ Phase 1 Complete here**, per loremaster.md's explicit scope, **modulo Milestone F (Security)**,
-deliberately deferred to last per explicit instruction. Future Phases appendix items (additional
-providers, WYSIWYG layout editing, worldbook deltas, pronoun-per-tag declarations, outside MCP client
-support) stay out of scope unless explicitly requested.
+**Additional, post-Phase-1: Toast notifications + client error logging** — ✅ done, 2026-07-02.
+Not part of loremaster.md's original scope; added because frontend errors were otherwise invisible
+unless DevTools happened to be open. `web/src/toast.ts` (module-level pub-sub store, same idiom as the
+existing `onSuperseded` channel) + `web/src/ToastHost.tsx` (fixed bottom-right stack, mounted once in
+`main.tsx` alongside `App`, not gated by it) + `web/src/error-capture.ts` (monkey-patches
+`console.error`, listens for `window.onerror`/`unhandledrejection`). Only `critical` toasts are sticky
+until dismissed; `info`/`warning`/`error` auto-fade on a severity-scaled timer. Every
+`warning`/`error`/`critical` toast also fire-and-forget POSTs to a new `POST /api/client-errors`
+(`src/routes/client-errors.ts` + `src/db/client-error-store.ts`, backed by a new `client_errors` table
+in the global schema) for later analysis — deliberately a plain `fetch`, not the shared `apiFetch`, so a
+failed log-POST can never cascade into another toast/log attempt.
+
+Found and closed a real gap during design: none of the existing per-view `catch` blocks actually called
+`console.error` (they only set local state for the inline `error-banner`), so the monkey-patch alone
+would have silently missed all of today's existing error handling. Added one `console.error(err)` line
+to each of the ~29 catch sites across 9 view files. `apiFetch` (`web/src/api.ts`) now also wraps its
+`fetch()` call and treats a network failure or `5xx` as a `console.error`, which `error-capture.ts`
+recognizes as a network-failure signature and escalates to a sticky critical toast — directly matching
+the original "site stopped responding, CORS error" complaint that prompted this feature.
+
+Verified live: `console.error("test")` produces a fading error toast; a *real* uncaught exception
+(`setTimeout(() => { throw new Error(...) })`, not a directly-typed `throw` — Chrome's DevTools console
+REPL swallows synchronous throws before they reach `window.onerror`, a browser quirk not a bug here)
+produces a sticky critical toast; the backend-down path was confirmed via `apiFetch`'s network-failure
+branch; `POST`/`GET /api/client-errors` round-tripped a real row via curl, and the session guard rejects
+it with no bypass like every other route. Deliberately deferred: building friendly-title explanations
+(e.g. "CORS (backend inaccessible)" for a raw `Failed to fetch`) — there's no real accumulated data yet
+to base them on; revisit via `GET /api/client-errors` after some real usage.
+
+**→ Phase 1 Complete here**, per loremaster.md's explicit scope, **modulo Milestone F (Security)'s
+remaining real-auth and encryption-at-rest bullets**, deliberately deferred per explicit instruction —
+the single-active-session-eviction bullet is done. Future Phases appendix items (additional providers,
+WYSIWYG layout editing, worldbook deltas, pronoun-per-tag declarations, outside MCP client support)
+stay out of scope unless explicitly requested.
 
 ## Notes on sequencing
 

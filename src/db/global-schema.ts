@@ -54,6 +54,53 @@ CREATE TABLE IF NOT EXISTS agent_configs (
   updated_at TEXT NOT NULL
 );
 
+-- Replaces the one-row-per-role agent_configs table above (kept only as a one-time seed
+-- source, see ensureModelConfigsSeeded in src/services/agent-config.ts) with a flat,
+-- reorderable list of model call profiles. A "model" is really a configured call profile —
+-- the same underlying model id can appear in multiple rows with different params, each
+-- independently eligible for different roles via the use_* flags. sort_order is the
+-- fallback chain position *within whichever role(s) a row is checked for*: for a given
+-- role, getAgentProfile takes every active row with that role's flag set, ordered by
+-- sort_order, and treats the first as primary and the rest as ranked fallbacks.
+CREATE TABLE IF NOT EXISTS model_configs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  model TEXT NOT NULL,
+  temperature REAL NOT NULL DEFAULT 1.0,
+  response_limit INTEGER NOT NULL DEFAULT 4096,
+  context_limit INTEGER NOT NULL DEFAULT 32000,
+  presence_penalty REAL,
+  frequency_penalty REAL,
+  repetition_penalty REAL,
+  top_p REAL,
+  top_k INTEGER,
+  min_p REAL,
+  use_author INTEGER NOT NULL DEFAULT 0,
+  use_editor INTEGER NOT NULL DEFAULT 0,
+  use_worker INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_model_configs_user ON model_configs(user_id);
+
+-- Global reject-list applied as the "stop" parameter on every Featherless completion call
+-- (Author/Worker/Editor alike) — see src/services/stop-list.ts. Not per-story: this is a
+-- standing content-safety preference, same scope as agent_configs above.
+CREATE TABLE IF NOT EXISTS banned_phrases (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  phrase TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, phrase)
+);
+CREATE INDEX IF NOT EXISTS idx_banned_phrases_user ON banned_phrases(user_id);
+
 CREATE TABLE IF NOT EXISTS stories (
   id TEXT PRIMARY KEY,
   owner_user_id TEXT NOT NULL REFERENCES users(id),
@@ -65,4 +112,17 @@ CREATE TABLE IF NOT EXISTS stories (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_stories_owner ON stories(owner_user_id);
+
+-- Frontend error log fed by web/src/toast.ts whenever a warning/error/critical toast
+-- fires — not per-user (single-user tool, this is diagnostic data for spotting patterns
+-- and later building friendly-title mappings, see web/src/error-titles.ts once it exists).
+CREATE TABLE IF NOT EXISTS client_errors (
+  id TEXT PRIMARY KEY,
+  severity TEXT NOT NULL,
+  message TEXT NOT NULL,
+  url TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_client_errors_created ON client_errors(created_at);
 `;

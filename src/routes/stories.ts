@@ -1,19 +1,21 @@
+import { unlinkSync } from "node:fs";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { getGlobalDb } from "../db/global-db.js";
-import { getStoryDb } from "../db/story-db.js";
+import { getStoryDb, closeStoryDb } from "../db/story-db.js";
 import { getOrCreateDefaultUser } from "../db/user-store.js";
-import { createStory, listStories, getStory, renameStory } from "../db/story-store.js";
+import { createStory, listStories, getStory, renameStory, deleteStory } from "../db/story-store.js";
+import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { findHeadPageId, collectAncestorIds } from "../db/page-store.js";
-import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
+import { indexTextAgainstAllTags, reindexTagAcrossBook, autoLinkTagToEntry, autoLinkEntryToTags } from "../services/tag-index.js";
 import { enqueueEligibleCompressJobs } from "../services/compression.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
 import { createJob, getJob, listRecentJobs } from "../db/job-store.js";
 import { getPage } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
-import { createTag, listTags, renameTag, setTagHidden, setTagWorldbookPage } from "../db/tag-store.js";
+import { createTag, getTag, listTags, renameTag, setTagHidden, setTagWorldbookPage } from "../db/tag-store.js";
 import {
   createWorldbookEntry,
   listWorldbookEntries,
@@ -24,7 +26,7 @@ import {
 import { getStoryState, setStoryPhase, setKickoffPageId, setCurrentPageId } from "../db/story-state-store.js";
 import { finalizeSetup } from "../services/kickoff.js";
 import { forkStory } from "../services/fork.js";
-import { trackStoryDb, setJobGuidance } from "../queue/pipeline-runner.js";
+import { trackStoryDb, untrackStoryDb, setJobGuidance } from "../queue/pipeline-runner.js";
 import { subscribeJob, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
@@ -33,7 +35,7 @@ export const storiesRoute = new Hono();
 
 storiesRoute.use("*", async (c, next) => {
   c.header("Access-Control-Allow-Origin", "*");
-  c.header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+  c.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   c.header("Access-Control-Allow-Headers", "Content-Type");
   if (c.req.method === "OPTIONS") return c.body(null, 204);
   await next();
@@ -64,7 +66,11 @@ storiesRoute.post("/", async (c) => {
 storiesRoute.get("/", (c) => {
   const globalDb = getGlobalDb();
   const user = getOrCreateDefaultUser(globalDb);
-  return c.json({ stories: listStories(globalDb, user.id) });
+  const stories = listStories(globalDb, user.id).map((story) => ({
+    ...story,
+    stats: getStoryStats(openTrackedStoryDb(story.id)),
+  }));
+  return c.json({ stories });
 });
 
 storiesRoute.patch("/:id", async (c) => {
@@ -79,6 +85,26 @@ storiesRoute.patch("/:id", async (c) => {
   return c.json({ story: getStory(globalDb, id) });
 });
 
+storiesRoute.delete("/:id", (c) => {
+  const globalDb = getGlobalDb();
+  const id = c.req.param("id");
+  const story = getStory(globalDb, id);
+  if (!story) return c.json({ error: "story not found" }, 404);
+
+  closeStoryDb(id);
+  untrackStoryDb(id);
+  deleteStory(globalDb, id);
+  for (const suffix of ["", "-wal", "-shm"]) {
+    try {
+      unlinkSync(story.filePath + suffix);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
 storiesRoute.get("/:id/log", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
@@ -86,7 +112,13 @@ storiesRoute.get("/:id/log", (c) => {
   return c.json({ entries: buildLogView(storyDb, logbook.id) });
 });
 
-/** The assembled Author prompt as it stands right now (at the current position) — read-only, no inference call. Backs both Lore > Memory and Config > Preview, which are the same underlying view in different contexts (doc: in-play vs. outside-play). */
+/**
+ * The assembled Author prompt at the current position — read-only, no inference call.
+ * Backs Config > Preview (no `tags` query param: real trigger-post tag matches, an
+ * accurate "what would the Author see right now") and Lore > Memory (always passes
+ * `tags`, even empty: a what-if simulator independent of actual game state, starting
+ * from the zero-match baseline).
+ */
 storiesRoute.get("/:id/prompt-preview", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
@@ -95,7 +127,10 @@ storiesRoute.get("/:id/prompt-preview", (c) => {
   const currentPageId = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
   if (!currentPageId) return c.json({ messages: [] });
 
-  const messages = assembleAuthorPrompt(storyDb, logbook.id, currentPageId);
+  const tagsParam = c.req.query("tags");
+  const overrideTagIds = tagsParam !== undefined ? tagsParam.split(",").filter(Boolean) : undefined;
+
+  const messages = assembleAuthorPrompt(storyDb, logbook.id, currentPageId, overrideTagIds);
   return c.json({ messages });
 });
 
@@ -143,7 +178,16 @@ storiesRoute.post("/:id/messages", async (c) => {
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
 });
 
-/** Regenerate an existing agent post in place — a new text version on the same page, per loremaster.md's Retry / Guided retry. */
+/**
+ * Regenerate an existing agent post in place — a new text version on the same page, per
+ * loremaster.md's Retry / Guided retry. Works on any agent page regardless of phase (the
+ * setup conversation and story posts share the same logbook), but which *job type* to queue
+ * depends on which side of kickoff the page falls on: a setup-phase page needs the Editor's
+ * tool-calling turn (executeSetupJob), not a plain prose continuation — retrying it as
+ * "prose" would run it through the Author's core prompt instead of the setup flow entirely.
+ * A page is "setup" if kickoff hasn't happened yet, or if it's a strict ancestor of the
+ * kickoff page (the kickoff page itself, and everything after, is prose).
+ */
 storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { guidance?: string };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
@@ -156,12 +200,20 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
   if (!currentText) return c.json({ error: "current text not found" }, 404);
   if (currentText.role !== "agent") return c.json({ error: "only agent posts can be retried" }, 400);
 
+  const { kickoffPageId } = getStoryState(storyDb);
+  const isSetupPage = !kickoffPageId || (pageId !== kickoffPageId && collectAncestorIds(storyDb, kickoffPageId).has(pageId));
+
   const newText = createRetryText(storyDb, {
     pageId,
     priorTextId: currentText.id,
     role: "agent",
   });
-  const job = createJob(storyDb, { targetTextId: newText.id, jobType: "prose", slotCost: 4, priority: 10 });
+  const job = createJob(storyDb, {
+    targetTextId: newText.id,
+    jobType: isSetupPage ? "setup" : "prose",
+    slotCost: 4,
+    priority: 10,
+  });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim());
 
   return c.json({ jobId: job.id, pageId, textId: newText.id });
@@ -429,7 +481,9 @@ storiesRoute.post("/:id/tags", async (c) => {
       worldbookPageId: body.worldbookPageId ?? null,
     });
     reindexTagAcrossBook(storyDb, tag.id);
-    return c.json({ tag });
+    const worldbook = getBookByType(storyDb, "worldbook");
+    if (worldbook) autoLinkTagToEntry(storyDb, worldbook.id, tag);
+    return c.json({ tag: getTag(storyDb, tag.id) ?? tag });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
@@ -448,6 +502,8 @@ storiesRoute.patch("/:id/tags/:tagId", async (c) => {
     if (typeof body.name === "string") {
       const tag = renameTag(storyDb, tagId, body.name);
       reindexTagAcrossBook(storyDb, tag.id);
+      const worldbook = getBookByType(storyDb, "worldbook");
+      if (worldbook) autoLinkTagToEntry(storyDb, worldbook.id, tag);
     }
     if (typeof body.hidden === "boolean") {
       setTagHidden(storyDb, tagId, body.hidden);
@@ -489,6 +545,7 @@ storiesRoute.post("/:id/worldbook", async (c) => {
       name: body.name,
       fields: body.fields ?? {},
     });
+    autoLinkEntryToTags(storyDb, getTagScopeBookId(storyDb, worldbook.id), entry);
     return c.json({ entry });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
@@ -507,7 +564,10 @@ storiesRoute.patch("/:id/worldbook/:pageId", async (c) => {
   try {
     if (typeof body.hidden === "boolean") setWorldbookEntryHidden(storyDb, pageId, body.hidden);
     if (typeof body.name === "string" || body.fields) {
-      updateWorldbookEntry(storyDb, pageId, { name: body.name, fields: body.fields });
+      const entry = updateWorldbookEntry(storyDb, pageId, { name: body.name, fields: body.fields });
+      if (typeof body.name === "string") {
+        autoLinkEntryToTags(storyDb, getTagScopeBookId(storyDb, entry.bookId), entry);
+      }
     }
     return c.json({ ok: true });
   } catch (err) {
@@ -550,7 +610,7 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
 
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribeJob(jobId, (event) => {
-        if (event.type === "token") {
+        if (event.type === "token" || event.type === "progress") {
           void sse.writeSSE({ data: JSON.stringify(event) });
           return;
         }

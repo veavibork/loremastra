@@ -142,7 +142,9 @@ CREATE TABLE IF NOT EXISTS jobs (
   started_at TEXT,
   finished_at TEXT,
   error TEXT,
-  cancel_requested INTEGER NOT NULL DEFAULT 0
+  cancel_requested INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  token_estimate INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_text ON jobs(target_text_id);

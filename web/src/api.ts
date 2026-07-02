@@ -1,4 +1,88 @@
-const API_BASE = "http://localhost:4114";
+export const API_BASE = "http://localhost:4114";
+const SESSION_STORAGE_KEY = "loremaster.sessionId";
+
+export function getSessionId(): string | null {
+  return localStorage.getItem(SESSION_STORAGE_KEY);
+}
+
+export function setSessionId(id: string): void {
+  localStorage.setItem(SESSION_STORAGE_KEY, id);
+}
+
+/**
+ * Deliberately raw fetch, not apiFetch — this route is guard-exempt server-side
+ * (src/routes/sessions.ts), and attaching a soon-to-be-invalidated old session header
+ * here would be pointless. Keeps the exemption visible in client code too, not just the
+ * server's.
+ */
+export async function claimSession(): Promise<{ sessionId: string; claimedAt: string }> {
+  const res = await fetch(`${API_BASE}/api/sessions/claim`, { method: "POST" });
+  const data = (await res.json()) as { sessionId: string; claimedAt: string };
+  setSessionId(data.sessionId);
+  return data;
+}
+
+export type SupersededReason = "unclaimed" | "superseded";
+
+export interface SupersededInfo {
+  reason: SupersededReason;
+  active: { lastSeenAt: string } | null;
+  stale: { lastSeenAt: string } | null;
+}
+
+type SupersededListener = (info: SupersededInfo) => void;
+const supersededListeners: SupersededListener[] = [];
+
+/** App.tsx subscribes once at the top level — any 409 from anywhere (including a background poll deep inside some view) flips the whole app to the claim screen through this one channel, no per-view wiring needed. */
+export function onSuperseded(listener: SupersededListener): () => void {
+  supersededListeners.push(listener);
+  return () => {
+    const i = supersededListeners.indexOf(listener);
+    if (i !== -1) supersededListeners.splice(i, 1);
+  };
+}
+
+/**
+ * Every call in this file (except claimSession, which is deliberately guard-exempt)
+ * routes through here so the session header and "you've been superseded" handling live
+ * in exactly one place rather than threaded through ~40 call sites individually. Throws
+ * on a 409 so a caller's normal .then()/await chain never mistakes a rejection payload
+ * for real data — App.tsx's bootstrap already expects and swallows that via try/catch.
+ */
+async function apiFetch(path: string, init: RequestInit = {}, opts?: { background?: boolean }): Promise<Response> {
+  const sessionId = getSessionId();
+  const headers = new Headers(init.headers);
+  if (sessionId) headers.set("X-Loremaster-Session", sessionId);
+  if (opts?.background) headers.set("X-Loremaster-Interaction", "background");
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  } catch (err) {
+    console.error(`apiFetch: ${path} unreachable —`, err);
+    throw err;
+  }
+  if (res.status >= 500) {
+    console.error(`apiFetch: ${path} returned ${res.status}`);
+  }
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as Partial<SupersededInfo> & { error?: SupersededReason };
+    const info: SupersededInfo = {
+      reason: body.error === "unclaimed" ? "unclaimed" : "superseded",
+      active: body.active ?? null,
+      stale: body.stale ?? null,
+    };
+    for (const listener of supersededListeners) listener(info);
+    throw new Error(`session ${info.reason}`);
+  }
+  return res;
+}
+
+export interface StoryStats {
+  chatRows: number;
+  worldbookRows: number;
+  lastPlayedAt: string | null;
+}
 
 export interface Story {
   id: string;
@@ -7,6 +91,7 @@ export interface Story {
   hidden: boolean;
   createdAt: string;
   updatedAt: string;
+  stats?: StoryStats;
 }
 
 export interface LayoutTab {
@@ -31,12 +116,12 @@ export interface LayoutConfigResponse {
 }
 
 export async function fetchLayout(): Promise<LayoutConfigResponse> {
-  const res = await fetch(`${API_BASE}/api/layout`);
+  const res = await apiFetch(`/api/layout`);
   return res.json();
 }
 
 export async function updateLayout(config: LayoutConfigData): Promise<LayoutConfigResponse> {
-  const res = await fetch(`${API_BASE}/api/layout`, {
+  const res = await apiFetch(`/api/layout`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ config }),
@@ -44,6 +129,36 @@ export async function updateLayout(config: LayoutConfigData): Promise<LayoutConf
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
+}
+
+export interface BannedPhrase {
+  id: string;
+  userId: string;
+  phrase: string;
+  createdAt: string;
+}
+
+export async function fetchBannedPhrases(): Promise<BannedPhrase[]> {
+  const res = await apiFetch(`/api/banned-phrases`);
+  const data = (await res.json()) as { phrases: BannedPhrase[] };
+  return data.phrases;
+}
+
+export async function createBannedPhrase(phrase: string): Promise<BannedPhrase> {
+  const res = await apiFetch(`/api/banned-phrases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phrase }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.phrase;
+}
+
+export async function deleteBannedPhrase(id: string): Promise<void> {
+  const res = await apiFetch(`/api/banned-phrases/${id}`, { method: "DELETE" });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
 }
 
 export interface Job {
@@ -58,16 +173,33 @@ export interface Job {
   startedAt: string | null;
   finishedAt: string | null;
   error: string | null;
+  model: string | null;
+  tokenEstimate: number | null;
 }
 
-export async function fetchJobs(storyId: string): Promise<Job[]> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/jobs`);
+export interface PromptCatalogEntry {
+  id: string;
+  name: string;
+  usedBy: string;
+  kind: "system-prompt" | "tool" | "instruction";
+  sourceFile: string;
+  content: string;
+}
+
+export async function fetchPrompts(): Promise<PromptCatalogEntry[]> {
+  const res = await apiFetch(`/api/prompts`);
+  const data = (await res.json()) as { prompts: PromptCatalogEntry[] };
+  return data.prompts;
+}
+
+export async function fetchJobs(storyId: string, opts?: { background?: boolean }): Promise<Job[]> {
+  const res = await apiFetch(`/api/stories/${storyId}/jobs`, {}, opts);
   const data = (await res.json()) as { jobs: Job[] };
   return data.jobs;
 }
 
-export async function fetchSlots(): Promise<{ used: number; max: number }> {
-  const res = await fetch(`${API_BASE}/api/debug/slots`);
+export async function fetchSlots(opts?: { background?: boolean }): Promise<{ used: number; max: number }> {
+  const res = await apiFetch(`/api/debug/slots`, {}, opts);
   return res.json();
 }
 
@@ -76,40 +208,84 @@ export interface PromptMessage {
   content: string;
 }
 
-export async function fetchPromptPreview(storyId: string): Promise<PromptMessage[]> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/prompt-preview`);
+export async function fetchPromptPreview(storyId: string, overrideTagIds?: string[]): Promise<PromptMessage[]> {
+  const query = overrideTagIds !== undefined ? `?tags=${overrideTagIds.join(",")}` : "";
+  const res = await apiFetch(`/api/stories/${storyId}/prompt-preview${query}`);
   const data = (await res.json()) as { messages: PromptMessage[] };
   return data.messages;
 }
 
-export type AgentRole = "author" | "worker" | "editor";
-
-export interface AgentProfile {
+export interface ModelConfig {
+  id: string;
+  userId: string;
   model: string;
   temperature: number;
   responseLimit: number;
   contextLimit: number;
-  fallbackModels?: string[];
+  presencePenalty: number | null;
+  frequencyPenalty: number | null;
+  repetitionPenalty: number | null;
+  topP: number | null;
+  topK: number | null;
+  minP: number | null;
+  useAuthor: boolean;
+  useEditor: boolean;
+  useWorker: boolean;
+  active: boolean;
+  sortOrder: number;
+  successCount: number;
+  failCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export async function fetchAgentProfiles(): Promise<Record<AgentRole, AgentProfile>> {
-  const res = await fetch(`${API_BASE}/api/agents`);
-  const data = (await res.json()) as { profiles: Record<AgentRole, AgentProfile> };
-  return data.profiles;
+export type ModelConfigPatch = Partial<
+  Omit<ModelConfig, "id" | "userId" | "sortOrder" | "successCount" | "failCount" | "inputTokens" | "outputTokens" | "createdAt" | "updatedAt">
+>;
+
+export async function fetchModelConfigs(): Promise<ModelConfig[]> {
+  const res = await apiFetch(`/api/agents`);
+  const data = (await res.json()) as { configs: ModelConfig[] };
+  return data.configs;
 }
 
-export async function updateAgentProfile(role: AgentRole, patch: Partial<AgentProfile>): Promise<AgentProfile> {
-  const res = await fetch(`${API_BASE}/api/agents/${role}`, {
+export async function createModelConfig(): Promise<ModelConfig> {
+  const res = await apiFetch(`/api/agents`, { method: "POST" });
+  const data = (await res.json()) as { config: ModelConfig };
+  return data.config;
+}
+
+export async function updateModelConfig(id: string, patch: ModelConfigPatch): Promise<ModelConfig> {
+  const res = await apiFetch(`/api/agents/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
-  const data = (await res.json()) as { profile: AgentProfile };
-  return data.profile;
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.config;
+}
+
+export async function deleteModelConfig(id: string): Promise<void> {
+  const res = await apiFetch(`/api/agents/${id}`, { method: "DELETE" });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+}
+
+export async function reorderModelConfigs(orderedIds: string[]): Promise<ModelConfig[]> {
+  const res = await apiFetch(`/api/agents/reorder`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderedIds }),
+  });
+  const data = (await res.json()) as { configs: ModelConfig[] };
+  return data.configs;
 }
 
 export async function renameStory(storyId: string, name: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}`, {
+  const res = await apiFetch(`/api/stories/${storyId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -137,7 +313,7 @@ export interface StoryState {
 }
 
 export async function fetchPhase(storyId: string): Promise<StoryState> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/phase`);
+  const res = await apiFetch(`/api/stories/${storyId}/phase`);
   return res.json();
 }
 
@@ -145,7 +321,7 @@ export async function postSetupMessage(
   storyId: string,
   content: string
 ): Promise<{ jobId: string; agentPageId: string }> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/setup/messages`, {
+  const res = await apiFetch(`/api/stories/${storyId}/setup/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
@@ -156,7 +332,7 @@ export async function postSetupMessage(
 }
 
 export async function startKickoff(storyId: string): Promise<{ jobId: string; kickoffPageId: string }> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/kickoff/start`, { method: "POST" });
+  const res = await apiFetch(`/api/stories/${storyId}/kickoff/start`, { method: "POST" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
@@ -166,7 +342,7 @@ export async function retryKickoff(
   storyId: string,
   guidance?: string
 ): Promise<{ jobId: string; kickoffPageId: string }> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/kickoff/retry`, {
+  const res = await apiFetch(`/api/stories/${storyId}/kickoff/retry`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ guidance }),
@@ -177,25 +353,25 @@ export async function retryKickoff(
 }
 
 export async function approveKickoff(storyId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/kickoff/approve`, { method: "POST" });
+  const res = await apiFetch(`/api/stories/${storyId}/kickoff/approve`, { method: "POST" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
 }
 
 export async function backToSetup(storyId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/kickoff/back`, { method: "POST" });
+  const res = await apiFetch(`/api/stories/${storyId}/kickoff/back`, { method: "POST" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
 }
 
 export async function listStories(): Promise<Story[]> {
-  const res = await fetch(`${API_BASE}/api/stories`);
+  const res = await apiFetch(`/api/stories`);
   const data = (await res.json()) as { stories: Story[] };
   return data.stories;
 }
 
 export async function createStory(name: string): Promise<Story> {
-  const res = await fetch(`${API_BASE}/api/stories`, {
+  const res = await apiFetch(`/api/stories`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -204,8 +380,14 @@ export async function createStory(name: string): Promise<Story> {
   return data.story;
 }
 
+export async function deleteStory(storyId: string): Promise<void> {
+  const res = await apiFetch(`/api/stories/${storyId}`, { method: "DELETE" });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+}
+
 export async function fetchLog(storyId: string): Promise<LogEntry[]> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/log`);
+  const res = await apiFetch(`/api/stories/${storyId}/log`);
   const data = (await res.json()) as { entries: LogEntry[] };
   return data.entries;
 }
@@ -214,7 +396,7 @@ export async function postMessage(
   storyId: string,
   content: string
 ): Promise<{ jobId: string; agentPageId: string }> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/messages`, {
+  const res = await apiFetch(`/api/stories/${storyId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
@@ -227,7 +409,7 @@ export async function retryPost(
   pageId: string,
   guidance?: string
 ): Promise<{ jobId: string; textId: string }> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/posts/${pageId}/retry`, {
+  const res = await apiFetch(`/api/stories/${storyId}/posts/${pageId}/retry`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ guidance }),
@@ -238,7 +420,7 @@ export async function retryPost(
 }
 
 export async function editPost(storyId: string, pageId: string, content: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/posts/${pageId}/edit`, {
+  const res = await apiFetch(`/api/stories/${storyId}/posts/${pageId}/edit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
@@ -251,7 +433,7 @@ export async function continuePost(
   storyId: string,
   guidance?: string
 ): Promise<{ agentPageId: string; jobId: string }> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/continue`, {
+  const res = await apiFetch(`/api/stories/${storyId}/continue`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ guidance }),
@@ -268,26 +450,26 @@ export interface Position {
 }
 
 export async function fetchPosition(storyId: string): Promise<Position> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/position`);
+  const res = await apiFetch(`/api/stories/${storyId}/position`);
   return res.json();
 }
 
 export async function undoPosition(storyId: string): Promise<Position> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/position/undo`, { method: "POST" });
+  const res = await apiFetch(`/api/stories/${storyId}/position/undo`, { method: "POST" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
 }
 
 export async function redoPosition(storyId: string): Promise<Position> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/position/redo`, { method: "POST" });
+  const res = await apiFetch(`/api/stories/${storyId}/position/redo`, { method: "POST" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
   return data;
 }
 
 export async function jumpToPosition(storyId: string, pageId: string): Promise<Position> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/position`, {
+  const res = await apiFetch(`/api/stories/${storyId}/position`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pageId }),
@@ -298,7 +480,7 @@ export async function jumpToPosition(storyId: string, pageId: string): Promise<P
 }
 
 export async function forkStory(storyId: string, pageId?: string, name?: string): Promise<Story> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/fork`, {
+  const res = await apiFetch(`/api/stories/${storyId}/fork`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pageId, name }),
@@ -339,13 +521,13 @@ export interface Tag {
 }
 
 export async function fetchWorldbookSchemas(): Promise<Record<WorldbookEntryType, WorldbookFieldSchema[]>> {
-  const res = await fetch(`${API_BASE}/api/worldbook-schemas`);
+  const res = await apiFetch(`/api/worldbook-schemas`);
   const data = (await res.json()) as { schemas: Record<WorldbookEntryType, WorldbookFieldSchema[]> };
   return data.schemas;
 }
 
-export async function fetchWorldbook(storyId: string): Promise<WorldbookEntry[]> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/worldbook`);
+export async function fetchWorldbook(storyId: string, opts?: { background?: boolean }): Promise<WorldbookEntry[]> {
+  const res = await apiFetch(`/api/stories/${storyId}/worldbook`, {}, opts);
   const data = (await res.json()) as { entries: WorldbookEntry[] };
   return data.entries;
 }
@@ -354,7 +536,7 @@ export async function createWorldbookEntry(
   storyId: string,
   input: { entryType: WorldbookEntryType; isPc?: boolean; name: string; fields: Record<string, string> }
 ): Promise<WorldbookEntry> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/worldbook`, {
+  const res = await apiFetch(`/api/stories/${storyId}/worldbook`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -369,7 +551,7 @@ export async function updateWorldbookEntry(
   pageId: string,
   input: { name?: string; fields?: Record<string, string>; hidden?: boolean }
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/worldbook/${pageId}`, {
+  const res = await apiFetch(`/api/stories/${storyId}/worldbook/${pageId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -378,14 +560,14 @@ export async function updateWorldbookEntry(
   if (!data.ok) throw new Error(data.error ?? "failed to update worldbook entry");
 }
 
-export async function fetchTags(storyId: string): Promise<Tag[]> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/tags`);
+export async function fetchTags(storyId: string, opts?: { background?: boolean }): Promise<Tag[]> {
+  const res = await apiFetch(`/api/stories/${storyId}/tags`, {}, opts);
   const data = (await res.json()) as { tags: Tag[] };
   return data.tags;
 }
 
 export async function createTag(storyId: string, name: string, worldbookPageId?: string | null): Promise<Tag> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/tags`, {
+  const res = await apiFetch(`/api/stories/${storyId}/tags`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, worldbookPageId: worldbookPageId ?? null }),
@@ -400,7 +582,7 @@ export async function updateTag(
   tagId: string,
   input: { name?: string; hidden?: boolean; worldbookPageId?: string | null }
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/stories/${storyId}/tags/${tagId}`, {
+  const res = await apiFetch(`/api/stories/${storyId}/tags/${tagId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -411,6 +593,7 @@ export async function updateTag(
 
 export type JobStreamEvent =
   | { type: "token"; text: string }
+  | { type: "progress"; label: string }
   | { type: "done"; fullText: string }
   | { type: "error"; message: string };
 
@@ -419,7 +602,11 @@ export function streamJob(
   jobId: string,
   onEvent: (event: JobStreamEvent) => void
 ): () => void {
-  const source = new EventSource(`${API_BASE}/api/stories/${storyId}/jobs/${jobId}/stream`);
+  // EventSource can't set custom headers, so the session id rides as a query param instead —
+  // the guard checks both (see src/middleware/session-guard.ts).
+  const sessionId = getSessionId();
+  const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
+  const source = new EventSource(`${API_BASE}/api/stories/${storyId}/jobs/${jobId}/stream${query}`);
   source.onmessage = (message) => {
     if (message.data === "[DONE]") {
       source.close();

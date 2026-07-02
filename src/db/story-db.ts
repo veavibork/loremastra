@@ -51,6 +51,13 @@ function backfillSelectedForks(db: Database.Database): void {
   `);
 }
 
+export function closeStoryDb(storyId: string): void {
+  const db = openStoryDbs.get(storyId);
+  if (!db) return;
+  db.close();
+  openStoryDbs.delete(storyId);
+}
+
 export function getStoryDb(storyId: string): Database.Database {
   const existing = openStoryDbs.get(storyId);
   if (existing) return existing;
@@ -61,6 +68,8 @@ export function getStoryDb(storyId: string): Database.Database {
   db.pragma("foreign_keys = ON");
   db.exec(STORY_SCHEMA_SQL);
   ensureColumn(db, "story_state", "current_page_id", "TEXT REFERENCES page(id)");
+  ensureColumn(db, "jobs", "model", "TEXT");
+  ensureColumn(db, "jobs", "token_estimate", "INTEGER");
   backfillSelectedForks(db);
   recoverStaleJobs(db);
   openStoryDbs.set(storyId, db);

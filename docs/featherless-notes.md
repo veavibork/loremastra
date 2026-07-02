@@ -112,9 +112,15 @@ concurrent users). Not urgent while it's a single local dev instance.
 
 ## `/v1/tokenize`
 
-POST `{ model, text }` → `{ tokens: [...] }`. Confirmed to exist per docs, not yet tested live. Useful
-for pre-flight budget checks in prompt assembly later; not needed yet since nothing does token-budget-aware
-assembly (current history assembly is naive full-verbose, see `src/services/history.ts`).
+**Tested live 2026-07-02 — does not match docs.** POST `{ model, text }` → `{ count, model }` only.
+No `tokens` array, with or without `return_tokens: true` / `add_special_tokens: false` (both accepted
+and silently ignored). There is no way to get real per-token ids out of this endpoint as it actually
+behaves, only a token *count* — contradicts the (never-before-verified) note this replaces. Practical
+effect: `stop_token_ids` on chat completions can't be populated from anything this API exposes; only
+the string-based `stop` parameter is usable for reject-on-phrase behavior (Settings' banned
+words/phrases feature, `src/services/stop-list.ts`, uses `stop` only for this reason). Revisit only if
+Featherless ships a real tokenize response — don't re-attempt `stop_token_ids` without new evidence
+this changed.
 
 ## `chat_template_kwargs`
 

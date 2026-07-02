@@ -1,5 +1,49 @@
 import type { AgentProfile } from "../config.js";
 import { FEATHERLESS_API_KEY, FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from "./featherless-config.js";
+import { getStopPhrases } from "../services/stop-list.js";
+import { getGlobalDb } from "../db/global-db.js";
+import { recordModelOutcome } from "../db/model-config-store.js";
+
+/** `undefined` (key omitted) rather than `[]` when there's nothing to ban — an empty `stop` array is untested against Featherless and not worth the risk of an unexpected rejection. */
+function stopParam(): { stop: string[] } | Record<string, never> {
+  const phrases = getStopPhrases();
+  return phrases.length ? { stop: phrases } : {};
+}
+
+/** Optional sampler params (Config > Agents), omitted entirely rather than sent as null/0 when unset — see docs' completions parameter list. */
+function samplerParams(profile: AgentProfile): Record<string, number> {
+  const params: Record<string, number> = {};
+  if (profile.presencePenalty !== undefined) params.presence_penalty = profile.presencePenalty;
+  if (profile.frequencyPenalty !== undefined) params.frequency_penalty = profile.frequencyPenalty;
+  if (profile.repetitionPenalty !== undefined) params.repetition_penalty = profile.repetitionPenalty;
+  if (profile.topP !== undefined) params.top_p = profile.topP;
+  if (profile.topK !== undefined) params.top_k = profile.topK;
+  if (profile.minP !== undefined) params.min_p = profile.minP;
+  return params;
+}
+
+// Same rough chars/4 estimate used throughout the codebase (see history.ts) — not a real
+// tokenizer. Good enough for Config > Agents' per-model token-sum telemetry.
+const CHARS_PER_TOKEN_ESTIMATE = 4;
+function tokensFromChars(chars: number): number {
+  return Math.ceil(chars / CHARS_PER_TOKEN_ESTIMATE);
+}
+function estimateTokens(text: string): number {
+  return tokensFromChars(text.length);
+}
+function estimateMessageTokens(messages: ChatMessage[]): number {
+  return messages.reduce((sum, m) => sum + estimateTokens(m.content ?? ""), 0);
+}
+
+/** Best-effort — a stats-write failure must never break the actual inference call it's reporting on. */
+function recordOutcome(profile: AgentProfile, outcome: { success: boolean; inputTokens: number; outputTokens: number }): void {
+  if (!profile.configId) return;
+  try {
+    recordModelOutcome(getGlobalDb(), profile.configId, outcome);
+  } catch {
+    // ignore
+  }
+}
 
 const BASE_HEADERS = {
   "Content-Type": "application/json",
@@ -35,11 +79,16 @@ export async function withModelFallback<T>(
   attempt: (profile: AgentProfile) => Promise<T>
 ): Promise<T> {
   const candidates = [profile.model, ...(profile.fallbackModels ?? [])];
+  const candidateConfigIds = [profile.configId, ...(profile.fallbackConfigIds ?? [])];
   let lastError: unknown;
 
   for (let i = 0; i < candidates.length; i++) {
     try {
-      return await attempt({ ...profile, model: candidates[i] });
+      // configId is swapped per candidate too, not just model — each candidate is its own
+      // model_configs row (see model-config-store.ts), and the actual stats/token recording
+      // inside streamInference/callWithForcedTool/callWithTools reads profile.configId to
+      // know which row to credit.
+      return await attempt({ ...profile, model: candidates[i], configId: candidateConfigIds[i] });
     } catch (err) {
       lastError = err;
       const isLast = i === candidates.length - 1;
@@ -123,6 +172,9 @@ export async function streamInference(
     return;
   }
 
+  const inputTokens = estimateMessageTokens(messages);
+  let outputChars = 0;
+
   const timeout = armTimeout(options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS, options?.signal);
 
   let response: Response;
@@ -139,11 +191,14 @@ export async function streamInference(
         temperature: profile.temperature,
         max_tokens: profile.responseLimit,
         stream: true,
+        ...stopParam(),
+        ...samplerParams(profile),
       }),
       signal: timeout.signal,
     });
   } catch (err) {
     timeout.cleanup();
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
     handlers.onError(err instanceof Error ? err : new Error(String(err)));
     return;
   }
@@ -151,6 +206,7 @@ export async function streamInference(
   if (!response.ok || !response.body) {
     const bodyText = await safeText(response);
     timeout.cleanup();
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
     handlers.onError(new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${bodyText}`));
     return;
   }
@@ -174,6 +230,7 @@ export async function streamInference(
         if (!trimmed.startsWith("data:")) continue;
         const payload = trimmed.slice(5).trim();
         if (payload === "[DONE]") {
+          recordOutcome(profile, { success: true, inputTokens, outputTokens: tokensFromChars(outputChars) });
           handlers.onDone();
           return;
         }
@@ -182,14 +239,19 @@ export async function streamInference(
             choices?: Array<{ delta?: { content?: string } }>;
           };
           const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) handlers.onToken(delta);
+          if (delta) {
+            outputChars += delta.length;
+            handlers.onToken(delta);
+          }
         } catch {
           // ignore malformed SSE chunk
         }
       }
     }
+    recordOutcome(profile, { success: true, inputTokens, outputTokens: tokensFromChars(outputChars) });
     handlers.onDone();
   } catch (err) {
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: tokensFromChars(outputChars) });
     handlers.onError(err instanceof Error ? err : new Error(String(err)));
   } finally {
     timeout.cleanup();
@@ -245,6 +307,7 @@ export async function callWithForcedTool(
     throw new Error("FEATHERLESS_API_KEY is not set");
   }
 
+  const inputTokens = estimateMessageTokens(messages);
   const timeout = armTimeout(timeoutMs);
   let response: Response;
   try {
@@ -262,6 +325,8 @@ export async function callWithForcedTool(
         stream: false,
         tools: [{ type: "function", function: tool }],
         tool_choice: { type: "function", function: { name: tool.name } },
+        ...stopParam(),
+        ...samplerParams(profile),
       }),
       signal: timeout.signal,
     });
@@ -270,6 +335,7 @@ export async function callWithForcedTool(
   }
 
   if (!response.ok) {
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
     throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${await safeText(response)}`);
   }
 
@@ -278,12 +344,16 @@ export async function callWithForcedTool(
   };
   const rawArgs = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
   if (!rawArgs) {
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
     throw new Error("model did not call the required tool");
   }
 
   try {
-    return JSON.parse(rawArgs) as Record<string, unknown>;
+    const parsed = JSON.parse(rawArgs) as Record<string, unknown>;
+    recordOutcome(profile, { success: true, inputTokens, outputTokens: estimateTokens(rawArgs) });
+    return parsed;
   } catch {
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: estimateTokens(rawArgs) });
     throw new Error("model's tool call arguments were not valid JSON");
   }
 }
@@ -294,26 +364,28 @@ export interface ToolCallTurnResult {
 }
 
 /**
- * Lets the model choose whether to reply with text or call one or more
- * tools ("auto", not forced) — the Editor's setup conversation needs this:
- * the backend can't know in advance when the user has said enough to
- * justify creating a worldbook entry, so the model itself decides mid-turn
- * (loremaster.md's Tool Use section). Returns a single turn's result; the
- * caller is responsible for looping (append the assistant's tool_calls
- * message plus a "tool" result message per call, then call again) until a
- * plain-text reply comes back.
+ * Lets the model choose whether to reply with text or call one or more tools ("auto"), or —
+ * when forceToolName is given — forces one specific tool the same way callWithForcedTool
+ * does, but (unlike callWithForcedTool) returns full call metadata including the real tool
+ * call id, so the caller can thread a forced call into a longer conversation (append the
+ * assistant's tool_calls message plus a "tool" result message, then call again) the same way
+ * auto-mode looping works. This exists because auto-mode with multiple simultaneous tool
+ * calls in one response was unreliable in testing (garbled/missing function names) — looping
+ * single *forced* calls keeps each individual call as simple as the pattern proven reliable
+ * for compress/archive, while still letting the model decide how many times to loop.
  */
 export async function callWithTools(
   profile: AgentProfile,
   messages: ChatMessage[],
   tools: ToolDefinition[],
-  timeoutMs = DEFAULT_TOOL_CALL_TIMEOUT_MS
+  options?: { forceToolName?: string; timeoutMs?: number }
 ): Promise<ToolCallTurnResult> {
   if (!FEATHERLESS_API_KEY) {
     throw new Error("FEATHERLESS_API_KEY is not set");
   }
 
-  const timeout = armTimeout(timeoutMs);
+  const inputTokens = estimateMessageTokens(messages);
+  const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
@@ -329,7 +401,11 @@ export async function callWithTools(
         max_tokens: profile.responseLimit,
         stream: false,
         tools: tools.map((t) => ({ type: "function", function: t })),
-        tool_choice: "auto",
+        tool_choice: options?.forceToolName
+          ? { type: "function", function: { name: options.forceToolName } }
+          : "auto",
+        ...stopParam(),
+        ...samplerParams(profile),
       }),
       signal: timeout.signal,
     });
@@ -338,6 +414,7 @@ export async function callWithTools(
   }
 
   if (!response.ok) {
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
     throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${await safeText(response)}`);
   }
 
@@ -364,5 +441,7 @@ export async function callWithTools(
     return { id: tc.id ?? `call_${index}_${Date.now()}`, name: tc.function?.name ?? "", arguments: args };
   });
 
+  const outputChars = (message?.content ?? "").length + toolCalls.reduce((sum, tc) => sum + JSON.stringify(tc.arguments).length, 0);
+  recordOutcome(profile, { success: true, inputTokens, outputTokens: tokensFromChars(outputChars) });
   return { content: message?.content ?? null, toolCalls };
 }

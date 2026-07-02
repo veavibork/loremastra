@@ -1,5 +1,7 @@
 .prompt-inspector {
   padding: 0.5rem 0;
+  text-align: left;
+  font-size: 15px;
 }
 
 .prompt-inspector-note {

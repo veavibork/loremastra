@@ -24,16 +24,48 @@
 .log {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   padding-bottom: 1rem;
 }
 
+/* Thin, muted scrollbar instead of the browser default — applies to any scrollable panel, not just .log. */
+.log,
+.setup-worldbook,
+.opening-post {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.log::-webkit-scrollbar,
+.setup-worldbook::-webkit-scrollbar,
+.opening-post::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log::-webkit-scrollbar-track,
+.setup-worldbook::-webkit-scrollbar-track,
+.opening-post::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log::-webkit-scrollbar-thumb,
+.setup-worldbook::-webkit-scrollbar-thumb,
+.opening-post::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 4px;
+}
+
 .entry {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  text-align: left;
+  font-size: 15px;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .entry-role {
@@ -44,14 +76,23 @@
 
 .entry p {
   margin: 0;
-  white-space: pre-wrap;
 }
 
-.entry-agent p {
+.entry-content p {
+  margin: 0 0 0.6em;
+}
+
+.entry-content p:last-child {
+  margin-bottom: 0;
+}
+
+.entry-agent p,
+.entry-agent .entry-content {
   font-style: italic;
 }
 
-.entry-pending p {
+.entry-pending p,
+.entry-pending .entry-content {
   opacity: 0.7;
 }
 

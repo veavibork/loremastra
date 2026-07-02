@@ -16,3 +16,39 @@
   font-size: 0.8rem;
   margin-bottom: 0.5rem;
 }
+
+.banned-phrase-form {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.banned-phrase-form input {
+  flex: 1;
+}
+
+.banned-phrase-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.banned-phrase-bubble {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.4rem 0.2rem 0.7rem;
+  font-size: 0.8rem;
+  border: 1px solid #6b3a3a;
+  background: rgba(107, 58, 58, 0.2);
+}
+
+.banned-phrase-bubble button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}

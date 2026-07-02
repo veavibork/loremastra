@@ -1,0 +1,40 @@
+.claim-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+.claim-gate-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2rem 2.5rem;
+  max-width: 420px;
+  text-align: center;
+}
+
+.claim-gate-card h1 {
+  font-size: 1.3rem;
+  margin: 0 0 1rem;
+}
+
+.claim-gate-message {
+  font-size: 0.9rem;
+  opacity: 0.85;
+  margin-bottom: 1rem;
+}
+
+.claim-gate-timestamps {
+  font-size: 0.8rem;
+  opacity: 0.65;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.claim-gate-card button {
+  padding: 0.6rem 1.5rem;
+  border-radius: 8px;
+  font-weight: bold;
+}
