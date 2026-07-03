@@ -223,3 +223,10 @@ export function cancelPendingJobsForText(db: Database.Database, targetTextId: st
      WHERE target_text_id = ? AND status = 'pending'`
   ).run(nowIso(), targetTextId);
 }
+
+export function cancelPendingJobsForArchive(db: Database.Database, targetArchiveId: string): void {
+  db.prepare(
+    `UPDATE jobs SET status = 'cancelled', finished_at = ?, cancel_requested = 1
+     WHERE target_archive_id = ? AND status = 'pending'`
+  ).run(nowIso(), targetArchiveId);
+}

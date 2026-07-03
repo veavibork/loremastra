@@ -29,6 +29,16 @@ import { getQueueStatus } from "../queue/slots.js";
 import { buildLogView } from "../services/log-view.js";
 import { readRecentOutboundRequests } from "../inference/outbound-log.js";
 import { ensureSingleInstance } from "./single-instance.js";
+import {
+  buildMemoryManifest,
+  buildMemorySummary,
+  enqueueMemoryPipeline,
+  previewTagActivation,
+  reindexAllMemoryTags,
+  runMemoryBackfill,
+} from "../services/memory-manifest.js";
+import { findHeadPageId } from "../db/page-store.js";
+import { assembleAuthorPrompt } from "../services/history.js";
 
 ensureSingleInstance();
 
@@ -163,6 +173,134 @@ server.registerTool(
     inputSchema: { limit: z.number().optional() },
   },
   async ({ limit }) => textResult(readRecentOutboundRequests(limit))
+);
+
+server.registerTool(
+  "get_memory_summary",
+  {
+    description: "Compact memory health check: stale compress counts, archive gaps, broken blocks — no full post dump.",
+    inputSchema: { storyId: z.string() },
+  },
+  async ({ storyId }) =>
+    withStoryDb(storyId, (db) => {
+      const logbook = getBookByType(db, "logbook");
+      if (!logbook) return textResult({ error: "no logbook for this story" });
+      return textResult(buildMemorySummary(db, logbook.id));
+    })
+);
+
+server.registerTool(
+  "preview_tag_activation",
+  {
+    description:
+      "KAI-style tag activation preview: which tags would fire from the latest user message + recent assistant context at the current (or given) page.",
+    inputSchema: { storyId: z.string(), fromPageId: z.string().optional() },
+  },
+  async ({ storyId, fromPageId }) =>
+    withStoryDb(storyId, (db) => {
+      const logbook = getBookByType(db, "logbook");
+      if (!logbook) return textResult({ error: "no logbook for this story" });
+      return textResult(previewTagActivation(db, logbook.id, fromPageId));
+    })
+);
+
+server.registerTool(
+  "get_prompt_preview",
+  {
+    description: "Assembled Author prompt at the current position (or given page) — read-only, no inference call.",
+    inputSchema: { storyId: z.string(), fromPageId: z.string().optional(), tagIds: z.array(z.string()).optional() },
+  },
+  async ({ storyId, fromPageId, tagIds }) => {
+    const story = getStory(getGlobalDb(), storyId);
+    if (!story) return textResult({ error: "story not found" });
+
+    return withStoryDb(storyId, (db) => {
+      const logbook = getBookByType(db, "logbook");
+      if (!logbook) return textResult({ error: "no logbook for this story" });
+      const pageId =
+        fromPageId ?? getStoryState(db).currentPageId ?? findHeadPageId(db, logbook.id);
+      if (!pageId) return textResult({ messages: [] });
+      const overrideTagIds = tagIds !== undefined ? tagIds : undefined;
+      return textResult({
+        fromPageId: pageId,
+        messages: assembleAuthorPrompt(db, story.ownerUserId, logbook.id, pageId, overrideTagIds),
+      });
+    });
+  }
+);
+
+server.registerTool(
+  "reindex_tags",
+  {
+    description: "Re-grep every tag against every post in the story (after tag rename or direct DB edits).",
+    inputSchema: { storyId: z.string() },
+  },
+  async ({ storyId }) =>
+    withStoryDb(storyId, (db) => {
+      const logbook = getBookByType(db, "logbook");
+      if (!logbook) return textResult({ error: "no logbook for this story" });
+      return textResult(reindexAllMemoryTags(db, logbook.id));
+    })
+);
+
+server.registerTool(
+  "enqueue_memory_jobs",
+  {
+    description: "Queue eligible compress and archive jobs without changing stamps or reindexing tags.",
+    inputSchema: { storyId: z.string() },
+  },
+  async ({ storyId }) => {
+    const story = getStory(getGlobalDb(), storyId);
+    if (!story) return textResult({ error: "story not found" });
+
+    return withStoryDb(storyId, (db) => {
+      const logbook = getBookByType(db, "logbook");
+      if (!logbook) return textResult({ error: "no logbook for this story" });
+      const pending = enqueueMemoryPipeline(db, story.ownerUserId, logbook.id);
+      return textResult({ pendingMemoryJobs: pending, summary: buildMemorySummary(db, logbook.id) });
+    });
+  }
+);
+
+server.registerTool(
+  "get_memory_manifest",
+  {
+    description:
+      "Per-post memory diagnostics: content stamps, compress validity, tag match counts, and archive coverage for a story.",
+    inputSchema: { storyId: z.string() },
+  },
+  async ({ storyId }) =>
+    withStoryDb(storyId, (db) => {
+      const logbook = getBookByType(db, "logbook");
+      if (!logbook) return textResult({ error: "no logbook for this story" });
+      return textResult(buildMemoryManifest(db, logbook.id));
+    })
+);
+
+server.registerTool(
+  "backfill_memory",
+  {
+    description:
+      "Repair memory pipeline state after direct DB edits or schema upgrades: adopt content stamps, reindex tags, " +
+      "and enqueue eligible compress/archive jobs. Call notify_direct_mutation afterward if a browser tab is open.",
+    inputSchema: {
+      storyId: z.string(),
+      reindexTags: z.boolean().optional(),
+      enqueueJobs: z.boolean().optional(),
+    },
+  },
+  async ({ storyId, reindexTags, enqueueJobs }) => {
+    const story = getStory(getGlobalDb(), storyId);
+    if (!story) return textResult({ error: "story not found" });
+
+    return withStoryDb(storyId, (db) => {
+      const logbook = getBookByType(db, "logbook");
+      if (!logbook) return textResult({ error: "no logbook for this story" });
+      return textResult(
+        runMemoryBackfill(db, story.ownerUserId, logbook.id, { reindexTags, enqueueJobs })
+      );
+    });
+  }
 );
 
 server.registerTool(

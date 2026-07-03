@@ -2,12 +2,13 @@ import type Database from "better-sqlite3";
 import { listChronologicalPages, type PageRow } from "../db/page-store.js";
 import { getText, type TextRole, type TextRow } from "../db/text-store.js";
 import { getOwnerArchiveForText, listMemberTextIds, type ArchiveRow } from "../db/archive-store.js";
-import { listTagIdsForText, listTextIdsForTag } from "../db/tag-index-store.js";
+import { listTextIdsForTag } from "../db/tag-index-store.js";
 import { getTag, type TagRow } from "../db/tag-store.js";
-import { getBookByType } from "../db/book-store.js";
+import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { listContentEntries, listWorldbookEntries, type WorldbookEntry } from "../db/worldbook-store.js";
 import type { ChatMessage } from "../inference/featherless.js";
 import { getAgentProfile } from "./agent-config.js";
+import { activateTagsFromQuery, buildTagQueryText } from "./tag-retrieval.js";
 import { AUTHOR_SYSTEM_PROMPT, AUTHOR_KICKOFF_PROMPT } from "../prompts.js";
 
 // No real tokenizer wired up yet (Featherless exposes /v1/tokenize — see
@@ -72,11 +73,14 @@ export function assembleAuthorPrompt(
   const authorProfile = getAgentProfile(userId, "author");
   let remaining = authorProfile.contextLimit - authorProfile.responseLimit;
 
-  // "Tagged" = matches a tag found in the post that's triggering this generation —
-  // unless overridden (see doc comment above).
-  const triggerText = historyPages[historyPages.length - 1].selectedTextId;
+  const tagScopeBookId = getTagScopeBookId(db, logbookId);
+
+  // KAI-style: activate tags from the latest user message + recent assistant context.
+  // Memory inspector passes overrideTagIds to simulate a chosen set instead.
   const triggerTagIds =
-    overrideTagIds !== undefined ? overrideTagIds : triggerText ? listTagIdsForText(db, triggerText) : [];
+    overrideTagIds !== undefined
+      ? overrideTagIds
+      : activateTagsFromQuery(db, tagScopeBookId, buildTagQueryText(db, historyPages));
 
   // Step 3-4: worldbook injection. No worldbook book yet (older test stories, or a
   // story mid-setup) just means these steps contribute nothing — not an error.
@@ -153,10 +157,10 @@ export function assembleAuthorPrompt(
     if (!text) continue;
     if (verboseTextIds.has(text.id)) {
       lines.push({ order, role: text.role, content: text.genPackage!, tokens: estimateTokens(text.genPackage!), kind: "verbose", refTextId: text.id });
-    } else if (archive) {
+    } else if (archive && archive.summary && !archive.broken) {
       if (seenArchives.has(archive.id)) continue;
       seenArchives.add(archive.id);
-      const content = archive.summary ?? "(archive pending)";
+      const content = archive.summary;
       lines.push({ order, role: "system", content, tokens: estimateTokens(content), kind: "archived", archiveId: archive.id });
     } else if (text.genExtract != null) {
       lines.push({ order, role: text.role, content: text.genExtract, tokens: estimateTokens(text.genExtract), kind: "compressed", refTextId: text.id });

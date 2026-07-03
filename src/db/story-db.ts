@@ -3,6 +3,8 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { STORY_SCHEMA_SQL } from "./story-schema.js";
 import { recoverStaleJobs } from "./job-store.js";
+import { setMemoryContentStamp } from "./page-store.js";
+import { computeTextContentStamp } from "../services/content-stamp.js";
 
 const STORIES_DIR = path.resolve(process.cwd(), "data", "stories");
 
@@ -83,6 +85,40 @@ function backfillSelectedForks(db: Database.Database): void {
   `);
 }
 
+/** Pre-stamp stories: adopt stamps for rows that already have gen_extract (avoids mass recompress). */
+function backfillMemoryContentStamps(db: Database.Database): void {
+  const rows = db
+    .prepare(
+      `SELECT p.id AS page_id, t.gen_package AS gen_package
+       FROM page p
+       JOIN text t ON t.id = p.selected_text_id
+       WHERE p.memory_content_stamp IS NULL
+         AND t.gen_extract IS NOT NULL
+         AND t.broken = 0
+         AND t.gen_package IS NOT NULL`
+    )
+    .all() as Array<{ page_id: string; gen_package: string }>;
+
+  for (const row of rows) {
+    const stamp = computeTextContentStamp({
+      id: "",
+      createdAt: "",
+      pageId: row.page_id,
+      priorTextId: null,
+      role: "agent",
+      sourcePageId: null,
+      hidden: false,
+      broken: false,
+      genRequest: null,
+      genPackage: row.gen_package,
+      genMetrics: null,
+      genExtract: "x",
+      compressMetrics: null,
+    });
+    if (stamp) setMemoryContentStamp(db, row.page_id, stamp);
+  }
+}
+
 /**
  * jobs.job_type's CHECK constraint predates 'tag-gen'/'story-name' -- SQLite can't ALTER a
  * CHECK constraint in place, so a story DB file created before this change would reject any
@@ -161,8 +197,10 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "jobs", "token_estimate", "INTEGER");
   ensureColumn(db, "jobs", "horde_request_id", "TEXT");
   ensureColumn(db, "text", "compress_metrics", "TEXT");
+  ensureColumn(db, "page", "memory_content_stamp", "TEXT");
   finishJobTypeCheckMigration(db);
   backfillSelectedForks(db);
+  backfillMemoryContentStamps(db);
   if (!options?.skipRecovery) recoverStaleJobs(db);
   openStoryDbs.set(storyId, db);
   return db;

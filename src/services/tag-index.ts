@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { getTag, listTags } from "../db/tag-store.js";
 import { addTagMatch, removeTagMatch, listTextIdsForTag } from "../db/tag-index-store.js";
 import { getText, listSelectedTextsForBook } from "../db/text-store.js";
+import { textForTagMatching } from "./tag-retrieval.js";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -22,7 +23,8 @@ export function reindexTagAcrossBook(db: Database.Database, tagId: string): void
   const nowMatched = new Set<string>();
 
   for (const text of texts) {
-    if (!text.genPackage || !matchesTag(text.genPackage, tag.name)) continue;
+    const haystack = textForTagMatching(text);
+    if (!haystack || !matchesTag(haystack, tag.name)) continue;
     nowMatched.add(text.id);
     if (!currentlyMatched.has(text.id)) addTagMatch(db, tagId, text.id);
   }
@@ -32,14 +34,16 @@ export function reindexTagAcrossBook(db: Database.Database, tagId: string): void
   }
 }
 
-/** New or edited post: scan its content against every active tag in the book. */
+/** New or edited post: scan its verbose and compressed content against every active tag in the book. */
 export function indexTextAgainstAllTags(db: Database.Database, bookId: string, textId: string): void {
   const text = getText(db, textId);
-  if (!text || !text.genPackage) return;
+  if (!text) return;
+  const haystack = textForTagMatching(text);
+  if (!haystack) return;
 
   for (const tag of listTags(db, bookId)) {
     if (tag.hidden) continue;
-    if (matchesTag(text.genPackage, tag.name)) {
+    if (matchesTag(haystack, tag.name)) {
       addTagMatch(db, tag.id, textId);
     } else {
       removeTagMatch(db, tag.id, textId);

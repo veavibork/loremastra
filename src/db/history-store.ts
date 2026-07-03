@@ -71,7 +71,9 @@ function resolveCurrentPageId(db: Database.Database): string | null {
 }
 
 /** Reverses the most recent ledger event and moves the cursor back one step. Null if already at the beginning. */
-export function undoHistory(db: Database.Database): { currentPageId: string | null } | null {
+export function undoHistory(
+  db: Database.Database
+): { currentPageId: string | null; canonicalTextPageId?: string } | null {
   const cursor = getHistoryCursorSeq(db);
   if (cursor === 0) return null;
 
@@ -87,11 +89,16 @@ export function undoHistory(db: Database.Database): { currentPageId: string | nu
   });
   run();
 
-  return { currentPageId: resolveCurrentPageId(db) };
+  return {
+    currentPageId: resolveCurrentPageId(db),
+    ...(event.kind === "text" ? { canonicalTextPageId: event.page_id } : {}),
+  };
 }
 
 /** Re-applies the next ledger event and moves the cursor forward one step. Null if already at the head of the ledger. */
-export function redoHistory(db: Database.Database): { currentPageId: string | null } | null {
+export function redoHistory(
+  db: Database.Database
+): { currentPageId: string | null; canonicalTextPageId?: string } | null {
   const cursor = getHistoryCursorSeq(db);
   const next = db.prepare(`SELECT * FROM history_event WHERE seq = ?`).get(cursor + 1) as
     | HistoryEventRow
@@ -104,7 +111,10 @@ export function redoHistory(db: Database.Database): { currentPageId: string | nu
   });
   run();
 
-  return { currentPageId: resolveCurrentPageId(db) };
+  return {
+    currentPageId: resolveCurrentPageId(db),
+    ...(next.kind === "text" ? { canonicalTextPageId: next.page_id } : {}),
+  };
 }
 
 export function canUndoHistory(db: Database.Database): boolean {

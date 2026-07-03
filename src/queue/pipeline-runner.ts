@@ -16,7 +16,7 @@ import { createPageWithText } from "../db/content-store.js";
 import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { listContentEntries, listWorldbookEntries, type WorldbookEntry } from "../db/worldbook-store.js";
 import { createTag, isValidTagName, listTags } from "../db/tag-store.js";
-import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
+import { fillArchiveSummary, getArchive } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { getStory, renameStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
@@ -38,7 +38,19 @@ import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-sto
 import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
+import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
+import { buildArchiveUserPrompt } from "../services/archive-worker.js";
 import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
+import { markCompressValid } from "../services/memory-invalidation.js";
+import {
+  buildCompressUserPrompt,
+  compressRetryHint,
+  fallbackNarrativeSummary,
+  sanitizeCompressResult,
+  tryShortVerbatimCompress,
+  tryTrivialCompress,
+  validateCompressSummary,
+} from "../services/compress-worker.js";
 import { getAgentProfile } from "../services/agent-config.js";
 import { matchesRefusalPrefix } from "../services/refusal-detection.js";
 import {
@@ -751,35 +763,53 @@ async function executeCompressJob(
     if (!targetText?.genPackage) throw new Error("nothing to compress");
 
     const targetPage = getPage(db, targetText.pageId);
-    const priorPage = targetPage?.prevPageId ? getPage(db, targetPage.prevPageId) : null;
-    const priorText = priorPage?.selectedTextId ? getText(db, priorPage.selectedTextId) : null;
-    const priorSummary = priorText?.genExtract ?? null;
-
-    const worldbook = getBookByType(db, "worldbook");
-    const contentEntries = worldbook ? listContentEntries(db, worldbook.id) : [];
-
-    const compressMessages: ChatMessage[] = [{ role: "system", content: COMPRESS_SYSTEM_PROMPT }];
-    if (contentEntries.length) {
-      compressMessages.push({
-        role: "system",
-        content: `Worldbook context for this story:\n${contentEntries.map((e) => e.content).join("\n\n")}`,
-      });
-    }
-    if (priorSummary) compressMessages.push({ role: "system", content: `What just happened, for context: ${priorSummary}` });
-    compressMessages.push({ role: "user", content: targetText.genPackage });
+    if (!targetPage) throw new Error("target page no longer exists");
 
     let summary: string | null = null;
     let usedModel = "";
     let lastError = "unknown error";
 
+    const trivial = tryTrivialCompress(targetText.genPackage);
+    if (trivial) summary = trivial.summary;
+
+    if (!summary) {
+      const verbatim = tryShortVerbatimCompress(targetText.role, targetText.genPackage);
+      if (verbatim) summary = verbatim.summary;
+    }
+
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    const userPrompt = buildCompressUserPrompt(db, targetText, targetPage);
+
     for (let attempt = 1; attempt <= COMPRESS_MAX_ATTEMPTS && !summary; attempt++) {
       try {
+        const attemptMessages: ChatMessage[] = [{ role: "system", content: COMPRESS_SYSTEM_PROMPT }];
+        if (attempt > 1 && lastError.startsWith("validation:")) {
+          attemptMessages.push({
+            role: "system",
+            content: compressRetryHint(lastError.slice("validation:".length)),
+          });
+        }
+        attemptMessages.push({ role: "user", content: userPrompt });
+
         const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, featherlessKey, compressMessages);
+          return completeChat(profile, featherlessKey, attemptMessages);
         });
-        const candidate = extractSummary(rawText) ?? "";
+
+        let candidate = extractSummary(rawText) ?? "";
+        if (!candidate) {
+          lastError = "validation:missing_summary_block";
+          continue;
+        }
+
+        const validation = validateCompressSummary(targetText.genPackage, candidate, targetText.role);
+        if (!validation.ok) {
+          lastError = `validation:${validation.reason}`;
+          continue;
+        }
+
+        candidate = sanitizeCompressResult(targetText.genPackage, { summary: candidate }).summary;
+
         if (matchesRefusalPrefix(userId, candidate)) {
           lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
         } else if (withinWordLimit(candidate, COMPRESS_MAX_WORDS)) {
@@ -792,11 +822,21 @@ async function executeCompressJob(
       }
     }
 
-    if (!summary) throw new Error(`compression failed after ${COMPRESS_MAX_ATTEMPTS} attempts — ${lastError}`);
+    if (!summary) {
+      summary = fallbackNarrativeSummary(targetText.genPackage);
+      if (!summary || matchesRefusalPrefix(userId, summary)) {
+        throw new Error(`compression failed after ${COMPRESS_MAX_ATTEMPTS} attempts — ${lastError}`);
+      }
+    }
 
     const tokenEstimate = Math.ceil(summary.length / 4);
     const compressMetrics = JSON.stringify({ elapsedMs: Date.now() - startedAt, tokenEstimate });
     fillTextExtract(db, targetTextId, summary, compressMetrics);
+    if (targetPage) {
+      markCompressValid(db, targetPage.id, targetTextId);
+      indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
+      enqueueEligibleArchiveBlocks(db, userId, targetPage.bookId);
+    }
     finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -997,11 +1037,7 @@ async function executeArchiveJob(
     const archive = getArchive(db, targetArchiveId);
     if (!archive) throw new Error("target archive no longer exists");
 
-    const memberTextIds = listMemberTextIds(db, targetArchiveId);
-    const compressedLines = memberTextIds
-      .map((id) => getText(db, id)?.genExtract)
-      .filter((line): line is string => !!line);
-    if (!compressedLines.length) throw new Error("no compressed member content to summarize");
+    const userContent = buildArchiveUserPrompt(db, targetArchiveId);
 
     let summary: string | null = null;
     let usedModel = "";
@@ -1014,7 +1050,7 @@ async function executeArchiveJob(
           usedModel = profile.model;
           return completeChat(profile, featherlessKey, [
             { role: "system", content: ARCHIVE_SYSTEM_PROMPT },
-            { role: "user", content: compressedLines.join("\n") },
+            { role: "user", content: userContent },
           ]);
         });
         const candidate = extractSummary(rawText) ?? "";

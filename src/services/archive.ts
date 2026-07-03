@@ -10,6 +10,7 @@ import {
 } from "../db/archive-store.js";
 import { createJob } from "../db/job-store.js";
 import { getAgentProfile } from "./agent-config.js";
+import { postNeedsCompress } from "./content-stamp.js";
 
 // Doc + lorepebble-proven design: overlapping 10-post windows, 50% overlap.
 const ARCHIVE_BLOCK_SIZE = 10;
@@ -31,7 +32,10 @@ export function enqueueEligibleArchiveBlocks(db: Database.Database, userId: stri
     if (existingStarts.has(startPage.id)) continue;
 
     const windowTexts = windowPages.map((p) => (p.selectedTextId ? getText(db, p.selectedTextId) : null));
-    const allCompressed = windowTexts.every((t) => t?.genExtract != null);
+    const allCompressed = windowPages.every((page, i) => {
+      const text = windowTexts[i];
+      return text?.genPackage && !postNeedsCompress(page, text);
+    });
     if (!allCompressed) continue;
 
     const endPage = windowPages[windowPages.length - 1];

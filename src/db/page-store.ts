@@ -12,6 +12,8 @@ export interface PageRow {
   selectTime: string | null;
   hidden: boolean;
   broken: boolean;
+  /** SHA-256 of normalized canonical gen_package — gen_extract is valid only when this matches. */
+  memoryContentStamp: string | null;
 }
 
 interface RawPageRow {
@@ -24,6 +26,7 @@ interface RawPageRow {
   select_time: string | null;
   hidden: number;
   broken: number;
+  memory_content_stamp: string | null;
 }
 
 function mapPageRow(row: RawPageRow): PageRow {
@@ -37,6 +40,7 @@ function mapPageRow(row: RawPageRow): PageRow {
     selectTime: row.select_time,
     hidden: !!row.hidden,
     broken: !!row.broken,
+    memoryContentStamp: row.memory_content_stamp ?? null,
   };
 }
 
@@ -159,4 +163,8 @@ export function setPageHidden(db: Database.Database, id: string, hidden: boolean
 
 export function setPageBroken(db: Database.Database, id: string, broken: boolean): void {
   db.prepare(`UPDATE page SET broken = ? WHERE id = ?`).run(broken ? 1 : 0, id);
+}
+
+export function setMemoryContentStamp(db: Database.Database, pageId: string, stamp: string | null): void {
+  db.prepare(`UPDATE page SET memory_content_stamp = ? WHERE id = ?`).run(stamp, pageId);
 }

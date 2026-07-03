@@ -27,10 +27,18 @@ import { getStoryState, setStoryPhase, setKickoffPageId, setCurrentPageId, setOo
 import { recordHistoryEvent, undoHistory, redoHistory, canUndoHistory, canRedoHistory } from "../db/history-store.js";
 import { finalizeSetup } from "../services/kickoff.js";
 import { forkStory } from "../services/fork.js";
+import { onCanonicalTextChangedForStory } from "../services/memory-invalidation.js";
 import { trackStoryDb, untrackStoryDb, setJobGuidance, requestJobCancel } from "../queue/pipeline-runner.js";
 import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
+import {
+  buildMemoryManifest,
+  buildMemorySummary,
+  enqueueMemoryPipeline,
+  previewTagActivation,
+  runMemoryBackfill,
+} from "../services/memory-manifest.js";
 import { EDITOR_SETUP_OPENING } from "../prompts.js";
 import { getAgentProfile } from "../services/agent-config.js";
 
@@ -173,6 +181,54 @@ storiesRoute.get("/:id/prompt-preview", (c) => {
   return c.json({ messages });
 });
 
+/** Compact memory health — stale compress counts, archive gaps, no per-post dump. */
+storiesRoute.get("/:id/memory/summary", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  return c.json(buildMemorySummary(storyDb, logbook.id));
+});
+
+/** Full per-post memory manifest (stamps, compress validity, tag counts, archives). */
+storiesRoute.get("/:id/memory/manifest", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  return c.json(buildMemoryManifest(storyDb, logbook.id));
+});
+
+/** KAI-style tag activation preview at current position (or ?fromPageId=). */
+storiesRoute.get("/:id/memory/tag-activation", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  const fromPageId = c.req.query("fromPageId") ?? undefined;
+  return c.json(previewTagActivation(storyDb, logbook.id, fromPageId));
+});
+
+/** Repair stamps, optionally reindex tags and enqueue compress/archive jobs. */
+storiesRoute.post("/:id/memory/backfill", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { reindexTags?: boolean; enqueueJobs?: boolean };
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  return c.json(
+    runMemoryBackfill(storyDb, c.get("userId"), logbook.id, {
+      reindexTags: body.reindexTags,
+      enqueueJobs: body.enqueueJobs,
+    })
+  );
+});
+
+/** Queue eligible compress/archive jobs only — no stamp or tag repair. */
+storiesRoute.post("/:id/memory/enqueue", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  const pendingMemoryJobs = enqueueMemoryPipeline(storyDb, c.get("userId"), logbook.id);
+  return c.json({ pendingMemoryJobs, summary: buildMemorySummary(storyDb, logbook.id) });
+});
+
 storiesRoute.get("/:id/phase", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   return c.json(getStoryState(storyDb));
@@ -255,6 +311,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
     role: "agent",
   });
   recordHistoryEvent(storyDb, { kind: "text", pageId, fromValue: currentText.id, toValue: newText.id });
+  onCanonicalTextChangedForStory(storyDb, c.get("userId"), pageId);
   const job = createJob(storyDb, {
     targetTextId: newText.id,
     jobType: isSetupPage ? "setup" : "prose",
@@ -288,7 +345,7 @@ storiesRoute.post("/:id/posts/:pageId/edit", async (c) => {
     genPackage: content,
   });
   recordHistoryEvent(storyDb, { kind: "text", pageId, fromValue: currentText.id, toValue: newText.id });
-  indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, page.bookId), newText.id);
+  onCanonicalTextChangedForStory(storyDb, c.get("userId"), pageId);
 
   return c.json({ ok: true, textId: newText.id });
 });
@@ -356,6 +413,9 @@ storiesRoute.post("/:id/position/undo", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const result = undoHistory(storyDb);
   if (!result) return c.json({ error: "already at the beginning" }, 400);
+  if (result.canonicalTextPageId) {
+    onCanonicalTextChangedForStory(storyDb, c.get("userId"), result.canonicalTextPageId);
+  }
   return c.json(currentPositionResponse(storyDb));
 });
 
@@ -363,6 +423,9 @@ storiesRoute.post("/:id/position/redo", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const result = redoHistory(storyDb);
   if (!result) return c.json({ error: "nothing to redo" }, 400);
+  if (result.canonicalTextPageId) {
+    onCanonicalTextChangedForStory(storyDb, c.get("userId"), result.canonicalTextPageId);
+  }
   return c.json(currentPositionResponse(storyDb));
 });
 

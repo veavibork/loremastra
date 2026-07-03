@@ -78,6 +78,21 @@ export function setArchiveBroken(db: Database.Database, id: string, broken: bool
   db.prepare(`UPDATE archive SET broken = ? WHERE id = ?`).run(broken ? 1 : 0, id);
 }
 
+/** Removes a block and its members so enqueue can recreate it after invalidation (Group 1 / C3). */
+export function deleteArchive(db: Database.Database, id: string): void {
+  db.prepare(`DELETE FROM jobs WHERE target_archive_id = ?`).run(id);
+  db.prepare(`DELETE FROM archive_member WHERE archive_id = ?`).run(id);
+  db.prepare(`DELETE FROM archive WHERE id = ?`).run(id);
+}
+
+/** Point every archive_member row for this page at the page's current canonical text. */
+export function syncArchiveMembersForPage(db: Database.Database, pageId: string, textId: string): void {
+  db.prepare(
+    `UPDATE archive_member SET text_id = ?
+     WHERE text_id IN (SELECT id FROM text WHERE page_id = ?)`
+  ).run(textId, pageId);
+}
+
 export function addArchiveMember(db: Database.Database, archiveId: string, textId: string, isOwner: boolean): void {
   db.prepare(
     `INSERT OR IGNORE INTO archive_member (archive_id, text_id, is_owner) VALUES (?, ?, ?)`
