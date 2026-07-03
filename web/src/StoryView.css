@@ -59,20 +59,25 @@
   padding: 0.2rem 0.5rem;
 }
 
-/* Edit mode swaps rendered markdown for this in place — same font/size/flow as .entry-content,
-   no visible chrome, so the box doesn't change size or jump when toggling edit on/off. */
+/* Edit mode swaps .entry-content for this in place — no visible chrome, no margin, so the box
+   matches .entry-content's pre-wrap rendering exactly (a textarea is pre-wrap by default) and
+   doesn't change size or jump when toggling edit on/off. */
 .edit-box-textarea {
   display: block;
   width: 100%;
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
+  /* Form controls don't inherit letter-spacing from ancestors by default the way a <div> does —
+     without this, index.css's root `letter-spacing: 0.18px` silently drops to 0 here, a real
+     (if subtle) spacing mismatch against .entry-content. */
+  letter-spacing: inherit;
   color: inherit;
   background: transparent;
   border: none;
   outline: none;
   padding: 0;
-  margin: 0 0 0.6em;
+  margin: 0;
   resize: none;
   overflow: hidden;
 }
@@ -88,10 +93,6 @@
   border-radius: 4px;
   padding: 0 0.15rem;
   color: inherit;
-}
-
-.worldbook-block p {
-  display: inline;
 }
 
 .worldbook-block-content {

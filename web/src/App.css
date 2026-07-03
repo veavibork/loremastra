@@ -58,6 +58,12 @@
   gap: 0.15rem;
   text-align: left;
   font-size: var(--entry-font-size, 15px);
+  /* Unitless, not index.css's inherited `145%` (which computes to a fixed px value at the
+     root's 18px and stays that size regardless of this element's own smaller font-size) —
+     unitless line-height recomputes per element against its own font-size on inheritance,
+     so blank-line paragraph gaps in .entry-content stay proportionate to --entry-font-size
+     instead of ballooning to the root's line-height. */
+  line-height: 1.4;
   overflow-wrap: break-word;
   min-width: 0;
   padding: 0.5rem 0.8rem;
@@ -84,12 +90,11 @@
   margin: 0;
 }
 
-.entry-content p {
-  margin: 0 0 0.6em;
-}
-
-.entry-content p:last-child {
-  margin-bottom: 0;
+/* Blank lines in the source render as blank lines here (pre-wrap), the same way a plain
+   <textarea> renders them — see EntryContent.tsx's doc comment for why this replaced
+   Markdown's block-level <p> + margin approach. */
+.entry-content {
+  white-space: pre-wrap;
 }
 
 .entry-agent p,
@@ -128,7 +133,13 @@
   background: #1a1a1a;
   color: inherit;
   font-family: inherit;
-  font-size: inherit;
+  /* Match the log's post text size (Settings-configurable) rather than the page's base
+     font-size, so the composer doesn't look larger than what you're replying to. */
+  font-size: var(--entry-font-size, 15px);
+  /* Same fixed-px-inheritance issue .entry avoids — see its line-height comment. */
+  line-height: 1.4;
+  /* Form controls don't inherit letter-spacing by default — see .edit-box-textarea's comment. */
+  letter-spacing: inherit;
   resize: none;
   overflow-y: auto;
   max-height: 40vh;

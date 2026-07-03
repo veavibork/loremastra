@@ -25,7 +25,16 @@ import "./StoryView.css";
 /** Grows with its content instead of scrolling internally — used for both the composer and
  * inline post editing so neither ever shows a stale, pre-resize box on first paint. Measuring in
  * useLayoutEffect (before the browser paints) rather than useEffect (after) is what avoids a
- * one-frame flash of the wrong size. */
+ * one-frame flash of the wrong size.
+ *
+ * `initialHeight`, when given, is applied via the ref callback (fires during commit, before any
+ * effect) rather than the default browser intrinsic (one row) — for StoryView's per-entry edit
+ * boxes, which mount several at once when toggling edit mode on for a whole log. Without this,
+ * every box would render at ~1 line tall for one frame before its own layout effect corrects it,
+ * collapsing .log's total scrollHeight in the interim; the browser auto-clamps scrollTop to fit
+ * that collapsed height and never un-clamps as the boxes regrow, which reads as the whole log
+ * jumping toward the top. Setting a close-enough starting height up front means the aggregate
+ * height barely moves during the transition, so there's nothing for the browser to clamp against. */
 function AutoGrowTextarea({
   value,
   onChange,
@@ -35,6 +44,8 @@ function AutoGrowTextarea({
   placeholder,
   disabled,
   autoFocus,
+  initialHeight,
+  onBeforeResize,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -44,6 +55,14 @@ function AutoGrowTextarea({
   placeholder?: string;
   disabled?: boolean;
   autoFocus?: boolean;
+  initialHeight?: number;
+  // Called right before every collapse-then-remeasure resize pass (including on every keystroke,
+  // not just mount) — StoryView uses this to apply its scroll-height floor (see
+  // lockLogHeightDuringTransition) around each one. The collapse-to-"auto" step below is needed to
+  // correctly detect shrinkage, but on a *focused* box mid-edit, even a same-frame collapse can
+  // trigger the browser's native "keep the caret in view" scrolling against the transiently
+  // shrunk .log, which reads as the edited line snapping toward the composer at the bottom.
+  onBeforeResize?: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -51,6 +70,7 @@ function AutoGrowTextarea({
     const el = ref.current;
     if (!el) return;
     const resize = () => {
+      onBeforeResize?.();
       // scrollHeight reflects whatever's rendered inside the box, including a wrapped
       // placeholder — for the composer's long instructional placeholder that inflated an
       // empty box to 2-3 lines tall. Hide it for the measurement so height only ever tracks
@@ -66,11 +86,21 @@ function AutoGrowTextarea({
     // this first measurement) that the value-keyed effect above has no other reason to rerun for.
     const raf = requestAnimationFrame(resize);
     return () => cancelAnimationFrame(raf);
+    // onBeforeResize deliberately excluded: StoryView passes a fresh closure every render, but it
+    // only ever reads refs (never stale state), so re-running this effect on every unrelated
+    // parent re-render would just be wasted work, not a correctness fix.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   return (
     <textarea
-      ref={ref}
+      ref={(el) => {
+        ref.current = el;
+        // Guards against re-applying on every render (callback refs re-fire then) — once the
+        // layout effect above has set a real height, style.height is no longer empty and this
+        // becomes a no-op.
+        if (el && initialHeight && !el.style.height) el.style.height = `${initialHeight}px`;
+      }}
       rows={1}
       className={className}
       value={value}
@@ -112,10 +142,46 @@ export default function StoryView({
   const [editDrafts, setEditDrafts] = useState<Record<string, string>>({});
   const [forkMode, setForkMode] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  // Invisible, below-the-fold last child of .log — see lockLogHeightDuringTransition.
+  const logSpacerRef = useRef<HTMLDivElement>(null);
   // Tracks whichever edit-mode textarea last had focus, so the toolbar's Delete button knows
   // which draft/selection to act on (touch keyboards sometimes drop their key-entry UI on a
   // text selection, leaving Cut as the only native option — this does a real delete instead).
   const activeEditRef = useRef<{ pageId: string; el: HTMLTextAreaElement } | null>(null);
+  // Every rendered entry's wrapper div, kept live via the ref prop below — read from just before
+  // entering edit mode to seed each edit box's initialHeight (see AutoGrowTextarea's doc comment).
+  const entryElRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const initialEditHeights = useRef<Record<string, number>>({});
+
+  /**
+   * Toggling edit mode swaps every visible entry between a plain <div> (sized by the browser's
+   * normal layout pass, correct on the very first frame) and a <textarea> (sized by JS after
+   * mount — see AutoGrowTextarea). Even with initialHeight seeding that JS-driven settling has an
+   * async window during which .log's real scrollHeight can dip below its pre-transition value; if
+   * the user is scrolled at or near the bottom, the browser auto-clamps scrollTop to fit that dip
+   * and never un-clamps as things regrow, which reads as the log jumping toward the top.
+   *
+   * Rather than trying to precisely predict every box's transitional height, this reserves a
+   * scratch buffer — an invisible last child, below the fold — sized to at least the current
+   * scrollHeight, so scrollHeight structurally cannot fall below that floor no matter what happens
+   * above it. Since it only ever occupies space *past* whatever's currently in view, it's invisible
+   * regardless of scroll position. Released after two animation frames — one for AutoGrowTextarea's
+   * synchronous layout-effect resize, one more for its own delayed rAF resize pass — by which point
+   * real content has regrown past the floor anyway, so shrinking the spacer back to 0 is a no-op
+   * visually.
+   */
+  function lockLogHeightDuringTransition() {
+    const logEl = logRef.current;
+    const spacerEl = logSpacerRef.current;
+    if (!logEl || !spacerEl) return;
+    spacerEl.style.height = `${logEl.scrollHeight}px`;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (spacerEl) spacerEl.style.height = "0px";
+      });
+    });
+  }
 
   async function refresh(): Promise<LogEntry[]> {
     const freshEntries = await fetchLog(storyId);
@@ -297,9 +363,16 @@ export default function StoryView({
   }
 
   async function toggleEditMode() {
+    lockLogHeightDuringTransition();
     if (!editMode) {
       const seeded: Record<string, string> = {};
-      for (const entry of shown) seeded[entry.pageId] = entry.content ?? "";
+      const heights: Record<string, number> = {};
+      for (const entry of shown) {
+        seeded[entry.pageId] = entry.content ?? "";
+        const contentEl = entryElRefs.current[entry.pageId]?.querySelector<HTMLElement>(".entry-content");
+        if (contentEl) heights[entry.pageId] = contentEl.offsetHeight;
+      }
+      initialEditHeights.current = heights;
       setEditDrafts(seeded);
       setEditMode(true);
       return;
@@ -423,9 +496,13 @@ export default function StoryView({
 
   return (
     <div className="story-view">
-      <div className="log">
+      <div className="log" ref={logRef}>
         {shown.map((entry) => (
-          <div key={entry.pageId} className={`entry entry-${entry.role}`}>
+          <div
+            key={entry.pageId}
+            ref={(el) => { entryElRefs.current[entry.pageId] = el; }}
+            className={`entry entry-${entry.role}`}
+          >
             <RoleLabel role={entry.role} mode={mode} />
             {editMode ? (
               <AutoGrowTextarea
@@ -433,6 +510,8 @@ export default function StoryView({
                 value={editDrafts[entry.pageId] ?? entry.content ?? ""}
                 onChange={(value) => setEditDrafts((prev) => ({ ...prev, [entry.pageId]: value }))}
                 onFocus={(e) => { activeEditRef.current = { pageId: entry.pageId, el: e.currentTarget }; }}
+                initialHeight={initialEditHeights.current[entry.pageId]}
+                onBeforeResize={lockLogHeightDuringTransition}
               />
             ) : (
               <>
@@ -461,6 +540,7 @@ export default function StoryView({
           );
         })}
         <div ref={logEndRef} />
+        <div ref={logSpacerRef} style={{ flexShrink: 0 }} />
       </div>
 
       {error && <div className="error-banner">{error}</div>}
