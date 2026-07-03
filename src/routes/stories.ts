@@ -243,7 +243,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
     slotCost: 4,
     priority: 10,
   });
-  if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim());
+  if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "regenerate");
 
   return c.json({ jobId: job.id, pageId, textId: newText.id });
 });
@@ -307,7 +307,7 @@ storiesRoute.post("/:id/continue", async (c) => {
     slotCost: 4,
     priority: 10,
   });
-  if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim());
+  if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "continue");
 
   return c.json({ agentPageId: page.id, jobId: job.id });
 });

@@ -143,3 +143,21 @@ SUCCESS CRITERIA: UPDATING WORLDBOOK ENTRIES
 You may not edit existing entries. Therefore, you must write new CONTENT, ROSTER, or MEMORY entries as deltas to the existing entries. Any contradictions to earlier facts must be highlighted and explained as part of the entry. The language must clearly articulate continuity between the two entries as they will be read one after another.
 
 As before, you must write all worldbook entries using either the CONTENT, ROSTER, or MEMORY schema, exactly matching the provided format, including opening and closing brackets.`;
+
+/**
+ * Guided retry/continue's steering text, appended as the last message before generation.
+ * Bracket-delimited rather than a plain sentence — this is the same OOC/author's-note
+ * convention already established by the worldbook's own [CONTENT]/[ROSTER]/[MEMORY] tags
+ * (see EDITOR_SETUP_WORLDBOOK above), and widely trained into RP models generally. The
+ * closing bracket is a hard, syntactic stop point, which a plain sentence isn't — a model
+ * given a colon-and-prose instruction was observed continuing it as prose rather than
+ * treating it as a closed directive.
+ */
+export function guidedRegenerateNote(guidance: string): string {
+  return `[Take the following into special consideration for your next reply: ${guidance}]`;
+}
+
+/** Continue's forward-extending phrasing, distinct from regenerate's replace-in-place phrasing — mirrors SillyTavern's own promptGuidedResponse/promptGuidedContinue split. */
+export function guidedContinueNote(guidance: string, subject: "story" | "conversation"): string {
+  return `[Continue the ${subject} based on the following input: ${guidance}]`;
+}

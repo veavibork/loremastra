@@ -14,6 +14,7 @@ import {
   callWithForcedTool,
   withModelFallback,
   FeatherlessError,
+  isReasoningModel,
   type ChatMessage,
   type ToolDefinition,
 } from "../inference/featherless.js";
@@ -29,6 +30,8 @@ import {
   EDITOR_UPDATE_PROMPT,
   COMPRESS_SYSTEM_PROMPT,
   ARCHIVE_SYSTEM_PROMPT,
+  guidedRegenerateNote,
+  guidedContinueNote,
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
@@ -40,9 +43,10 @@ const CLAIMABLE_JOB_TYPES: JobType[] = ["prose", "compress", "archive", "setup",
  * job-scoped and ephemeral, threaded through in memory rather than the DB,
  * the same way job-events.ts already handles other non-persisted job state.
  */
-const jobGuidance = new Map<string, string>();
-export function setJobGuidance(jobId: string, guidance: string): void {
-  jobGuidance.set(jobId, guidance);
+type GuidanceIntent = "regenerate" | "continue";
+const jobGuidance = new Map<string, { text: string; intent: GuidanceIntent }>();
+export function setJobGuidance(jobId: string, guidance: string, intent: GuidanceIntent): void {
+  jobGuidance.set(jobId, { text: guidance, intent });
 }
 const COMPRESS_MAX_ATTEMPTS = 3;
 const COMPRESS_MAX_WORDS = 60; // generous ceiling — a real ~20-token summary is well under this; catches "ignored the prompt and kept writing" cases
@@ -85,6 +89,8 @@ function withinWordLimit(text: string, maxWords: number): boolean {
   return !!text && text.split(/\s+/).length <= maxWords;
 }
 
+const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2;
+
 /**
  * Streams a reply with model fallback, treating an empty-but-error-free completion as a
  * retriable failure rather than a valid (if useless) result. Providers sometimes signal
@@ -93,6 +99,16 @@ function withinWordLimit(text: string, maxWords: number): boolean {
  * call, moments after a streaming call to the same model produced zero tokens with no
  * error) — without this, that failure mode would silently bypass withModelFallback
  * entirely, since the emptiness was only ever checked after it had already returned.
+ *
+ * For a reasoning model specifically (see isReasoningModel), the same empty-completion
+ * failure has a known, reproducible cause: its chat template lets the model decide, per turn,
+ * whether/how to open its own `<think>` block, and under temperature the very first sampled
+ * token can land on an immediate close-and-stop instead — confirmed live by replaying an
+ * identical failing request repeatedly. Prefilling the assistant turn with an already-open
+ * `<think>\n` removes that coin-flip (same technique SillyTavern's reasoning-model presets
+ * use). EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE is a belt-and-suspenders retry on top of that
+ * for whatever variance the prefill doesn't catch, before handing off to the next fallback
+ * candidate (if any).
  */
 async function streamWithFallback(
   profile: AgentProfile,
@@ -101,22 +117,34 @@ async function streamWithFallback(
 ): Promise<{ text: string; model: string }> {
   let reply = "";
   let usedModel = profile.model;
-  await withModelFallback(profile, (candidate) => {
-    reply = "";
+  await withModelFallback(profile, async (candidate) => {
     usedModel = candidate.model;
-    return new Promise<void>((resolve, reject) => {
-      void streamInference(candidate, messages, {
-        onToken: (text) => {
-          reply += text;
-          publishToken(jobId, text);
-        },
-        onDone: () => {
-          if (reply.trim()) resolve();
-          else reject(new FeatherlessError(503, `${candidate.model} returned an empty completion`));
-        },
-        onError: reject,
-      });
-    });
+    const candidateMessages = isReasoningModel(candidate.model)
+      ? [...messages, { role: "assistant" as const, content: "<think>\n" }]
+      : messages;
+
+    for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
+      reply = "";
+      try {
+        await new Promise<void>((resolve, reject) => {
+          void streamInference(candidate, candidateMessages, {
+            onToken: (text) => {
+              reply += text;
+              publishToken(jobId, text);
+            },
+            onDone: () => {
+              if (reply.trim()) resolve();
+              else reject(new FeatherlessError(503, `${candidate.model} returned an empty completion`));
+            },
+            onError: reject,
+          });
+        });
+        return;
+      } catch (err) {
+        const isEmptyCompletion = err instanceof FeatherlessError && err.message.includes("empty completion");
+        if (!isEmptyCompletion || attempt === EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE) throw err;
+      }
+    }
   });
   return { text: reply, model: usedModel };
 }
@@ -217,7 +245,11 @@ async function executeProseJob(
     const guidance = jobGuidance.get(jobId);
     if (guidance) {
       jobGuidance.delete(jobId);
-      history = [...history, { role: "system", content: `Guidance for this generation: ${guidance}` }];
+      const content =
+        guidance.intent === "continue"
+          ? guidedContinueNote(guidance.text, "story")
+          : guidedRegenerateNote(guidance.text);
+      history = [...history, { role: "system", content }];
     }
 
     const { text: fullText, model } = await streamWithFallback(getAgentProfile("author"), history, jobId);
@@ -330,7 +362,11 @@ async function executeSetupJob(
     const guidance = jobGuidance.get(jobId);
     if (guidance) {
       jobGuidance.delete(jobId);
-      editorMessages.push({ role: "system", content: `Guidance for this reply: ${guidance}` });
+      const content =
+        guidance.intent === "continue"
+          ? guidedContinueNote(guidance.text, "conversation")
+          : guidedRegenerateNote(guidance.text);
+      editorMessages.push({ role: "system", content });
     }
 
     const { text: reply, model } = await streamWithFallback(getAgentProfile("editor"), editorMessages, jobId);

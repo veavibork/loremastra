@@ -2,6 +2,7 @@ import type { AgentProfile } from "../config.js";
 import { FEATHERLESS_API_KEY, FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from "./featherless-config.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { recordModelOutcome } from "../db/model-config-store.js";
+import { logOutboundRequest } from "./outbound-log.js";
 
 /** Optional sampler params (Config > Agents), omitted entirely rather than sent as null/0 when unset — see docs' completions parameter list. */
 function samplerParams(profile: AgentProfile): Record<string, number> {
@@ -60,6 +61,22 @@ export class FeatherlessError extends Error {
 // 404 ("model_not_found") isn't in the docs' error table but was hit live during testing (a typo'd
 // or delisted model id) — unambiguously "this model id doesn't work," so it belongs here too.
 const MODEL_UNAVAILABLE_STATUS_CODES = new Set([400, 403, 404, 503]);
+
+/**
+ * A reasoning model's chat template leaves it up to the model, per turn, to decide whether/how
+ * to open its own `<think>` block. Under higher temperature, the very first sampled token can
+ * land on an immediate close-and-stop instead of opening reasoning at all — a genuinely empty
+ * completion, confirmed live by replaying the exact same request repeatedly (same input, same
+ * params, intermittent zero-token completions with finish_reason "stop"). Prefilling the
+ * assistant turn with an already-open `<think>\n` block (see the trailing message pushed in
+ * streamWithFallback) removes that coin-flip — the same "assistant prefill" technique
+ * SillyTavern's own reasoning-model presets use. Detected by model id substring since
+ * AgentProfile has no explicit reasoning-model flag yet; expand this list as more reasoning
+ * families get configured.
+ */
+export function isReasoningModel(model: string): boolean {
+  return /deepseek/i.test(model);
+}
 
 /**
  * Ranked-choice model fallback (loremaster.md's Provider Abstraction section): tries
@@ -168,6 +185,7 @@ export async function streamInference(
   const inputTokens = estimateMessageTokens(messages);
   let outputChars = 0;
 
+  logOutboundRequest({ call: "streamInference", model: profile.model, messages });
   const timeout = armTimeout(options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS, options?.signal);
 
   let response: Response;
@@ -300,6 +318,7 @@ export async function callWithForcedTool(
   }
 
   const inputTokens = estimateMessageTokens(messages);
+  logOutboundRequest({ call: "callWithForcedTool", model: profile.model, messages });
   const timeout = armTimeout(timeoutMs);
   let response: Response;
   try {
@@ -376,6 +395,7 @@ export async function callWithTools(
   }
 
   const inputTokens = estimateMessageTokens(messages);
+  logOutboundRequest({ call: "callWithTools", model: profile.model, messages });
   const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS);
   let response: Response;
   try {

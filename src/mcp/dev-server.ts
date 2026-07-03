@@ -27,6 +27,7 @@ import { listTextIdsForTag } from "../db/tag-index-store.js";
 import { listRecentJobs } from "../db/job-store.js";
 import { getMaxSlots, getSlotsInUse } from "../queue/slots.js";
 import { buildLogView } from "../services/log-view.js";
+import { readRecentOutboundRequests } from "../inference/outbound-log.js";
 import { ensureSingleInstance } from "./single-instance.js";
 
 ensureSingleInstance();
@@ -146,6 +147,16 @@ server.registerTool(
     const tail = allLines.slice(-(lines ?? 100)).join("\n");
     return { content: [{ type: "text" as const, text: tail }] };
   }
+);
+
+server.registerTool(
+  "get_recent_outbound_requests",
+  {
+    description:
+      "Rolling log of the last outbound chat-completions requests sent to Featherless (model + full messages array), across all stories. For troubleshooting prompt-assembly bugs (e.g. guidance/system messages not reaching the model as expected).",
+    inputSchema: { limit: z.number().optional() },
+  },
+  async ({ limit }) => textResult(readRecentOutboundRequests(limit))
 );
 
 const transport = new StdioServerTransport();
