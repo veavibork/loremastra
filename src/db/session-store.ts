@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
+import { getGlobalDb } from "./global-db.js";
+import { getOrCreateDefaultUser } from "./user-store.js";
 
 export interface SessionRow {
   id: string;
@@ -58,4 +60,26 @@ export function getSession(db: Database.Database, id: string): SessionRow | null
 
 export function touchSession(db: Database.Database, id: string): void {
   db.prepare(`UPDATE sessions SET last_seen_at = ? WHERE id = ?`).run(nowIso(), id);
+}
+
+/**
+ * Revokes the active claim without installing a new one, so the next HTTP request from whatever
+ * browser tab was showing this data gets a 409 "unclaimed" and reloads through the same claim/
+ * reclaim flow a superseding session already triggers — used after a direct DB write (dev-server
+ * tools, ad hoc scripts) bypasses the HTTP layer entirely and so can't otherwise signal "the data
+ * under you changed." Not access control, just a forced refresh.
+ */
+export function invalidateActiveSession(db: Database.Database, userId: string): void {
+  db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`).run(nowIso(), userId);
+}
+
+/**
+ * Zero-argument convenience for the common case (dev-server tools, ad hoc scripts): open the
+ * global DB, resolve the one default user, and invalidate whatever session is currently claimed.
+ * Call this once after a direct-DB write is done, not per statement.
+ */
+export function notifyDirectMutation(): void {
+  const db = getGlobalDb();
+  const user = getOrCreateDefaultUser(db);
+  invalidateActiveSession(db, user.id);
 }

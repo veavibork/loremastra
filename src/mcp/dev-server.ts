@@ -17,6 +17,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { getOrCreateDefaultUser } from "../db/user-store.js";
+import { notifyDirectMutation } from "../db/session-store.js";
 import { listStories } from "../db/story-store.js";
 import { getStoryDb, closeStoryDb } from "../db/story-db.js";
 import { getStoryState } from "../db/story-state-store.js";
@@ -163,6 +164,20 @@ server.registerTool(
     inputSchema: { limit: z.number().optional() },
   },
   async ({ limit }) => textResult(readRecentOutboundRequests(limit))
+);
+
+server.registerTool(
+  "notify_direct_mutation",
+  {
+    description:
+      "Call once after any direct-DB write outside the HTTP API (ad hoc script, manual SQL) that may have changed data " +
+      "an open browser tab is showing. Invalidates the current claimed session so the browser's next request 409s and " +
+      "reloads through the normal claim/reclaim flow, instead of silently showing stale state.",
+  },
+  async () => {
+    notifyDirectMutation();
+    return textResult({ ok: true });
+  }
 );
 
 const transport = new StdioServerTransport();
