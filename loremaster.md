@@ -25,7 +25,7 @@ The following shorthand is used consistently throughout this document and codeba
 | **LM** | Loremaster — this project |
 | **market** | Existing RP platforms: SillyTavern, KoboldAI, CharacterAI, AI Dungeon, NovelAI, etc. |
 | **host** | LM's back-end server (currently a GCP e2-micro VM) |
-| **provider** | The LLM inference endpoint supplied by the user (Featherless in Phase 1) |
+| **provider** | The LLM inference endpoint supplied by the user (Featherless and the Horde, as of the multi-user milestone) |
 | **site** | LM's front end — a browser-accessible web application |
 | **users** | LM's expected population: fewer than ten people |
 | **story** | A single RP session/save slot — the core unit of LM's service |
@@ -55,7 +55,7 @@ The following reflects the current hosting environment. These are provisional ch
 
 - **Host:** GCP e2-micro VM (free tier). Adequate for a sub-10-user personal project with deferred background workers.
 - **Storage:** SQLite. Deliberate and appropriate — not a default. A project of this scale and user count has no reason to operate a separate database server. SQLite's file-per-database model also maps cleanly to per-story isolation.
-- **Inference provider:** Featherless ($25/mo tier). Phase 1 targets a single provider deliberately — see Provider Abstraction.
+- **Inference provider:** Featherless ($25/mo tier), joined by the Horde as a second provider as of the multi-user milestone — see Provider Abstraction.
 - **Front end:** Standard browser-accessible web application. Must be viable on Android and Windows without native app installation.
 
 The current development environment will shift to locally hosted for initial buildout and hardening. Inference will remain Featherless, and browser testing will either target localhost or the external IP.
@@ -388,17 +388,21 @@ Toggles persist between posts until manually changed.
 
 LM is a private tool for a small circle of known users. Security requirements are minimal but should be technically accurate.
 
-**Encryption at rest:** Each user's story data is encrypted using a key derived from their password (e.g. via PBKDF2 or similar KDF). The server stores only ciphertext. The operator genuinely cannot read story contents without the user's password. Access to the platform itself is controlled via credentials provisioned through SSH by the operator.
+**Encryption at rest (target model):** The original intent is for each user's story data to be encrypted using a key derived from their password, such that the operator genuinely cannot read story contents without the user's password. This remains the eventual goal but is explicitly deferred — see "current implementation" below for what's actually built during the multi-user milestone. Do not treat the gap between the two as an oversight to close opportunistically; full content/log encryption is a separate, larger effort than the multi-user milestone and stays out of scope until it's deliberately picked up.
 
-**User metadata** — name, inference provider, API keys, UI preferences, preference profiles, and similar — is encrypted at rest using the same password-derived key scheme as story content.
+**Encryption at rest (current implementation):** Provider API keys are encrypted at rest using a server-held symmetric key (AES-256-GCM), decrypted only in-process at the moment of the outbound provider call, and never returned through any UI — including to the operator's own admin view. This protects against casual/UI-level exposure, not against someone with SSH or root access to the host, who can read the server-held key like any other server secret; that gap is accepted, not a bug. Story content and logs are not encrypted at rest during this milestone.
+
+Account access is controlled via password, not SSH credentials directly — each user gets a login (see Multi-User & Second Provider Milestone). Account *lifecycle* — creating, renaming, deleting a user, or resetting a forgotten password — remains SSH-only, run by the operator via a script, with no UI or API surface for any of it.
+
+**User metadata** — name, inference provider, API keys, UI preferences, preference profiles, and similar — is stored per-user; only API keys are encrypted at rest during this milestone (see above). Password-derived encryption of the full metadata blob remains part of the deferred target model.
 
 **Inference and queue state are not shared between users.** Each user individually asserts their own provider and API key.
 
-**Session management:** Session access uses server-side tokens. A login issues a new token and invalidates any existing one for that user, evicting the prior session. An evicted session receives an explicit signal (not a silent failure) so the client can inform the user they've been logged in elsewhere. The intent is not strict security enforcement — it's avoiding the logistical problems of concurrent sessions: conflicting edits, stale caches overwriting recent state, and queue collisions.
+**Session management:** Session access uses server-side tokens. A login issues a new token and invalidates any existing one for that user, evicting the prior session. An evicted session receives an explicit signal (not a silent failure) so the client can inform the user they've been logged in elsewhere. The intent is not strict security enforcement — it's avoiding the logistical problems of concurrent sessions: conflicting edits, stale caches overwriting recent state, and queue collisions. This mechanism is per-user as of the multi-user milestone — it does not evict other users' sessions, only a given user's own prior one.
 
-**Primary keys:** UUIDs (v7) are used as primary keys throughout. Do not use sequential integer IDs for any user-facing or story-related records. Timestamps for logging and debugging are stored explicitly as separate fields — do not rely on the UUID's embedded timestamp for application-level logic.
+**Primary keys:** UUIDs (v7) are used as primary keys throughout, including user records. Do not use sequential integer IDs for any user-facing or story-related records. Timestamps for logging and debugging are stored explicitly as separate fields — do not rely on the UUID's embedded timestamp for application-level logic.
 
-This is not a substitute for real security practices — it is a trust model appropriate for the scale and audience of this project.
+This is not a substitute for real security practices — it is a trust model appropriate for the scale and audience of this project. **This phase's security scope is deliberately narrow.** The multi-user milestone's effort belongs in user/session/data-isolation plumbing and the Horde integration, both substantial on their own — do not expand security scope further this phase (full content encryption, hardened auth, rate limiting, etc.) without an explicit decision to do so.
 
 ---
 
@@ -412,14 +416,37 @@ The provider module should still be written as its own component rather than inl
 
 Ranked-choice model selection (falling back to a second Featherless model if the first is unavailable, or hotswapping models for different needs) is in scope for Phase 1, since it operates within a single provider.
 
-Multiple providers — the Horde, generic OpenAI-compatible endpoints, and others — are a deliberate Phase 2+ direction once Phase 1 proves out the tooling-first approach. The open question for that phase is how much of LM's tool-use dependency can be relaxed or routed around for providers that don't support native function calling (see Tool Use and MCP Server). Existing market open-source implementations (SillyTavern, KoboldAI) are reference material for provider/model-specific endpoints, headers/bodies, internal prompt formatting, and tweaks when that phase begins.
+Multiple providers were originally planned as a deliberate Phase 2+ direction once Phase 1 proved out the tooling-first approach — that held until the multi-user milestone (see Multi-User & Second Provider Milestone) needed a second user's own local compute to be reachable without exposing their home network, which pulled the Horde forward specifically. Generic OpenAI-compatible endpoints and the wider range of providers remain deferred on their original timeline. The open question that motivated deferring this in the first place — how much of LM's tool-use dependency can be relaxed or routed around for providers that don't support native function calling (see Tool Use and MCP Server) — is now a live question for the Horde specifically, not just a future-phase abstraction. Existing market open-source implementations (SillyTavern, KoboldAI) are reference material for provider/model-specific endpoints, headers/bodies, internal prompt formatting, and tweaks.
+
+---
+
+## Multi-User & Second Provider Milestone
+
+This is the next concrete build target: taking LM from a single implicit user to real multi-user support, and adding the Horde as a second inference provider. Two independent problems that happen to be scoped together because the second provider only matters once a second real user exists to use it.
+
+**Login and account lifecycle.** The login screen is a Netflix-style row of profile slots, one per user. Creating, renaming, or deleting a user, and resetting a forgotten password, is operator-only and happens via an SSH-run script — there is no UI or API surface for any of it, deliberately, to keep that attack surface at zero. New users get the literal password "random" by default; changing it afterward is a normal in-app action.
+
+**Per-user data isolation is file-level, not just column-level.** Each user's data lives in its own file/directory, addressed by their UUID — the same pattern already used for per-story isolation (see Infrastructure). This was chosen over relying solely on `user_id` filtering within shared tables for two reasons: it avoids SQLite single-writer contention between users, and it keeps the door open for encrypting a whole user's data as one unit later, which is a much simpler target than selectively-encrypted columns scattered across shared tables.
+
+**Two providers, independently configured per user.** Featherless remains available as-is. The Horde (aihorde.net) is added as a second option — each user's row includes a Horde API key slot, defaulted to the anonymous key (`"0000000000"`) at account creation so the Horde works out of the box with zero setup, overridable with the user's own registered key if they want queue priority.
+
+**The Horde is not a drop-in Featherless replacement — expect real differences, not bugs to fix:**
+- No streaming. Featherless streams tokens as they generate; the Horde is async submit-then-poll only, so a Horde-backed reply appears as a single block once the job resolves, not progressively. This is confirmed, not a defect to chase.
+- No account-wide concurrency signal. Featherless's queue gating leans on a real per-account concurrency feed (see Provider Abstraction); the Horde's capacity signal is per-request (`queue_position`, `wait_time`), so it needs its own dispatch/queue handling rather than reusing the existing slot system. Expect a genuinely separate queue path for Horde-backed jobs, not a shim over the existing one.
+- Function-calling support is unconfirmed. The Worker role depends on real forced tool-calling (see Tool Use and MCP Server); whether the Horde's available text-generation workers/models support this reliably is an open question to verify before assuming compression/archiving works identically for Horde-backed stories.
+
+**Explicitly deferred within this milestone:**
+- Onboarding any specific user's own Horde worker (e.g. via KoboldCpp's built-in `--hordeconfig` mode). This milestone builds the Horde *client* integration in LM; getting a particular user's own hardware serving jobs on the Horde is a separate, later step once the client side works.
+- Generic OpenAI-compatible endpoints (LM Studio, AnythingLLM, or similar). Considered and set aside — the Horde solves the actual problem (routing a user's local compute through LM without exposing their home network) without the tunneling/networking burden a direct connection would require.
+
+See Security for what encryption scope does and does not cover during this milestone.
 
 ---
 
 ## Out of Scope (Phase 1)
 
 - Multimedia: no image generation, no image consumption, no music, no TTS. Basic avatar art for display formatting is acceptable.
-- Multiple providers. Phase 1 targets Featherless exclusively; the Horde, generic OpenAI-compatible endpoints, and others are deferred (see Provider Abstraction and Future Phases).
+- Generic OpenAI-compatible endpoints (LM Studio, AnythingLLM, and others) and any provider beyond Featherless and the Horde. The Horde was pulled forward into the multi-user milestone (see Multi-User & Second Provider Milestone) as the answer for routing a user's own local compute; everything else stays deferred (see Provider Abstraction and Future Phases).
 
 ---
 
@@ -427,7 +454,7 @@ Multiple providers — the Horde, generic OpenAI-compatible endpoints, and other
 
 The following ideas are noted for future consideration. They are deliberately excluded from Phase 1 scope. A coding assistant should not act on these unless explicitly asked.
 
-- **Additional providers** — The Horde, generic OpenAI-compatible endpoints, and a wider range scraped from SillyTavern/KoboldAI provider lists. Depends on resolving how much of LM's tool-use dependency can be relaxed for providers without native function calling. Some providers will not tolerate ERP content; rather than filtering them out, surface this as a visible flag/toggle (e.g. "this provider works for PG content only") so the user makes an informed choice.
+- **Additional providers** — Generic OpenAI-compatible endpoints and a wider range scraped from SillyTavern/KoboldAI provider lists (the Horde was pulled forward into the multi-user milestone — see Multi-User & Second Provider Milestone). Depends on resolving how much of LM's tool-use dependency can be relaxed for providers without native function calling. Some providers will not tolerate ERP content; rather than filtering them out, surface this as a visible flag/toggle (e.g. "this provider works for PG content only") so the user makes an informed choice.
 - **Iconographic / app-style interface** — A more visually rich UI layer on top of the current functional interface.
 - **Pronoun declarations per tag** — Each tag explicitly declares associated pronouns to improve worker disambiguation accuracy.
 - **Worldbook deltas** — Story-state changes to character or location entries are stored as deltas separate from the canonical entry, preventing story events from contaminating the baseline worldbook.

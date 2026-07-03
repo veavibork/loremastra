@@ -21,6 +21,7 @@ import {
 } from "./api";
 import EntryContent from "./EntryContent";
 import { RoleLabel } from "./playTabSettings";
+import { toast } from "./toast";
 import "./StoryView.css";
 
 /** Grows with its content instead of scrolling internally — used for both the composer and
@@ -155,6 +156,11 @@ export default function StoryView({
   // arrives — Featherless gives no earlier signal than that, so elapsed wall-clock time is the
   // best available substitute for "..." sitting dead.
   const [pendingReplies, setPendingReplies] = useState<Record<string, { text: string; progress?: string; startedAt: number; jobId: string }>>({});
+  // Horde (and compress/archive) jobs can't be aborted mid-generation — the cancel route 409s
+  // rather than actually stopping anything. Rather than a stop button that just fails silently,
+  // pageIds in here are hidden from the log entirely while the job keeps running in the
+  // background; they come back on their own once the job resolves (see watchJob's cleanup).
+  const [hiddenPending, setHiddenPending] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   // Only guards the brief request round-trip for actions that must stay serialized (kickoff,
   // continue, retry) — not held for the whole generation. See the `busy` derivation below for
@@ -292,6 +298,12 @@ export default function StoryView({
           const { [pageId]: _done, ...rest } = prev;
           return rest;
         });
+        setHiddenPending((prev) => {
+          if (!prev.has(pageId)) return prev;
+          const next = new Set(prev);
+          next.delete(pageId);
+          return next;
+        });
         void refresh();
         setStarting(false);
         // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring
@@ -304,12 +316,24 @@ export default function StoryView({
           const { [pageId]: _failed, ...rest } = prev;
           return rest;
         });
+        setHiddenPending((prev) => {
+          if (!prev.has(pageId)) return prev;
+          const next = new Set(prev);
+          next.delete(pageId);
+          return next;
+        });
         setError(event.message);
         setStarting(false);
       } else if (event.type === "cancelled") {
         setPendingReplies((prev) => {
           const { [pageId]: _cancelled, ...rest } = prev;
           return rest;
+        });
+        setHiddenPending((prev) => {
+          if (!prev.has(pageId)) return prev;
+          const next = new Set(prev);
+          next.delete(pageId);
+          return next;
         });
         setStarting(false);
       }
@@ -519,7 +543,9 @@ export default function StoryView({
   // Queued sends whose agent page already exists (created synchronously) but hasn't resolved yet —
   // rendered after `shown` in the same relative order they were created, live-updated by whichever
   // are actually streaming right now via pendingReplies.
-  const pendingEntries = entries.filter((e) => pendingIds.has(e.pageId) && (mode === "play" ? !e.hidden : e.hidden));
+  const pendingEntries = entries.filter(
+    (e) => pendingIds.has(e.pageId) && (mode === "play" ? !e.hidden : e.hidden) && !hiddenPending.has(e.pageId)
+  );
 
   return (
     <div className="story-view">
@@ -567,7 +593,18 @@ export default function StoryView({
                 <button
                   type="button"
                   className="pending-stop-btn"
-                  onClick={() => void cancelJob(storyId, pending.jobId)}
+                  onClick={() =>
+                    void cancelJob(storyId, pending.jobId).catch((err) => {
+                      // Some job types (Horde, and compress/archive) can't actually be aborted
+                      // mid-generation — the route 409s rather than stopping anything. Rather
+                      // than leaving the "Thinking…" bubble stuck with a failed stop, hide it
+                      // locally; the job keeps running in the background and the reply reappears
+                      // on its own once it resolves.
+                      console.error(err);
+                      setHiddenPending((prev) => new Set(prev).add(entry.pageId));
+                      toast.info("Still running in the background — it'll reappear when it finishes.", "Can't stop this job");
+                    })
+                  }
                 >
                   ✕ stop
                 </button>
@@ -579,7 +616,14 @@ export default function StoryView({
         <div ref={logSpacerRef} style={{ flexShrink: 0 }} />
       </div>
 
-      {error && <div className="error-banner">{error}</div>}
+      {error && (
+        <div className="error-banner">
+          <span>{error}</span>
+          <button type="button" className="error-banner-dismiss" onClick={() => setError(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="play-toolbar">
         <div className="mode-toggle">

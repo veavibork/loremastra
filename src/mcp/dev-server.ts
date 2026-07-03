@@ -45,9 +45,15 @@ function textResult(data: unknown) {
  * this process even after the main server closes its own and deletes the DB row, which made
  * `DELETE /api/stories/:id` fail with EBUSY on Windows whenever a story had ever been inspected
  * via one of these tools. Closing right after each call keeps this process from accumulating any.
+ *
+ * skipRecovery: true — this is a read-only diagnostic tool, not the process that claims and
+ * executes jobs. Every call here used to run recoverStaleJobs on open, which could reset a job
+ * that's genuinely still executing in the main server process back to 'pending', causing it to
+ * be reclaimed and re-dispatched mid-flight (found live 2026-07-03 double-submitting a Horde
+ * job during routine debugging — see story-db.ts's getStoryDb comment).
  */
 function withStoryDb<T>(storyId: string, fn: (db: Database.Database) => T): T {
-  const db = getStoryDb(storyId);
+  const db = getStoryDb(storyId, { skipRecovery: true });
   try {
     return fn(db);
   } finally {

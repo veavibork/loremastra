@@ -20,6 +20,7 @@ export interface JobRow {
   cancelRequested: boolean;
   model: string | null;
   tokenEstimate: number | null;
+  hordeRequestId: string | null;
 }
 
 interface RawJobRow {
@@ -37,6 +38,7 @@ interface RawJobRow {
   cancel_requested: number;
   model: string | null;
   token_estimate: number | null;
+  horde_request_id: string | null;
 }
 
 function mapJobRow(row: RawJobRow): JobRow {
@@ -55,6 +57,7 @@ function mapJobRow(row: RawJobRow): JobRow {
     cancelRequested: !!row.cancel_requested,
     model: row.model,
     tokenEstimate: row.token_estimate,
+    hordeRequestId: row.horde_request_id,
   };
 }
 
@@ -92,9 +95,40 @@ export function getJob(db: Database.Database, id: string): JobRow | null {
   return row ? mapJobRow(row) : null;
 }
 
-/** On startup, any job still marked 'running' belongs to a process that no longer exists — reset it so it can be claimed again. */
+/**
+ * On startup, any job still marked 'running' belongs to a process that no longer exists —
+ * reset it so it can be claimed again. Excludes Horde jobs with a recorded request id: unlike
+ * a Featherless stream (which genuinely dies with the process), a submitted Horde job may
+ * still be processing server-side — resetting it to pending would cause scanStory to reclaim
+ * and resubmit it as a brand-new request, orphaning the original. Those rows stay 'running'
+ * for listRunningHordeJobs' poll loop to pick back up by request id instead.
+ */
 export function recoverStaleJobs(db: Database.Database): void {
-  db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE status = 'running'`).run();
+  db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE status = 'running' AND horde_request_id IS NULL`).run();
+}
+
+export function setHordeRequestId(db: Database.Database, jobId: string, requestId: string): void {
+  db.prepare(`UPDATE jobs SET horde_request_id = ? WHERE id = ?`).run(requestId, jobId);
+}
+
+/**
+ * Records which model actually received the submission, at submit time — needed because
+ * resolveHordeJob runs on a later scan tick, by which point getAgentProfile("author") may
+ * point at a different row entirely (the user reordered/edited configs while the job was
+ * in flight). Reading job.model back at resolution time instead of re-querying the live
+ * profile is what keeps a Horde completion from being mislabeled with whatever config
+ * happens to be primary by the time it finishes.
+ */
+export function setJobModel(db: Database.Database, jobId: string, model: string): void {
+  db.prepare(`UPDATE jobs SET model = ? WHERE id = ?`).run(model, jobId);
+}
+
+/** Jobs submitted to Horde and still awaiting resolution — the "come back later and check on this" query the scan loop's Horde poll uses, since claimNextJob only ever looks at 'pending' rows. */
+export function listRunningHordeJobs(db: Database.Database): JobRow[] {
+  const rows = db
+    .prepare(`SELECT * FROM jobs WHERE status = 'running' AND horde_request_id IS NOT NULL ORDER BY created_at ASC`)
+    .all() as RawJobRow[];
+  return rows.map(mapJobRow);
 }
 
 export function hasActiveJobForText(db: Database.Database, targetTextId: string, jobType: JobType): boolean {

@@ -8,27 +8,14 @@ import {
   ARCHIVE_SYSTEM_PROMPT,
   EDITOR_UPDATE_PROMPT,
 } from "../prompts.js";
-import { SUMMARY_TOOL, ARCHIVE_TOOL } from "../queue/pipeline-runner.js";
-import type { ToolDefinition } from "../inference/featherless.js";
 
 export interface PromptCatalogEntry {
   id: string;
   name: string;
   usedBy: string;
-  kind: "system-prompt" | "tool" | "instruction";
+  kind: "system-prompt" | "instruction";
   sourceFile: string;
   content: string;
-}
-
-function toolEntry(id: string, tool: ToolDefinition, name: string, usedBy: string, sourceFile: string): PromptCatalogEntry {
-  return {
-    id,
-    name,
-    usedBy,
-    kind: "tool",
-    sourceFile,
-    content: `${tool.description}\n\nParameters schema:\n${JSON.stringify(tool.parameters, null, 2)}`,
-  };
 }
 
 /**
@@ -96,7 +83,6 @@ export function getPromptCatalog(): PromptCatalogEntry[] {
       sourceFile: "src/prompts.ts",
       content: COMPRESS_SYSTEM_PROMPT,
     },
-    toolEntry("summary-tool", SUMMARY_TOOL, "submit_summary tool schema", "Worker (compress)", "src/queue/pipeline-runner.ts"),
     {
       id: "archive-system-prompt",
       name: "Editor — archive summary prompt",
@@ -105,6 +91,5 @@ export function getPromptCatalog(): PromptCatalogEntry[] {
       sourceFile: "src/prompts.ts",
       content: ARCHIVE_SYSTEM_PROMPT,
     },
-    toolEntry("archive-tool", ARCHIVE_TOOL, "submit_archive_summary tool schema", "Editor (archive)", "src/queue/pipeline-runner.ts"),
   ];
 }

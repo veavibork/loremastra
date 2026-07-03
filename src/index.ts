@@ -8,9 +8,13 @@ import { settingsSpacesRoute } from "./routes/settings-spaces.js";
 import { clientErrorsRoute } from "./routes/client-errors.js";
 import { sessionsRoute } from "./routes/sessions.js";
 import { sessionGuard } from "./middleware/session-guard.js";
-import { startPipelineRunner } from "./queue/pipeline-runner.js";
+import { startPipelineRunner, trackStoryDb } from "./queue/pipeline-runner.js";
 import { startConcurrencyFeed } from "./queue/concurrency-feed.js";
 import { getQueueStatus } from "./queue/slots.js";
+import { getGlobalDb } from "./db/global-db.js";
+import { getOrCreateDefaultUser } from "./db/user-store.js";
+import { listStories } from "./db/story-store.js";
+import { getStoryDb } from "./db/story-db.js";
 
 const app = new Hono();
 // The only middleware that actually answers a browser's CORS preflight: it short-circuits
@@ -39,6 +43,28 @@ app.get("/api/debug/slots", (c) => c.json(getQueueStatus()));
 
 const port = Number(process.env.PORT ?? 4113);
 
+/**
+ * The pipeline runner only scans stories it's tracking (src/queue/pipeline-runner.ts), which
+ * previously only happened once an HTTP request touched that story this process lifetime — so
+ * any story not reopened in the browser after a restart had its pending/running jobs sit frozen
+ * indefinitely, even though nothing was actually wrong with them. Tracking every story at boot
+ * closes that gap; cheap at this project's current scale (a handful of stories, single default
+ * user — see docs/roadmap.md's Phase 2 backlog). Best-effort per story so one corrupt/missing
+ * story file can't block the rest from being tracked or take down startup.
+ */
+function trackAllStoriesAtStartup(): void {
+  const db = getGlobalDb();
+  const user = getOrCreateDefaultUser(db);
+  for (const story of listStories(db, user.id)) {
+    try {
+      trackStoryDb(story.id, getStoryDb(story.id));
+    } catch (err) {
+      console.error(`failed to track story ${story.id} at startup:`, err instanceof Error ? err.message : err);
+    }
+  }
+}
+
+trackAllStoriesAtStartup();
 startPipelineRunner();
 startConcurrencyFeed();
 serve({ fetch: app.fetch, port }, (info) => {

@@ -90,7 +90,19 @@ export function closeStoryDb(storyId: string): void {
   openStoryDbs.delete(storyId);
 }
 
-export function getStoryDb(storyId: string): Database.Database {
+/**
+ * `skipRecovery` exists for read-only diagnostic callers (the MCP dev server, ad-hoc inspection
+ * scripts) that open a fresh, uncached connection and close it again after one read (see
+ * dev-server.ts's withStoryDb) — every such call used to run recoverStaleJobs unconditionally,
+ * which can reset a job that's genuinely still executing (claimed 'running' in the owning main
+ * server process) back to 'pending', causing scanStory to reclaim and re-dispatch it while the
+ * original execution is still in flight. Found live 2026-07-03 while testing Horde jobs (whose
+ * long wall-clock 'running' window made the race easy to trigger and observe), but it was never
+ * Horde-specific — a Featherless job's horde_request_id is always null, so recoverStaleJobs'
+ * exclusion for in-flight Horde jobs never protected Featherless jobs from this at all. Only the
+ * one process actually claiming and executing jobs should ever run real recovery.
+ */
+export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }): Database.Database {
   const existing = openStoryDbs.get(storyId);
   if (existing) return existing;
 
@@ -106,8 +118,9 @@ export function getStoryDb(storyId: string): Database.Database {
   ensureColumn(db, "story_state", "ooc_session_start_page_id", "TEXT REFERENCES page(id)");
   ensureColumn(db, "jobs", "model", "TEXT");
   ensureColumn(db, "jobs", "token_estimate", "INTEGER");
+  ensureColumn(db, "jobs", "horde_request_id", "TEXT");
   backfillSelectedForks(db);
-  recoverStaleJobs(db);
+  if (!options?.skipRecovery) recoverStaleJobs(db);
   openStoryDbs.set(storyId, db);
   return db;
 }

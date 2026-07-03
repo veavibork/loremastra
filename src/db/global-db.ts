@@ -25,6 +25,7 @@ export function getGlobalDb(): Database.Database {
   db.pragma("foreign_keys = ON");
   db.exec(GLOBAL_SCHEMA_SQL);
   ensureColumn(db, "agent_configs", "fallback_models", "TEXT");
+  ensureColumn(db, "model_configs", "provider", "TEXT NOT NULL DEFAULT 'featherless'");
   // One-time retirement of the banned-phrases stop-list mechanism (replaced by the
   // "banned-phrases" settings_spaces entry exposing refusal-detection prefixes instead —
   // see src/services/refusal-detection.ts). Safe to run every startup: DROP IF EXISTS is a

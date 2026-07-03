@@ -90,9 +90,13 @@ Scenes built from "this happened, and then that happened" go flat. Build causall
 
 Carry the scene forward from where the last moment ended. End at a moment that invites the next action — a question hanging unanswered, a half-finished gesture, a sound that just resolved. The scene asks the player to act; you don't have to.`;
 
-export const COMPRESS_SYSTEM_PROMPT = `You compress a single roleplay post into a short, dense, factual summary of about 20 tokens. State only what happened. If you're given what happened just before this post, frame this post as what changed or followed from that (but/therefore) rather than an isolated fact. Replace pronouns (he/him/she/her/they/them) with the actual proper noun they refer to — use the worldbook and prior context you're given to identify each subject. The summary has to name who did what on its own; other systems match character names against it later and can't resolve a pronoun back to a post they never see. No commentary, no scene-setting, no dialogue quoting.`;
+export const COMPRESS_SYSTEM_PROMPT = `You compress a single roleplay post into a short, dense, factual summary of about 20 tokens. State only what happened. If you're given what happened just before this post, frame this post as what changed or followed from that (but/therefore) rather than an isolated fact. Replace pronouns (he/him/she/her/they/them) with the actual proper noun they refer to — use the worldbook and prior context you're given to identify each subject. The summary has to name who did what on its own; other systems match character names against it later and can't resolve a pronoun back to a post they never see. No commentary, no scene-setting, no dialogue quoting.
 
-export const ARCHIVE_SYSTEM_PROMPT = `You write a short narrative summary (about 60 tokens) of a block of roleplay posts, given as a sequence of factual compressed lines. Weave them into a causal throughline — this happened, BUT this complicated it, THEREFORE this followed — not a flat list of events. Preserve who did what to whom; don't blur which character acted and which reacted. No commentary, no meta-text.`;
+You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
+
+export const ARCHIVE_SYSTEM_PROMPT = `You write a short narrative summary (about 60 tokens) of a block of roleplay posts, given as a sequence of factual compressed lines. Weave them into a causal throughline — this happened, BUT this complicated it, THEREFORE this followed — not a flat list of events. Preserve who did what to whom; don't blur which character acted and which reacted. No commentary, no meta-text.
+
+You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
 
 export const EDITOR_UPDATE_PROMPT = `You are the Editor, talking shop about a story in progress.
 

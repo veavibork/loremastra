@@ -4,9 +4,12 @@ import { nowIso } from "./time.js";
 
 export type AgentRole = "author" | "worker" | "editor";
 
+export type Provider = "featherless" | "horde";
+
 export interface ModelConfigRow {
   id: string;
   userId: string;
+  provider: Provider;
   model: string;
   temperature: number;
   responseLimit: number;
@@ -33,6 +36,7 @@ export interface ModelConfigRow {
 interface RawRow {
   id: string;
   user_id: string;
+  provider: Provider;
   model: string;
   temperature: number;
   response_limit: number;
@@ -60,6 +64,7 @@ function mapRow(row: RawRow): ModelConfigRow {
   return {
     id: row.id,
     userId: row.user_id,
+    provider: row.provider,
     model: row.model,
     temperature: row.temperature,
     responseLimit: row.response_limit,
@@ -97,6 +102,7 @@ export function getModelConfig(db: Database.Database, id: string): ModelConfigRo
 }
 
 export interface ModelConfigInput {
+  provider: Provider;
   model: string;
   temperature: number;
   responseLimit: number;
@@ -123,14 +129,15 @@ export function createModelConfig(db: Database.Database, userId: string, input: 
 
   db.prepare(
     `INSERT INTO model_configs (
-       id, user_id, model, temperature, response_limit, context_limit,
+       id, user_id, provider, model, temperature, response_limit, context_limit,
        presence_penalty, frequency_penalty, repetition_penalty, top_p, top_k, min_p,
        use_author, use_editor, use_worker, active, sort_order,
        success_count, fail_count, input_tokens, output_tokens, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)`
   ).run(
     id,
     userId,
+    input.provider,
     input.model,
     input.temperature,
     input.responseLimit,
@@ -157,6 +164,7 @@ export function updateModelConfig(db: Database.Database, id: string, patch: Part
   if (!current) return null;
 
   const next: ModelConfigInput = {
+    provider: patch.provider ?? current.provider,
     model: patch.model ?? current.model,
     temperature: patch.temperature ?? current.temperature,
     responseLimit: patch.responseLimit ?? current.responseLimit,
@@ -175,11 +183,12 @@ export function updateModelConfig(db: Database.Database, id: string, patch: Part
 
   db.prepare(
     `UPDATE model_configs SET
-       model = ?, temperature = ?, response_limit = ?, context_limit = ?,
+       provider = ?, model = ?, temperature = ?, response_limit = ?, context_limit = ?,
        presence_penalty = ?, frequency_penalty = ?, repetition_penalty = ?, top_p = ?, top_k = ?, min_p = ?,
        use_author = ?, use_editor = ?, use_worker = ?, active = ?, updated_at = ?
      WHERE id = ?`
   ).run(
+    next.provider,
     next.model,
     next.temperature,
     next.responseLimit,

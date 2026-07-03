@@ -9,6 +9,8 @@ export interface AgentProfile {
   temperature: number;
   responseLimit: number;
   contextLimit: number;
+  /** Absent/undefined treated as "featherless" everywhere — every pre-Horde call site keeps working unchanged. */
+  provider?: "featherless" | "horde";
   /** Ranked-choice fallback (loremaster.md's Provider Abstraction section) — tried in order if model is unavailable (see FeatherlessError/withModelFallback in inference/featherless.ts). Empty/absent means no fallback. */
   fallbackModels?: string[];
   /** Optional sampler params (Featherless completions API) — omitted from the request body entirely when undefined, not sent as null. */
@@ -32,6 +34,7 @@ export const DEFAULT_AUTHOR_PROFILE: AgentProfile = {
   temperature: 1.0,
   responseLimit: 4096,
   contextLimit: 32000,
+  provider: "featherless",
 };
 
 // Deliberately not a "Heretic"/uncensored variant — the worker only summarizes
@@ -44,6 +47,7 @@ export const DEFAULT_WORKER_PROFILE: AgentProfile = {
   temperature: 0.5,
   responseLimit: 2048,
   contextLimit: 16000,
+  provider: "featherless",
 };
 
 // Value matches lorepebble's server-config.json editor profile.
@@ -52,4 +56,5 @@ export const DEFAULT_EDITOR_PROFILE: AgentProfile = {
   temperature: 0.7,
   responseLimit: 4096,
   contextLimit: 32000,
+  provider: "featherless",
 };

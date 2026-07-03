@@ -1,24 +1,35 @@
 import type Database from "better-sqlite3";
-import { claimNextJob, createJob, finishJob, cancelJob, type JobType } from "../db/job-store.js";
+import {
+  claimNextJob,
+  createJob,
+  finishJob,
+  cancelJob,
+  setHordeRequestId,
+  setJobModel,
+  listRunningHordeJobs,
+  type JobRow,
+  type JobType,
+} from "../db/job-store.js";
 import { fillTextExtract, fillTextGeneration, getText } from "../db/text-store.js";
-import { getPage, listChronologicalPages, setPageHidden } from "../db/page-store.js";
+import { getPage, listChronologicalPages, setPageHidden, type PageRow } from "../db/page-store.js";
 import { createPageWithText } from "../db/content-store.js";
 import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { listContentEntries } from "../db/worldbook-store.js";
 import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { tryAcquireSlot, releaseSlot } from "./slots.js";
-import { publishToken, publishDone, publishError, publishCancelled } from "./job-events.js";
+import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
+import { publishToken, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
 import {
   streamInference,
-  callWithForcedTool,
+  completeChat,
   withModelFallback,
   FeatherlessError,
   JobCancelledError,
   isReasoningModel,
   type ChatMessage,
-  type ToolDefinition,
 } from "../inference/featherless.js";
+import { submitTextGeneration, pollTextGeneration } from "../inference/horde.js";
 import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
@@ -54,37 +65,15 @@ const COMPRESS_MAX_WORDS = 60; // generous ceiling — a real ~20-token summary 
 const ARCHIVE_MAX_ATTEMPTS = 3;
 const ARCHIVE_MAX_WORDS = 150; // generous ceiling for a ~60-token narrative summary
 
-export const SUMMARY_TOOL: ToolDefinition = {
-  name: "submit_summary",
-  description: "Submit the compressed factual summary of the post.",
-  parameters: {
-    type: "object",
-    properties: {
-      summary: {
-        type: "string",
-        description:
-          "A short, dense, factual summary of about 20 tokens. State only what happened. Use character " +
-          "names, not pronouns.",
-      },
-    },
-    required: ["summary"],
-  },
-};
+// Mirrors worldbook-extraction.ts's BLOCK_PATTERN, single-tag — no backreference needed since
+// there's only one tag name to match.
+const SUMMARY_PATTERN = /\[SUMMARY\]([\s\S]*?)\[\/SUMMARY\]/;
 
-export const ARCHIVE_TOOL: ToolDefinition = {
-  name: "submit_archive_summary",
-  description: "Submit the narrative summary of this block of posts.",
-  parameters: {
-    type: "object",
-    properties: {
-      summary: {
-        type: "string",
-        description: "A flowing narrative summary of about 60 tokens covering the whole block.",
-      },
-    },
-    required: ["summary"],
-  },
-};
+function extractSummary(text: string): string | null {
+  const match = SUMMARY_PATTERN.exec(text);
+  const content = match?.[1]?.trim();
+  return content || null;
+}
 
 function withinWordLimit(text: string, maxWords: number): boolean {
   return !!text && text.split(/\s+/).length <= maxWords;
@@ -167,7 +156,16 @@ const trackedDbs = new Map<string, Database.Database>();
 /** One AbortController per currently-running job, so a cancel request can actually abort its in-flight Featherless call instead of just flipping a DB flag. Populated when a job is claimed, deleted in its executor's `finally`. */
 const runningControllers = new Map<string, AbortController>();
 
-/** Aborts a running job's in-flight call. Returns false if the job isn't currently running here (already terminal, still pending, or unknown) — callers should fall back to marking it cancelled directly in that case. */
+/**
+ * Aborts a running job's in-flight call. Returns false if the job isn't currently running here
+ * (already terminal, still pending, or a job type with no mid-flight cancel support) — callers
+ * should fall back to marking it cancelled directly in that case.
+ *
+ * Horde jobs deliberately fall into the "no mid-flight cancel support" bucket, same as
+ * compress/archive today — explicit scope decision (2026-07-03): a request that's already
+ * submitted just runs to completion rather than chasing the narrow, hard-to-hit window between
+ * "submitted" and "resolved" that real cancellation would require synchronizing against.
+ */
 export function requestJobCancel(jobId: string): boolean {
   const controller = runningControllers.get(jobId);
   if (!controller) return false;
@@ -203,6 +201,7 @@ function scanOnce(): void {
     // is exactly what happened before untrackStoryDb existed (see stub-revisions.md).
     try {
       scanStory(db);
+      scanHordeJobs(db);
     } catch (err) {
       if (!db.open) trackedDbs.delete(storyId);
       console.error(`pipeline scan failed for story ${storyId}:`, err instanceof Error ? err.message : err);
@@ -213,6 +212,22 @@ function scanOnce(): void {
 function scanStory(db: Database.Database): void {
     const job = claimNextJob(db, CLAIMABLE_JOB_TYPES);
     if (!job) return;
+
+    // Horde branch (prose only for now — see docs/roadmap.md's P5a): skips tryAcquireSlot
+    // entirely (Featherless-specific, backed by concurrency-feed.ts's account signal that
+    // doesn't exist for Horde) and submits-then-returns rather than awaiting completion here,
+    // since a Horde generation can take minutes and this tick can't block on it. The job stays
+    // 'running' with a horde_request_id recorded; scanHordeJobs (P5b) polls it to resolution
+    // on later ticks.
+    if (job.jobType === "prose" && job.targetTextId && getAgentProfile("author").provider === "horde") {
+      if (!tryAcquireHordeSlot(job.id)) {
+        db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
+        return;
+      }
+      void executeHordeProseSubmit(db, job.id, job.targetTextId);
+      return;
+    }
+
     if (!tryAcquireSlot(job.id, job.slotCost)) {
       // Claimed but no slot free right now — put it back rather than block the scan loop.
       db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
@@ -240,6 +255,43 @@ function scanStory(db: Database.Database): void {
     }
 }
 
+/**
+ * Shared by both the Featherless (streamed, synchronous-await) and Horde (submit-then-poll)
+ * prose paths — the prompt assembly itself doesn't care how the reply eventually comes back.
+ */
+function buildProseHistory(db: Database.Database, jobId: string, targetTextId: string): { history: ChatMessage[]; targetPage: PageRow } {
+  const targetText = getText(db, targetTextId);
+  if (!targetText) throw new Error("target text no longer exists");
+  const targetPage = getPage(db, targetText.pageId);
+  if (!targetPage) throw new Error("target page no longer exists");
+
+  // The kickoff page (and any later Retry/Guided Retry of it) always generates from the
+  // worldbook alone, never the setup conversation's chat log — checked by page identity,
+  // not current phase, since phase moves on to "story" immediately after kickoff fires but
+  // the opening post can still be regenerated any time after that.
+  const kickoffPageId = getStoryState(db).kickoffPageId;
+  let history: ChatMessage[];
+  if (targetPage.id === kickoffPageId) {
+    const worldbook = getBookByType(db, "worldbook");
+    if (!worldbook) throw new Error("worldbook not found");
+    history = assembleKickoffPrompt(db, worldbook.id);
+  } else {
+    history = assembleAuthorPrompt(db, targetPage.bookId, targetPage.prevPageId);
+  }
+
+  const guidance = jobGuidance.get(jobId);
+  if (guidance) {
+    jobGuidance.delete(jobId);
+    const content =
+      guidance.intent === "continue"
+        ? guidedContinueNote(guidance.text, "story")
+        : guidedRegenerateNote(guidance.text);
+    history = [...history, { role: "system", content }];
+  }
+
+  return { history, targetPage };
+}
+
 async function executeProseJob(
   db: Database.Database,
   jobId: string,
@@ -248,35 +300,7 @@ async function executeProseJob(
 ): Promise<void> {
   const startedAt = Date.now();
   try {
-    const targetText = getText(db, targetTextId);
-    if (!targetText) throw new Error("target text no longer exists");
-    const targetPage = getPage(db, targetText.pageId);
-    if (!targetPage) throw new Error("target page no longer exists");
-
-    // The kickoff page (and any later Retry/Guided Retry of it) always generates from the
-    // worldbook alone, never the setup conversation's chat log — checked by page identity,
-    // not current phase, since phase moves on to "story" immediately after kickoff fires but
-    // the opening post can still be regenerated any time after that.
-    const kickoffPageId = getStoryState(db).kickoffPageId;
-    let history: ChatMessage[];
-    if (targetPage.id === kickoffPageId) {
-      const worldbook = getBookByType(db, "worldbook");
-      if (!worldbook) throw new Error("worldbook not found");
-      history = assembleKickoffPrompt(db, worldbook.id);
-    } else {
-      history = assembleAuthorPrompt(db, targetPage.bookId, targetPage.prevPageId);
-    }
-
-    const guidance = jobGuidance.get(jobId);
-    if (guidance) {
-      jobGuidance.delete(jobId);
-      const content =
-        guidance.intent === "continue"
-          ? guidedContinueNote(guidance.text, "story")
-          : guidedRegenerateNote(guidance.text);
-      history = [...history, { role: "system", content }];
-    }
-
+    const { history, targetPage } = buildProseHistory(db, jobId, targetTextId);
     const { text: fullText, model } = await streamWithFallback(getAgentProfile("author"), history, jobId, signal);
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —
@@ -300,6 +324,111 @@ async function executeProseJob(
     releaseSlot(jobId);
     runningControllers.delete(jobId);
   }
+}
+
+/**
+ * P5a: submit-then-return only, no completion handling here — Horde has no synchronous
+ * completion endpoint, so unlike executeProseJob this doesn't await a reply. The job stays
+ * 'running' with a horde_request_id recorded once the submit call resolves; scanHordeJobs
+ * (P5b) owns polling it to done/faulted on later scan ticks and doing the actual
+ * fillTextGeneration/finishJob/publishDone tail. releaseHordeSlot happens there too, not
+ * here — the slot represents "still awaiting a result," which is true well past this
+ * function's return.
+ */
+async function executeHordeProseSubmit(db: Database.Database, jobId: string, targetTextId: string): Promise<void> {
+  try {
+    const { history } = buildProseHistory(db, jobId, targetTextId);
+    const profile = getAgentProfile("author");
+    const { id: requestId } = await submitTextGeneration(profile, history);
+    setHordeRequestId(db, jobId, requestId);
+    setJobModel(db, jobId, profile.model);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    finishJob(db, jobId, "failed", message);
+    publishError(jobId, message);
+    releaseHordeSlot(jobId);
+  }
+}
+
+// How long a request is allowed to sit with is_possible: false (a live, continuously
+// recomputed "no worker currently matches this request" signal, not a one-time rejection —
+// see docs/roadmap.md's Horde research notes) before it's treated as a real failure rather
+// than a transient dip in pool availability.
+const HORDE_IMPOSSIBLE_TIMEOUT_MS = 5 * 60_000;
+const hordeImpossibleSince = new Map<string, number>();
+
+function hordeJobTerminal(jobId: string): void {
+  hordeImpossibleSince.delete(jobId);
+  releaseHordeSlot(jobId);
+}
+
+/**
+ * The "come back later and check on this" half of Horde support — claimNextJob only ever
+ * looks at 'pending' rows, so a submitted-but-unresolved Horde job needs its own query
+ * (listRunningHordeJobs) to be found again on a later tick. Runs every scan tick alongside
+ * scanStory; each job's own poll is fire-and-forget so one slow/stuck poll can't block
+ * checking on the others.
+ */
+function scanHordeJobs(db: Database.Database): void {
+  for (const job of listRunningHordeJobs(db)) {
+    void resolveHordeJob(db, job);
+  }
+}
+
+async function resolveHordeJob(db: Database.Database, job: JobRow): Promise<void> {
+  if (!job.hordeRequestId || !job.targetTextId) return;
+  const targetTextId = job.targetTextId;
+
+  let status;
+  try {
+    status = await pollTextGeneration(job.hordeRequestId);
+  } catch (err) {
+    // Transient poll failure (network hiccup, rate limit) — leave the job running and try
+    // again next tick rather than failing it over what might be a momentary blip.
+    console.error(`horde poll failed for job ${job.id}:`, err instanceof Error ? err.message : err);
+    return;
+  }
+
+  if (status.faulted) {
+    hordeJobTerminal(job.id);
+    finishJob(db, job.id, "failed", "Horde generation faulted");
+    publishError(job.id, "Horde generation faulted");
+    return;
+  }
+
+  if (status.done) {
+    const fullText = status.text ?? "";
+    const targetText = getText(db, targetTextId);
+    const targetPage = targetText ? getPage(db, targetText.pageId) : null;
+    const tokenEstimate = Math.ceil(fullText.length / 4);
+
+    fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify({ tokenEstimate }) });
+    if (targetPage) indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
+
+    hordeJobTerminal(job.id);
+    // job.model was recorded at submit time (see executeHordeProseSubmit) — reading it back
+    // here, rather than re-querying getAgentProfile("author"), is what keeps attribution
+    // correct if the user reordered/edited Agents configs while this job was in flight.
+    finishJob(db, job.id, "done", undefined, { model: job.model ?? undefined, tokenEstimate });
+    publishDone(job.id, fullText);
+    return;
+  }
+
+  if (!status.isPossible) {
+    const firstSeen = hordeImpossibleSince.get(job.id) ?? Date.now();
+    hordeImpossibleSince.set(job.id, firstSeen);
+    if (Date.now() - firstSeen > HORDE_IMPOSSIBLE_TIMEOUT_MS) {
+      hordeJobTerminal(job.id);
+      finishJob(db, job.id, "failed", "no worker currently available for this model");
+      publishError(job.id, "no worker currently available for this model");
+      return;
+    }
+    publishProgress(job.id, "No worker currently available for this model…");
+    return;
+  }
+
+  hordeImpossibleSince.delete(job.id);
+  publishProgress(job.id, `Queued on AI Horde — position ${status.queuePosition}, ~${status.waitTime}s`);
 }
 
 /**
@@ -552,11 +681,11 @@ async function executeCompressJob(
 
     for (let attempt = 1; attempt <= COMPRESS_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const args = await withModelFallback(getAgentProfile("worker"), (profile) => {
+        const rawText = await withModelFallback(getAgentProfile("worker"), (profile) => {
           usedModel = profile.model;
-          return callWithForcedTool(profile, compressMessages, SUMMARY_TOOL);
+          return completeChat(profile, compressMessages);
         });
-        const candidate = typeof args.summary === "string" ? args.summary.trim() : "";
+        const candidate = extractSummary(rawText) ?? "";
         if (matchesRefusalPrefix(candidate)) {
           lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
         } else if (withinWordLimit(candidate, COMPRESS_MAX_WORDS)) {
@@ -608,18 +737,14 @@ async function executeArchiveJob(
 
     for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const args = await withModelFallback(getAgentProfile("editor"), (profile) => {
+        const rawText = await withModelFallback(getAgentProfile("editor"), (profile) => {
           usedModel = profile.model;
-          return callWithForcedTool(
-            profile,
-            [
-              { role: "system", content: ARCHIVE_SYSTEM_PROMPT },
-              { role: "user", content: compressedLines.join("\n") },
-            ],
-            ARCHIVE_TOOL
-          );
+          return completeChat(profile, [
+            { role: "system", content: ARCHIVE_SYSTEM_PROMPT },
+            { role: "user", content: compressedLines.join("\n") },
+          ]);
         });
-        const candidate = typeof args.summary === "string" ? args.summary.trim() : "";
+        const candidate = extractSummary(rawText) ?? "";
         if (matchesRefusalPrefix(candidate)) {
           lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
         } else if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {

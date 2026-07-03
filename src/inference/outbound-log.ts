@@ -15,7 +15,7 @@ const MAX_ENTRIES = 50;
 
 interface OutboundLogEntry {
   at: string;
-  call: "streamInference" | "callWithForcedTool" | "callWithTools";
+  call: "streamInference" | "callWithTools" | "completeChat";
   model: string;
   messages: ChatMessage[];
 }

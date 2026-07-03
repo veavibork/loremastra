@@ -374,3 +374,119 @@ This is a suggested order, not a fixed contract — A→B→C is chosen because 
 half-built (prompt assembly) before opening new surface area (worldbook/Editor), and D→E→F→G groups
 naturally-independent chunks of the remaining Phase 1 scope. Reorder freely; nothing here blocks
 anything else except A blocking B (worldbook injection needs real prompt assembly to inject into).
+
+## Next: Horde as a second provider
+
+Originally scoped in loremaster.md as one combined "Multi-User & Second Provider Milestone." Split
+apart 2026-07-03 — the doc itself frames these as two independent problems that only incidentally got
+scoped together, and proving Horde out against the existing single default user is lower-risk than
+building auth + per-user isolation + a second provider all at once. Multi-user work (login, per-user
+file isolation, per-user encrypted keys) moves to a **Phase 2 backlog**, captured at the end of this
+section — not dropped, just resequenced after this proves out.
+
+Two real discrepancies surfaced while re-grounding the plan against current code (2026-07-03), worth
+remembering when Phase 2 is picked up:
+- "File-level per-user isolation" has no existing pattern to build from. `data/global.sqlite` is one
+  shared file for every user's `layout_configs`/`settings_spaces`/`preference_profiles`/`model_configs`/
+  `stories`/`sessions`, scoped only by a `user_id` column. Only story *content* is file-per-unit today —
+  per-story isolation is precedent for the idea, not reusable code.
+- There is no login in any form today. `session-guard.ts` hardcodes `getOrCreateDefaultUser()`; the
+  existing "claim" flow (Milestone F) is a single global claim, not per-user auth. Real login is net-new
+  work, not a generalization of session-claim.
+
+Also resolved: whether `global.sqlite`'s shared-file design needs to change for write-contention
+reasons before Phase 2. It doesn't — `journal_mode = WAL` already keeps readers and writers from
+blocking each other, and since better-sqlite3 is synchronous inside one Node process, there's no real
+concurrent-writer scenario from HTTP traffic in the first place; every query already serializes on the
+event loop. The contention rationale in loremaster.md's Security section doesn't bite until write
+throughput far beyond what <10 trusted users produce. The durable reason to eventually split per-user
+data into files is the "encrypt one user's data as a unit" future goal, not contention.
+
+Featherless stays a single shared operator-owned account this phase and beyond, by explicit decision
+(2026-07-03) — no per-user Featherless key, no changes to `concurrency-feed.ts`/`slots.ts`. A
+`featherless_access` per-user boolean (default off, SSH-script-granted) belongs to the Phase 2 backlog,
+not this phase — meaningless without real distinct users.
+
+**H1. Horde REST client (standalone, unwired)**
+- `src/inference/horde.ts` (mirrors `featherless.ts`'s shape): submit (`POST /v2/generate/text/async`),
+  poll (`GET .../status/{id}`), cancel (`DELETE .../status/{id}`). Treats `is_possible: false`, `429`,
+  and `faulted` as first-class outcomes, not exceptions to patch around later.
+- `src/inference/horde-config.ts` (mirrors `featherless-config.ts`): `HORDE_API_KEY` env var, defaulting
+  to the anonymous key `"0000000000"` — plain env var by explicit decision (2026-07-03), matching how
+  `FEATHERLESS_API_KEY` already works; no DB storage or encryption this phase, since nothing per-user
+  exists yet to protect a key from.
+- No maintained Node/TS SDK exists for Horde text generation (the one npm package covers image gen
+  only) — hand-rolled against the public swagger schema, same as Featherless.
+- **Answers the open tool-calling question first, deliberately sequenced before anything depends on
+  it**: does Horde's actual worker pool support forced tool-calling reliably enough for the Worker role
+  (compress/archive)? Verify with a real forced-tool-call request, not just by reading the schema.
+- Confirmable as: a script gets a real completion back via the anonymous key, and a second run gives a
+  definitive yes/no on tool-calling.
+
+**H2. Provider field on model configs**
+- `model_configs` gets `provider TEXT NOT NULL DEFAULT 'featherless'` (via `ensureColumn`, same pattern
+  as the existing `fallback_models` column); `AgentProfile` (`src/config.ts`) gets a matching `provider`
+  field.
+- `src/services/agent-config.ts`'s `getAgentProfile(role)` returns it — no `userId` param needed yet,
+  still the default user.
+- Pure provider-abstraction plumbing; the field Phase 2's per-user access filtering will eventually key
+  off, but it does nothing user-specific yet.
+- Confirmable as: existing Featherless-backed configs keep working unchanged (default value); a
+  manually-inserted `provider = 'horde'` row round-trips through the existing list/get functions.
+
+**H3. Horde queue/dispatch integration**
+- `pipeline-runner.ts`'s `scanStory` branches on `provider`: Featherless keeps its current
+  synchronous-await path untouched. Horde jobs submit-then-return, storing the Horde-side request id on
+  the job row (new nullable column on `jobs` in `story-schema.ts`, same `ensureColumn` pattern), polled
+  (piggybacking the existing scan tick, or a slower dedicated one — Horde jobs can sit for minutes)
+  until finished/faulted before filling the text.
+- Horde jobs skip `tryAcquireSlot`/`releaseSlot` entirely (Featherless-specific, untouched) — no
+  account-wide signal exists to gate against, so this needs its own much simpler local cap on
+  outstanding submissions.
+- No streaming: `job-events.ts`/the SSE consumer needs "single done event, no partial tokens" to read
+  as a normal Horde-job shape, not a stall.
+- Confirmable as: a Horde-routed prose job round-trips through the real queue end-to-end into the
+  story, running alongside a Featherless-backed job without either blocking the other.
+
+**H4. Config UI wiring**
+- Config > Agents' per-row model config gets a provider selector; Horde rows use the Horde's
+  `models`/`workers` targeting fields instead of Featherless's model catalog.
+- If H1 found Horde tool-calling unreliable, add a guardrail against assigning Horde to the Worker role
+  specifically — Author/Editor are fine either way.
+- Confirmable as: a Horde-backed model config can be created from the UI, assigned to a role, and
+  actually used.
+
+**H5. End-to-end validation**
+- One full story turn generated via Horde start to finish through the real UI: no-streaming UX reads as
+  intended (not a hang), Debug/Logs show Horde jobs sensibly, nothing in the existing Featherless path
+  regresses.
+
+## Phase 2 backlog: Multi-User
+
+Deferred 2026-07-03 so Horde integration can prove out against the existing single-default-user model
+first. Not designed in detail yet; captured here so the earlier planning pass isn't lost.
+
+- **Real per-user login.** Netflix-style profile row (`GET /api/users` — id + display_name only),
+  password validation on claim (per-user claim + password check, extending the existing `sessions`
+  table/`session-store.ts` rather than replacing it — `createSession`/`getActiveSession` are already
+  scoped by `user_id`, just never driven by real distinct users yet). `session-guard.ts` needs to
+  resolve session → user rather than assuming the single default user. Password hashing: `bcryptjs`
+  recommended (pure JS, no native-build risk vs. Argon2id/native bcrypt; the existing
+  `password_kdf_salt` column doesn't fit bcrypt's baked-in-salt hash format and would be dropped in
+  favor of storing the full hash in `password_verifier`). Session/cookie handling: keep hand-rolling on
+  the existing `X-Loremaster-Session` header + `sessions` table rather than adopting `hono/cookie` — the
+  current CORS policy (`Access-Control-Allow-Origin: *`) is incompatible with cookie+credentials
+  requests anyway.
+- **Per-user file-level data isolation.** `data/global.sqlite`'s `layout_configs`/`settings_spaces`/
+  `preference_profiles`/`model_configs`/`stories` split into one file per user (new
+  `src/db/user-db.ts`/`user-schema.ts`, mirroring `story-db.ts`'s pattern), leaving `global.sqlite` down
+  to just `users` + `client_errors`. `sessions` stays global regardless — a session token is exactly
+  what tells you which per-user file to open, so it can't live behind that boundary itself. Not
+  motivated by write contention (confirmed a non-issue at this project's scale, see above) — motivated
+  by the "encrypt one user's data as a unit" goal, so revisit once that's actually being built.
+- **Per-user encrypted Horde key storage.** AES-256-GCM, server-held master key, decrypted only
+  in-process at call time, never returned through any UI. Builds on H1-H3's Horde client/dispatch
+  unchanged — only the key's storage/access model changes.
+- **`featherless_access` per-user flag**, default off, granted only via the SSH lifecycle scripts (no
+  UI/API surface) — gates whether a user's `model_configs` rows may use `provider = 'featherless'` at
+  all.

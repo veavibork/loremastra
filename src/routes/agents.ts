@@ -10,10 +10,41 @@ import {
   type ModelConfigInput,
 } from "../db/model-config-store.js";
 import { getAgentProfile } from "../services/agent-config.js";
+import { listModels } from "../inference/featherless-models.js";
+import { listTextModels } from "../inference/horde.js";
 
 export const agentsRoute = new Hono();
 
+export interface CatalogModel {
+  id: string;
+  contextLength?: number;
+  concurrencyCost?: number;
+  toolUse?: boolean;
+}
+
+// Provider-dispatching model catalog lookup, used by Config > Agents' "Fetch models" action.
+agentsRoute.get("/models", async (c) => {
+  const provider = c.req.query("provider") ?? "featherless";
+  if (provider === "featherless") {
+    const models = await listModels({ perPage: 200 });
+    const catalog: CatalogModel[] = models.map((m) => ({
+      id: m.id,
+      contextLength: m.contextLength,
+      concurrencyCost: m.concurrencyCost,
+      toolUse: m.toolUse,
+    }));
+    return c.json({ models: catalog });
+  }
+  if (provider === "horde") {
+    const models = await listTextModels();
+    const catalog: CatalogModel[] = models.map((m) => ({ id: m.name }));
+    return c.json({ models: catalog });
+  }
+  return c.json({ error: `unsupported provider: ${provider}` }, 400);
+});
+
 const DEFAULT_NEW_MODEL: ModelConfigInput = {
+  provider: "featherless",
   model: "",
   temperature: 1.0,
   responseLimit: 4096,
@@ -26,6 +57,7 @@ const DEFAULT_NEW_MODEL: ModelConfigInput = {
 
 function toPatch(body: Record<string, unknown>): Partial<ModelConfigInput> {
   const patch: Partial<ModelConfigInput> = {};
+  if (body.provider === "featherless" || body.provider === "horde") patch.provider = body.provider;
   if (typeof body.model === "string") patch.model = body.model.trim();
   if (typeof body.temperature === "number") patch.temperature = body.temperature;
   if (typeof body.responseLimit === "number") patch.responseLimit = body.responseLimit;

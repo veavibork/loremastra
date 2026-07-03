@@ -32,6 +32,7 @@ function ensureModelConfigsSeeded(db: Database.Database, userId: string): void {
     const profile = getAgentConfigOverride(db, role) ?? DEFAULTS[role];
     const roleFlags = { useAuthor: role === "author", useEditor: role === "editor", useWorker: role === "worker" };
     createModelConfig(db, userId, {
+      provider: "featherless",
       model: profile.model,
       temperature: profile.temperature,
       responseLimit: profile.responseLimit,
@@ -41,6 +42,7 @@ function ensureModelConfigsSeeded(db: Database.Database, userId: string): void {
     });
     for (const fallbackModel of profile.fallbackModels ?? []) {
       createModelConfig(db, userId, {
+        provider: "featherless",
         model: fallbackModel,
         temperature: profile.temperature,
         responseLimit: profile.responseLimit,
@@ -75,6 +77,7 @@ export function getAgentProfile(role: AgentRole): AgentProfile {
 
   const [primary, ...fallbacks] = rows;
   return {
+    provider: primary.provider,
     model: primary.model,
     temperature: primary.temperature,
     responseLimit: primary.responseLimit,

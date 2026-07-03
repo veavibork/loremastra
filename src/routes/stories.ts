@@ -621,7 +621,8 @@ storiesRoute.post("/:id/jobs/:jobId/cancel", (c) => {
   const aborted = requestJobCancel(jobId);
   if (!aborted) {
     // Running but has no controller — a job type that doesn't support mid-flight cancel yet
-    // (compress/archive). Nothing to do but say so; it'll resolve on its own soon either way.
+    // (compress/archive, and now Horde too — see requestJobCancel's comment). Nothing to do
+    // but say so; it'll resolve on its own soon either way.
     return c.json({ error: "this job type can't be cancelled mid-generation" }, 409);
   }
   return c.json({ ok: true });

@@ -104,7 +104,7 @@ export async function withModelFallback<T>(
     try {
       // configId is swapped per candidate too, not just model — each candidate is its own
       // model_configs row (see model-config-store.ts), and the actual stats/token recording
-      // inside streamInference/callWithForcedTool/callWithTools reads profile.configId to
+      // inside streamInference/completeChat/callWithTools reads profile.configId to
       // know which row to credit.
       return await attempt({ ...profile, model: candidates[i], configId: candidateConfigIds[i] });
     } catch (err) {
@@ -302,31 +302,23 @@ function toWireMessage(m: ChatMessage): Record<string, unknown> {
   return { role: m.role, content: m.content };
 }
 
-export interface ToolDefinition {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
-
 /**
- * Forces the model to call a specific tool rather than free-texting a reply.
- * For structured background tasks (compression, extraction, etc.) this is
- * the actual fix for models ignoring a plain-text instruction — the model
- * has to emit arguments matching the schema, not prose. Non-streaming: these
- * calls are backend-only, nothing needs to watch tokens arrive live.
+ * A single plain non-streaming completion — no tools, no forced structure. For a short
+ * background task whose output shape is enforced by a bracket-tag convention in the prompt
+ * (see extractSummary in pipeline-runner.ts) rather than by the API's tool-calling machinery,
+ * so the request itself stays as simple as streamInference's non-streaming twin.
  */
-export async function callWithForcedTool(
+export async function completeChat(
   profile: AgentProfile,
   messages: ChatMessage[],
-  tool: ToolDefinition,
   options?: { timeoutMs?: number; signal?: AbortSignal }
-): Promise<Record<string, unknown>> {
+): Promise<string> {
   if (!FEATHERLESS_API_KEY) {
     throw new Error("FEATHERLESS_API_KEY is not set");
   }
 
   const inputTokens = estimateMessageTokens(messages);
-  logOutboundRequest({ call: "callWithForcedTool", model: profile.model, messages });
+  logOutboundRequest({ call: "completeChat", model: profile.model, messages });
   const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS, options?.signal);
   let response: Response;
   try {
@@ -342,8 +334,6 @@ export async function callWithForcedTool(
         temperature: profile.temperature,
         max_tokens: profile.responseLimit,
         stream: false,
-        tools: [{ type: "function", function: tool }],
-        tool_choice: { type: "function", function: { name: tool.name } },
         ...samplerParams(profile),
       }),
       signal: timeout.signal,
@@ -357,23 +347,21 @@ export async function callWithForcedTool(
     throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${await safeText(response)}`);
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { tool_calls?: Array<{ function?: { arguments?: string } }> } }>;
-  };
-  const rawArgs = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-  if (!rawArgs) {
+  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) {
     recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
-    throw new Error("model did not call the required tool");
+    throw new Error("model returned an empty completion");
   }
 
-  try {
-    const parsed = JSON.parse(rawArgs) as Record<string, unknown>;
-    recordOutcome(profile, { success: true, inputTokens, outputTokens: estimateTokens(rawArgs) });
-    return parsed;
-  } catch {
-    recordOutcome(profile, { success: false, inputTokens, outputTokens: estimateTokens(rawArgs) });
-    throw new Error("model's tool call arguments were not valid JSON");
-  }
+  recordOutcome(profile, { success: true, inputTokens, outputTokens: estimateTokens(content) });
+  return content;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
 }
 
 export interface ToolCallTurnResult {

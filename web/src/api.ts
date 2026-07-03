@@ -78,14 +78,22 @@ async function apiFetch(path: string, init: RequestInit = {}, opts?: { backgroun
     throw new Error(message || `request failed (${res.status})`);
   }
   if (res.status === 409) {
-    const body = (await res.json().catch(() => ({}))) as Partial<SupersededInfo> & { error?: SupersededReason };
-    const info: SupersededInfo = {
-      reason: body.error === "unclaimed" ? "unclaimed" : "superseded",
-      active: body.active ?? null,
-      stale: body.stale ?? null,
-    };
-    for (const listener of supersededListeners) listener(info);
-    throw new Error(`session ${info.reason}`);
+    const body = (await res.json().catch(() => ({}))) as Partial<SupersededInfo> & { error?: string };
+    // The session guard is the only thing that reports "unclaimed"/"superseded" — every other
+    // 409 in this app (e.g. "this job type can't be cancelled mid-generation") is a normal
+    // business-logic conflict from the route itself, not a session change. Treating every 409
+    // as a supersede signal used to send the whole app to the claim-gate screen just from
+    // clicking Stop on a job that can't be cancelled mid-flight (compress/archive/Horde).
+    if (body.error === "unclaimed" || body.error === "superseded") {
+      const info: SupersededInfo = {
+        reason: body.error,
+        active: body.active ?? null,
+        stale: body.stale ?? null,
+      };
+      for (const listener of supersededListeners) listener(info);
+      throw new Error(`session ${info.reason}`);
+    }
+    throw new Error(body.error || `request failed (${res.status})`);
   }
   return res;
 }
@@ -185,7 +193,7 @@ export interface PromptCatalogEntry {
   id: string;
   name: string;
   usedBy: string;
-  kind: "system-prompt" | "tool" | "instruction";
+  kind: "system-prompt" | "instruction";
   sourceFile: string;
   content: string;
 }
@@ -222,6 +230,7 @@ export async function fetchPromptPreview(storyId: string, overrideTagIds?: strin
 export interface ModelConfig {
   id: string;
   userId: string;
+  provider: "featherless" | "horde";
   model: string;
   temperature: number;
   responseLimit: number;
@@ -276,6 +285,20 @@ export async function deleteModelConfig(id: string): Promise<void> {
   const res = await apiFetch(`/api/agents/${id}`, { method: "DELETE" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
+}
+
+export interface CatalogModel {
+  id: string;
+  contextLength?: number;
+  concurrencyCost?: number;
+  toolUse?: boolean;
+}
+
+export async function fetchModelCatalog(provider: string): Promise<CatalogModel[]> {
+  const res = await apiFetch(`/api/agents/models?provider=${encodeURIComponent(provider)}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.models;
 }
 
 export async function reorderModelConfigs(orderedIds: string[]): Promise<ModelConfig[]> {
