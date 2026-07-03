@@ -15,7 +15,6 @@ export const DEFAULT_GLOBAL_CSS = {
     accent: "#aa3bff",
     accentBg: "rgba(170, 59, 255, 0.1)",
     accentBorder: "rgba(170, 59, 255, 0.5)",
-    socialBg: "rgba(244, 243, 236, 0.5)",
   },
   dark: {
     text: "#9ca3af",
@@ -26,7 +25,6 @@ export const DEFAULT_GLOBAL_CSS = {
     accent: "#c084fc",
     accentBg: "rgba(192, 132, 252, 0.15)",
     accentBorder: "rgba(192, 132, 252, 0.5)",
-    socialBg: "rgba(47, 48, 58, 0.5)",
   },
   rootFontSize: 18,
   rootFontSizeNarrow: 16,

@@ -60,6 +60,18 @@
   font-size: var(--entry-font-size, 15px);
   overflow-wrap: break-word;
   min-width: 0;
+  padding: 0.5rem 0.8rem;
+  border-radius: 10px;
+}
+
+.entry-user {
+  color: var(--entry-user-text-color, inherit);
+  background: var(--entry-user-bubble-bg, transparent);
+}
+
+.entry-agent {
+  color: var(--entry-agent-text-color, inherit);
+  background: var(--entry-agent-bubble-bg, transparent);
 }
 
 .entry-role {

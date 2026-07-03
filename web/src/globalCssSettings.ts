@@ -12,7 +12,6 @@ export interface GlobalCssColors {
   accent: string;
   accentBg: string;
   accentBorder: string;
-  socialBg: string;
 }
 
 export interface GlobalCssSettings {
@@ -26,7 +25,7 @@ export interface GlobalCssSettings {
 const STYLE_TAG_ID = "global-css-overrides";
 
 function colorVars(colors: GlobalCssColors): string {
-  return `--text: ${colors.text}; --text-h: ${colors.textH}; --bg: ${colors.bg}; --border: ${colors.border}; --code-bg: ${colors.codeBg}; --accent: ${colors.accent}; --accent-bg: ${colors.accentBg}; --accent-border: ${colors.accentBorder}; --social-bg: ${colors.socialBg};`;
+  return `--text: ${colors.text}; --text-h: ${colors.textH}; --bg: ${colors.bg}; --border: ${colors.border}; --code-bg: ${colors.codeBg}; --accent: ${colors.accent}; --accent-bg: ${colors.accentBg}; --accent-border: ${colors.accentBorder};`;
 }
 
 /**

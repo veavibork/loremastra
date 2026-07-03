@@ -9,7 +9,7 @@ import {
 } from "./api";
 import SettingsTreeEditor, { type JsonData, type SettingsSection } from "./SettingsTreeEditor";
 import { applyGlobalCssSettings, GLOBAL_CSS_SPACE, type GlobalCssSettings } from "./globalCssSettings";
-import { PLAY_TAB_SPACE, useSetPlayTabSettings, type PlayTabSettings } from "./playTabSettings";
+import { DEFAULT_PLAY_TAB_SETTINGS, PLAY_TAB_SPACE, useSetPlayTabSettings, type PlayTabSettings } from "./playTabSettings";
 import "./SettingsView.css";
 
 const BANNED_PHRASES_SPACE = "banned-phrases";
@@ -25,7 +25,9 @@ export default function SettingsView() {
     void fetchLayout().then((res) => setLayout(res.config));
     void fetchSettingsSpace<string[]>(BANNED_PHRASES_SPACE).then(setBannedPhrases);
     void fetchSettingsSpace<GlobalCssSettings>(GLOBAL_CSS_SPACE).then(setGlobalCss);
-    void fetchSettingsSpace<PlayTabSettings>(PLAY_TAB_SPACE).then(setPlayTab);
+    void fetchSettingsSpace<Partial<PlayTabSettings>>(PLAY_TAB_SPACE).then((saved) =>
+      setPlayTab({ ...DEFAULT_PLAY_TAB_SETTINGS, ...saved })
+    );
   }, []);
 
   // Live edits to Global CSS / Play tab apply immediately (see each section's onChange below);
@@ -101,8 +103,9 @@ export default function SettingsView() {
       title: "Story tab",
       description:
         "Controls how posts render in the Story tab's OOC and IC modes: post font size, whether the user/editor " +
-        "role labels are shown at all, what text they use, and whether editor posts render in italics. Edits " +
-        "apply immediately as a preview; navigating away without saving reverts them.",
+        "role labels are shown at all, what text they use, whether editor posts render in italics, per-role text " +
+        "color, and per-role chat-bubble backgrounds (color + on/off). Edits apply immediately as a preview; " +
+        "navigating away without saving reverts them.",
       value: playTab as unknown as JsonData,
       onChange: (value) => setLivePlayTabSettings(value as unknown as PlayTabSettings),
       onSave: async (value) => {

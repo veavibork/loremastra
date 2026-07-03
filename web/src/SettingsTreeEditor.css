@@ -64,3 +64,24 @@
 .settings-tree-revertbar button {
   font-size: 0.75rem;
 }
+
+.settings-color-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.settings-color-field input[type="color"] {
+  width: 1.6rem;
+  height: 1.2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.settings-color-hex {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}

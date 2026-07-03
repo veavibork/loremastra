@@ -12,6 +12,13 @@ export interface PlayTabSettings {
   editorLabel: string;
   authorLabel: string;
   italicizeEditor: boolean;
+  /** Empty string means "inherit the theme's text color" — see applyPlayTabCssVars. */
+  userTextColor: string;
+  agentTextColor: string;
+  userBubbleEnabled: boolean;
+  agentBubbleEnabled: boolean;
+  userBubbleColor: string;
+  agentBubbleColor: string;
 }
 
 export const DEFAULT_PLAY_TAB_SETTINGS: PlayTabSettings = {
@@ -23,6 +30,12 @@ export const DEFAULT_PLAY_TAB_SETTINGS: PlayTabSettings = {
   editorLabel: "editor",
   authorLabel: "author",
   italicizeEditor: true,
+  userTextColor: "",
+  agentTextColor: "",
+  userBubbleEnabled: false,
+  agentBubbleEnabled: false,
+  userBubbleColor: "#33394a",
+  agentBubbleColor: "#3a2f3a",
 };
 
 interface PlayTabContextValue {
@@ -40,6 +53,10 @@ function applyPlayTabCssVars(settings: PlayTabSettings): void {
   const root = document.documentElement.style;
   root.setProperty("--entry-font-size", `${settings.fontSize}px`);
   root.setProperty("--entry-editor-style", settings.italicizeEditor ? "italic" : "normal");
+  root.setProperty("--entry-user-text-color", settings.userTextColor || "inherit");
+  root.setProperty("--entry-agent-text-color", settings.agentTextColor || "inherit");
+  root.setProperty("--entry-user-bubble-bg", settings.userBubbleEnabled ? settings.userBubbleColor : "transparent");
+  root.setProperty("--entry-agent-bubble-bg", settings.agentBubbleEnabled ? settings.agentBubbleColor : "transparent");
 }
 
 /**
@@ -52,7 +69,9 @@ export function PlayTabProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<PlayTabSettings>(DEFAULT_PLAY_TAB_SETTINGS);
 
   useEffect(() => {
-    void fetchSettingsSpace<PlayTabSettings>(PLAY_TAB_SPACE).then(setSettings).catch(() => {});
+    void fetchSettingsSpace<Partial<PlayTabSettings>>(PLAY_TAB_SPACE)
+      .then((saved) => setSettings({ ...DEFAULT_PLAY_TAB_SETTINGS, ...saved }))
+      .catch(() => {});
   }, []);
 
   useEffect(() => applyPlayTabCssVars(settings), [settings]);

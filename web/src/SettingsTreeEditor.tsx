@@ -1,6 +1,54 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { JsonEditor } from "json-edit-react";
 import "./SettingsTreeEditor.css";
+
+/** json-edit-react doesn't export CustomNodeDefinition/CustomNodeProps directly (see
+ * project_loremaster_settings_tree memory) — extracted from JsonEditor's own prop type instead,
+ * so condition()/element() below still get full type inference with no `any`. */
+type CustomNodeDefinitions = NonNullable<ComponentProps<typeof JsonEditor>["customNodeDefinitions"]>;
+
+/** Solid-hex fields across every settings space — anything using alpha (rgba(...), e.g. Global
+ * CSS's accentBg/accentBorder) isn't representable by a native <input type="color"> and stays a
+ * plain text field. */
+const COLOR_FIELD_KEYS = new Set([
+  "text",
+  "textH",
+  "bg",
+  "border",
+  "codeBg",
+  "accent",
+  "userTextColor",
+  "agentTextColor",
+  "userBubbleColor",
+  "agentBubbleColor",
+]);
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+/** userTextColor/agentTextColor default to "" ("inherit the theme's text color" — see
+ * playTabSettings.tsx) rather than a hardcoded hex, so a fresh install doesn't fix post text to
+ * one color regardless of light/dark mode. Still show the picker for them at "", starting from
+ * black, since untouched is the common case and typing raw hex by hand is what this is for. */
+const EMPTY_ALLOWED_COLOR_KEYS = new Set(["userTextColor", "agentTextColor"]);
+
+const CUSTOM_NODE_DEFINITIONS: CustomNodeDefinitions = [
+  {
+    condition: ({ key, value }) =>
+      typeof key === "string" &&
+      COLOR_FIELD_KEYS.has(key) &&
+      (isHexColor(value) || (value === "" && EMPTY_ALLOWED_COLOR_KEYS.has(key))),
+    element: ({ value, setValue }) => (
+      <span className="settings-color-field">
+        <input type="color" value={isHexColor(value) ? value : "#000000"} onChange={(e) => setValue(e.target.value)} />
+        <span className="settings-color-hex">{value === "" ? "inherit" : (value as string)}</span>
+      </span>
+    ),
+    showOnEdit: true,
+    showOnView: true,
+  },
+];
 
 /** json-edit-react doesn't export its JsonData type; every settings-space value is either an object or an array. */
 export type JsonData = Record<string, unknown> | unknown[];
@@ -278,6 +326,7 @@ export default function SettingsTreeEditor({ sections }: { sections: SettingsSec
             searchFilter="all"
             showIconTooltips
             externalTriggers={{ collapse: collapseSignal }}
+            customNodeDefinitions={CUSTOM_NODE_DEFINITIONS}
           />
         </div>
       )}
