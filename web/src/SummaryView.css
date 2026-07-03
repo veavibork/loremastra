@@ -60,6 +60,11 @@
   white-space: pre-wrap;
 }
 
+.summary-pending {
+  opacity: 0.45;
+  font-style: italic;
+}
+
 .summary-row-hidden {
   opacity: 0.45;
 }

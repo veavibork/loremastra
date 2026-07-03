@@ -11,6 +11,8 @@ import {
 } from "./worldbook-pc.js";
 
 const PRIOR_ARCHIVE_SUMMARIES = 2;
+/** Cap per-message prose in archive input — full posts usually fit; avoids multi-minute prompts on outlier turns. */
+const ARCHIVE_MAX_PROSE_CHARS = 6000;
 
 function plainProse(content: string): string {
   return content
@@ -33,7 +35,9 @@ export function buildArchiveProseBlob(db: Database.Database, memberTextIds: stri
   for (const id of memberTextIds) {
     const text = getText(db, id);
     if (!text?.genPackage?.trim()) continue;
-    blob.push({ role: roleLabel(text.role), text: plainProse(text.genPackage) });
+    let prose = plainProse(text.genPackage);
+    if (prose.length > ARCHIVE_MAX_PROSE_CHARS) prose = `${prose.slice(0, ARCHIVE_MAX_PROSE_CHARS)}…`;
+    blob.push({ role: roleLabel(text.role), text: prose });
   }
   return blob;
 }
@@ -78,7 +82,7 @@ export function buildArchiveUserPrompt(db: Database.Database, targetArchiveId: s
     parts.push(`Earlier story summary for continuity:\n${prior}`);
   }
 
-  parts.push(`Messages to archive (full prose only — summarize from these, do not invent events):\n${JSON.stringify(blob, null, 2)}`);
+  parts.push(`Messages to archive (full prose only — summarize from these, do not invent events):\n${JSON.stringify(blob)}`);
   return parts.join("\n\n");
 }
 

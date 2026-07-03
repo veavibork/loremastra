@@ -166,10 +166,11 @@ storiesRoute.get("/:id/summaries", (c) => {
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
   const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10) || 0);
-  const limit = Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50);
+  const limit = Math.max(1, parseInt(c.req.query("limit") ?? "10000", 10) || 10_000);
   const includeHidden = c.req.query("includeHidden") === "true";
+  const compressedOnly = c.req.query("compressedOnly") === "true";
 
-  return c.json(buildSummaryPage(storyDb, logbook.id, { offset, limit, includeHidden }));
+  return c.json(buildSummaryPage(storyDb, logbook.id, { offset, limit, includeHidden, compressedOnly }));
 });
 
 /**

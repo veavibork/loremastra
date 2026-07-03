@@ -22,22 +22,23 @@ export interface SummaryPage {
   hasMore: boolean;
 }
 
-/** Compressed summaries only — most recent first, with optional pagination. */
+/** Compressed summaries and pending posts — most recent first. */
 export function buildSummaryPage(
   db: Database.Database,
   logbookId: string,
-  options: { offset?: number; limit?: number; includeHidden?: boolean } = {}
+  options: { offset?: number; limit?: number; includeHidden?: boolean; compressedOnly?: boolean } = {}
 ): SummaryPage {
   const offset = Math.max(0, options.offset ?? 0);
   const limit = Math.max(1, Math.min(options.limit ?? 10_000, 10_000));
   const includeHidden = options.includeHidden ?? false;
+  const compressedOnly = options.compressedOnly ?? false;
 
-  const compressed = buildLogView(db, logbookId)
-    .filter((e) => e.genExtract != null && (includeHidden || !e.hidden))
+  const rows = buildLogView(db, logbookId)
+    .filter((e) => (includeHidden || !e.hidden) && (compressedOnly ? e.genExtract != null : true))
     .reverse();
 
-  const total = compressed.length;
-  const entries = compressed.slice(offset, offset + limit);
+  const total = rows.length;
+  const entries = rows.slice(offset, offset + limit);
   return {
     entries,
     total,

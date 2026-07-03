@@ -822,15 +822,22 @@ async function executeCompressJob(
     if (!targetPage) throw new Error("target page no longer exists");
 
     let summary: string | null = null;
-    let usedModel = "";
+    const workerProfile = getAgentProfile(userId, "worker");
+    let usedModel = workerProfile.model;
     let lastError = "unknown error";
 
     const trivial = tryTrivialCompress(targetText.genPackage);
-    if (trivial) summary = trivial.summary;
+    if (trivial) {
+      summary = trivial.summary;
+      usedModel = `${workerProfile.model} (trivial)`;
+    }
 
     if (!summary) {
       const verbatim = tryShortVerbatimCompress(targetText.role, targetText.genPackage);
-      if (verbatim) summary = verbatim.summary;
+      if (verbatim) {
+        summary = verbatim.summary;
+        usedModel = `${workerProfile.model} (verbatim)`;
+      }
     }
 
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
@@ -847,7 +854,7 @@ async function executeCompressJob(
         }
         attemptMessages.push({ role: "user", content: userPrompt });
 
-        const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
+        const rawText = await withModelFallback(workerProfile, (profile) => {
           usedModel = profile.model;
           return completeChat(profile, featherlessKey, attemptMessages);
         });
@@ -883,6 +890,7 @@ async function executeCompressJob(
       if (!summary || matchesRefusalPrefix(userId, summary)) {
         throw new Error(`compression failed after ${COMPRESS_MAX_ATTEMPTS} attempts — ${lastError}`);
       }
+      usedModel = `${workerProfile.model} (fallback)`;
     }
 
     summary = finalizeCompressSummary(db, summary);
@@ -1104,7 +1112,7 @@ async function executeArchiveJob(
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const rawText = await withModelFallback(getAgentProfile(userId, "editor"), (profile) => {
+        const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
           usedModel = profile.model;
           return completeChat(profile, featherlessKey, [
             { role: "system", content: ARCHIVE_SYSTEM_PROMPT },

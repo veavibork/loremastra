@@ -43,15 +43,11 @@ export function enqueueEligibleArchiveBlocks(db: Database.Database, userId: stri
     for (const text of windowTexts) {
       if (text) addArchiveMember(db, archive.id, text.id, false); // ownership computed separately, across all overlapping blocks
     }
-    // Editor uses the same large model as the author, which historically cost 4 concurrency
-    // units on the real Featherless account — confirmed the hard way (a 429) when this was
-    // hardcoded to 1 and two archive jobs were allowed to run "concurrently" by our own slot
-    // tracker while the real account only allows 4 units total. Now sourced from the editor's
-    // resolved model config instead of a hardcoded literal (see model_configs.concurrency_cost).
+    // Worker tier (KAI/lorepebble) — editor was 3+ min/block on full-prose archive prompts.
     createJob(db, {
       targetArchiveId: archive.id,
       jobType: "archive",
-      slotCost: getAgentProfile(userId, "editor").concurrencyCost,
+      slotCost: getAgentProfile(userId, "worker").concurrencyCost,
       priority: 5,
     });
   }
