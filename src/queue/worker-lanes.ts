@@ -5,11 +5,11 @@
 let proseActive = 0;
 let workerActive = 0;
 let proseThreadLimit = 1;
-let workerThreadLimit = 2;
+let workerThreadLimit = 4;
 
 export function refreshWorkerLaneLimits(): void {
   proseThreadLimit = Math.max(1, parseInt(process.env.PROSE_THREADS ?? "1", 10) || 1);
-  workerThreadLimit = Math.max(1, parseInt(process.env.WORKER_THREADS ?? "2", 10) || 2);
+  workerThreadLimit = Math.max(1, parseInt(process.env.WORKER_THREADS ?? "4", 10) || 4);
 }
 
 export function getWorkerLaneSnapshot(): {
