@@ -6,8 +6,10 @@ import {
   buildContentBlockForWorker,
   balanceSpeechQuotes,
   compressPcGuidance,
+  compressRegisterGuidance,
   resolvePcInSummary,
   resolvePcNameFromContent,
+  resolveRegisterFromContent,
 } from "./worldbook-pc.js";
 
 const PRIOR_ARCHIVE_SUMMARIES = 2;
@@ -70,7 +72,8 @@ export function buildArchiveUserPrompt(db: Database.Database, targetArchiveId: s
   if (!blob.length) throw new Error("no member content to summarize");
 
   const pcName = resolvePcNameFromContent(db);
-  const parts: string[] = [compressPcGuidance(pcName)];
+  const register = resolveRegisterFromContent(db);
+  const parts: string[] = [compressPcGuidance(pcName), compressRegisterGuidance(register)];
 
   const content = buildContentBlockForWorker(db);
   if (content) {

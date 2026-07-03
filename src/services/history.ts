@@ -25,6 +25,8 @@ function toChatRole(role: TextRole): "user" | "assistant" | "system" {
   return "user";
 }
 
+const MEMORY_NOTE_PREFIX = "[Memory note — plot only; write fresh prose in the story register, do not mimic this terse style:] ";
+
 interface Line {
   order: number;
   role: TextRole;
@@ -160,10 +162,17 @@ export function assembleAuthorPrompt(
     } else if (archive && archive.summary && !archive.broken) {
       if (seenArchives.has(archive.id)) continue;
       seenArchives.add(archive.id);
-      const content = archive.summary;
+      const content = MEMORY_NOTE_PREFIX + archive.summary;
       lines.push({ order, role: "system", content, tokens: estimateTokens(content), kind: "archived", archiveId: archive.id });
     } else if (text.genExtract != null) {
-      lines.push({ order, role: text.role, content: text.genExtract, tokens: estimateTokens(text.genExtract), kind: "compressed", refTextId: text.id });
+      lines.push({
+        order,
+        role: text.role,
+        content: MEMORY_NOTE_PREFIX + text.genExtract,
+        tokens: estimateTokens(MEMORY_NOTE_PREFIX + text.genExtract),
+        kind: "compressed",
+        refTextId: text.id,
+      });
     } else if (text.genPackage) {
       lines.push({ order, role: text.role, content: text.genPackage, tokens: estimateTokens(text.genPackage), kind: "verbose", refTextId: text.id });
     }
@@ -190,8 +199,15 @@ export function assembleAuthorPrompt(
         if (!t?.genExtract) continue;
         const order = orderByTextId.get(textId);
         if (order == null) continue;
-        const tokens = estimateTokens(t.genExtract);
-        replacements.push({ order, role: t.role, content: t.genExtract, tokens, kind: "compressed", refTextId: t.id });
+        const tokens = estimateTokens(MEMORY_NOTE_PREFIX + t.genExtract);
+        replacements.push({
+          order,
+          role: t.role,
+          content: MEMORY_NOTE_PREFIX + t.genExtract,
+          tokens,
+          kind: "compressed",
+          refTextId: t.id,
+        });
         replacementCost += tokens;
       }
       if (replacementCost - archiveLine.tokens > remaining) continue;

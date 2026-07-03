@@ -27,6 +27,32 @@ export function buildContentBlockForWorker(db: Database.Database): string {
   return blocks.join("\n\n");
 }
 
+/** Parse Register/tone line from CONTENT (Editor schema: "Register: ..."). */
+export function resolveRegisterFromContent(db: Database.Database): string | null {
+  const worldbook = getBookByType(db, "worldbook");
+  if (!worldbook) return null;
+
+  for (const entry of listContentEntries(db, worldbook.id)) {
+    const match = entry.content.match(/^Register:\s*(.+)$/im);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return null;
+}
+
+export function compressRegisterGuidance(register: string | null): string {
+  if (!register) {
+    return (
+      "REGISTER: Summaries are brief in-world memory notes — not clinical reportage. " +
+      "Preserve emotional color, tension, and how people spoke ( dialect, formality, heat ) even in short notes. " +
+      "Do not flatten vivid scenes into neutral textbook prose."
+    );
+  }
+  return (
+    `REGISTER (match this tone in every summary — do not write neutral/clinical prose): ${register}. ` +
+    "Memory notes stay short but keep voice, emotional color, and speech flavor from the source."
+  );
+}
+
 export function compressPcGuidance(pcName: string | null): string {
   if (pcName) {
     return (

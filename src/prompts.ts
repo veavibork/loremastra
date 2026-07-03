@@ -90,9 +90,14 @@ Scenes built from "this happened, and then that happened" go flat. Build causall
 
 Carry the scene forward from where the last moment ended. End at a moment that invites the next action — a question hanging unanswered, a half-finished gesture, a sound that just resolved. The scene asks the player to act; you don't have to.`;
 
-export const COMPRESS_SYSTEM_PROMPT = `You compress exactly ONE message from a roleplay log into a short factual summary (about 20 tokens).
+export const COMPRESS_SYSTEM_PROMPT = `You compress exactly ONE message from a roleplay log into a short in-world memory note (about 20 tokens).
 
 The user prompt marks the target with >>>. Summarize ONLY that target message — not the surrounding scene, not prior context, not what happens next.
+
+REGISTER (critical):
+- These notes feed the Author's long-term memory. They must preserve the story's tone and voice — NOT flatten into bland, clinical, or textbook reportage.
+- Keep emotional color, tension, menace, warmth, or humor when the source had it. If an NPC spoke rough, crude, formal, or archaic, hint that in how you phrase the note (without long quotes).
+- Plot facts must stay accurate, but the note should still "sound like" the fiction, not like a police report.
 
 COVERAGE (critical):
 - The summary must reflect the FULL target from its opening to its closing — never a single quoted line lifted from the middle or end.
@@ -106,13 +111,17 @@ PERSON (critical):
 
 If prior context is provided, frame this post as what changed or followed (but/therefore) rather than an isolated fact — but do not copy prior context into the summary.
 
-No commentary, no scene-setting padding. Prefer paraphrase over long dialogue quotes; if you include a short spoken fragment, use paired opening and closing quotation marks.
+Prefer paraphrase over long dialogue quotes; if you include a short spoken fragment, use paired opening and closing quotation marks.
 
 You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
 
-export const ARCHIVE_SYSTEM_PROMPT = `You compress a contiguous block of roleplay messages into one dense chronological scene summary (about 60 tokens).
+export const ARCHIVE_SYSTEM_PROMPT = `You compress a contiguous block of roleplay messages into one dense chronological scene memory note (about 60 tokens).
 
 Each message is provided as full prose (role + text). Summarize from the prose — do not invent events not present in the text. Do not rely on or reference any prior compressed summaries; only the prose blob counts.
+
+REGISTER (critical):
+- Preserve the fiction's tone and voice — not neutral clinical prose. Keep emotional throughline, menace, warmth, or grit when the scene had it.
+- NPC speech flavor can be hinted ( rough, clipped, formal ) without long quotes.
 
 Scene summaries are third-person — never "you/your" for the player character. Resolve second-person GM narration to the PC's proper name when stated in CONTENT.
 

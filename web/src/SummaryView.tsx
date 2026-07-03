@@ -54,7 +54,7 @@ export default function SummaryView({ story }: PanelProps) {
         <p className="summary-count">
           {compressedCount} of {total} posts compressed
           {compressedCount < total && ` — ${total - compressedCount} pending`}
-          {!includeHidden && " (in-character only)"}
+          {!includeHidden && " · in-character only (toggle Show hidden for setup/OOC)"}
         </p>
       )}
       <table className="summary-table">

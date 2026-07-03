@@ -6,8 +6,10 @@ import {
   buildContentBlockForWorker,
   balanceSpeechQuotes,
   compressPcGuidance,
+  compressRegisterGuidance,
   resolvePcInSummary,
   resolvePcNameFromContent,
+  resolveRegisterFromContent,
 } from "./worldbook-pc.js";
 
 const PRIOR_PROSE_MESSAGES = 2;
@@ -178,12 +180,13 @@ export function buildCompressUserPrompt(db: Database.Database, targetText: TextR
   const plainTarget = plainMessageText(targetText.genPackage!);
   const wordCount = plainTarget.split(/\s+/).filter(Boolean).length;
   const pcName = resolvePcNameFromContent(db);
+  const register = resolveRegisterFromContent(db);
   const roleHint =
     targetText.role === "agent"
       ? "This is GM/narration — cover description, action, and dialogue beats across the entire post."
       : "This is a player line — include every sentence, including any opening reaction before questions.";
 
-  let out = `${compressPcGuidance(pcName)}\n\n`;
+  let out = `${compressPcGuidance(pcName)}\n${compressRegisterGuidance(register)}\n\n`;
   out += `Summarize ONLY the target post below. Do not summarize prior context or any other turn.\n`;
   out += `Target length: ~${wordCount} words. ${roleHint}\n\n`;
 
