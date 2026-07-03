@@ -25,18 +25,14 @@ import { toast } from "./toast";
 import "./StoryView.css";
 
 /** Grows with its content instead of scrolling internally — used for both the composer and
- * inline post editing so neither ever shows a stale, pre-resize box on first paint. Measuring in
- * useLayoutEffect (before the browser paints) rather than useEffect (after) is what avoids a
- * one-frame flash of the wrong size.
+ * tap-to-edit's single edit box so neither ever shows a stale, pre-resize box on first paint.
+ * Measuring in useLayoutEffect (before the browser paints) rather than useEffect (after) is what
+ * avoids a one-frame flash of the wrong size.
  *
  * `initialHeight`, when given, is applied via the ref callback (fires during commit, before any
- * effect) rather than the default browser intrinsic (one row) — for StoryView's per-entry edit
- * boxes, which mount several at once when toggling edit mode on for a whole log. Without this,
- * every box would render at ~1 line tall for one frame before its own layout effect corrects it,
- * collapsing .log's total scrollHeight in the interim; the browser auto-clamps scrollTop to fit
- * that collapsed height and never un-clamps as the boxes regrow, which reads as the whole log
- * jumping toward the top. Setting a close-enough starting height up front means the aggregate
- * height barely moves during the transition, so there's nothing for the browser to clamp against. */
+ * effect) rather than the default browser intrinsic (one row) — StoryView seeds this from the
+ * tapped post's own rendered height at the moment it's tapped into edit mode, so the box doesn't
+ * visibly shrink to one line and then regrow once its own layout effect corrects it. */
 function AutoGrowTextarea({
   value,
   onChange,
@@ -47,7 +43,6 @@ function AutoGrowTextarea({
   disabled,
   autoFocus,
   initialHeight,
-  onBeforeResize,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -58,13 +53,6 @@ function AutoGrowTextarea({
   disabled?: boolean;
   autoFocus?: boolean;
   initialHeight?: number;
-  // Called right before every collapse-then-remeasure resize pass (including on every keystroke,
-  // not just mount) — StoryView uses this to apply its scroll-height floor (see
-  // lockLogHeightDuringTransition) around each one. The collapse-to-"auto" step below is needed to
-  // correctly detect shrinkage, but on a *focused* box mid-edit, even a same-frame collapse can
-  // trigger the browser's native "keep the caret in view" scrolling against the transiently
-  // shrunk .log, which reads as the edited line snapping toward the composer at the bottom.
-  onBeforeResize?: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -72,7 +60,6 @@ function AutoGrowTextarea({
     const el = ref.current;
     if (!el) return;
     const resize = () => {
-      onBeforeResize?.();
       // scrollHeight reflects whatever's rendered inside the box, including a wrapped
       // placeholder — for the composer's long instructional placeholder that inflated an
       // empty box to 2-3 lines tall. Hide it for the measurement so height only ever tracks
@@ -88,10 +75,6 @@ function AutoGrowTextarea({
     // this first measurement) that the value-keyed effect above has no other reason to rerun for.
     const raf = requestAnimationFrame(resize);
     return () => cancelAnimationFrame(raf);
-    // onBeforeResize deliberately excluded: StoryView passes a fresh closure every render, but it
-    // only ever reads refs (never stale state), so re-running this effect on every unrelated
-    // parent re-render would just be wasted work, not a correctness fix.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
   return (
@@ -131,6 +114,65 @@ function loadPersistedMode(storyId: string): "guide" | "play" | null {
   return raw === "guide" || raw === "play" ? raw : null;
 }
 
+/**
+ * Maps a click's page coordinates to an offset in the *source* content string (not the rendered
+ * text — bold/italic markers are stripped on render, see EntryContent's renderInline), so
+ * tap-to-edit can drop the cursor where the user actually clicked instead of always at the start.
+ * Walks up from whatever DOM node the browser's caret-hit-testing API resolved to until it finds
+ * one of EntryContent's data-src-start-tagged spans/strong/em elements, then adds the in-node
+ * offset to that span's recorded source-string start. Returns null if the browser lacks both
+ * caret-hit-testing APIs (very old browsers) or the click didn't land in a tagged span at all —
+ * callers should fall back to "end of content" in that case.
+ */
+function resolveClickOffset(clientX: number, clientY: number, contentEl: HTMLElement): number | null {
+  const doc = document as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+  };
+  let node: Node | null = null;
+  let offset = 0;
+  if (typeof document.caretRangeFromPoint === "function") {
+    const range = document.caretRangeFromPoint(clientX, clientY);
+    if (!range) return null;
+    node = range.startContainer;
+    offset = range.startOffset;
+  } else if (typeof doc.caretPositionFromPoint === "function") {
+    const pos = doc.caretPositionFromPoint(clientX, clientY);
+    if (!pos) return null;
+    node = pos.offsetNode;
+    offset = pos.offset;
+  } else {
+    return null;
+  }
+  if (!node || !contentEl.contains(node)) return null;
+
+  // Hit-testing usually lands inside a text node (offset = character index within it), but
+  // browsers sometimes resolve to an element boundary instead — e.g. clicking below the last
+  // line, in the box's padding. There, `offset` is a *child-node index*, not a character count;
+  // treating it as one is what caused the cursor to consistently land near the start of whichever
+  // span was childNodes[0]. Normalize down to the nearest real text node (its very start or very
+  // end, depending on which side of the boundary the click landed) before walking up for a
+  // data-src-start-tagged ancestor.
+  if (node.nodeType !== Node.TEXT_NODE) {
+    const children = node.childNodes;
+    if (children.length === 0) return null;
+    const landedAfterLastChild = offset >= children.length;
+    let child: Node = children[Math.min(offset, children.length - 1)];
+    while (child.nodeType !== Node.TEXT_NODE && child.childNodes.length > 0) {
+      child = landedAfterLastChild ? child.childNodes[child.childNodes.length - 1] : child.childNodes[0];
+    }
+    if (child.nodeType !== Node.TEXT_NODE) return null;
+    node = child;
+    offset = landedAfterLastChild ? (child.textContent?.length ?? 0) : 0;
+  }
+
+  let el: HTMLElement | null = node.parentElement;
+  while (el && el !== contentEl && el.dataset.srcStart === undefined) {
+    el = el.parentElement;
+  }
+  if (!el || el.dataset.srcStart === undefined) return null;
+  return parseInt(el.dataset.srcStart, 10) + offset;
+}
+
 export default function StoryView({
   storyId,
   phase,
@@ -166,50 +208,20 @@ export default function StoryView({
   // continue, retry) — not held for the whole generation. See the `busy` derivation below for
   // what actually disables those buttons for the full duration.
   const [starting, setStarting] = useState(false);
-  const [editMode, setEditMode] = useState(false);
-  const [editDrafts, setEditDrafts] = useState<Record<string, string>>({});
-  const [forkMode, setForkMode] = useState(false);
+  // Tap-to-edit: at most one post editable at a time (see handleLogClick). null means nothing is
+  // being edited and every post renders as plain read-only content.
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [editInitialHeight, setEditInitialHeight] = useState<number | undefined>(undefined);
+  // Set on focus so the overlay's Delete (forward-delete) button acts on the one box that can
+  // possibly be focused — see handleDeleteKey's doc comment for why this uses execCommand.
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Where to drop the cursor once the edit textarea mounts and focuses (see handleLogClick and
+  // its onFocus consumer below) — a ref rather than state since it's a one-shot instruction, not
+  // something that should trigger its own re-render.
+  const pendingCaretRef = useRef<number | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  // Invisible, below-the-fold last child of .log — see lockLogHeightDuringTransition.
-  const logSpacerRef = useRef<HTMLDivElement>(null);
-  // Tracks whichever edit-mode textarea last had focus, so the toolbar's Delete button knows
-  // which draft/selection to act on (touch keyboards sometimes drop their key-entry UI on a
-  // text selection, leaving Cut as the only native option — this does a real delete instead).
-  const activeEditRef = useRef<{ pageId: string; el: HTMLTextAreaElement } | null>(null);
-  // Every rendered entry's wrapper div, kept live via the ref prop below — read from just before
-  // entering edit mode to seed each edit box's initialHeight (see AutoGrowTextarea's doc comment).
-  const entryElRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const initialEditHeights = useRef<Record<string, number>>({});
-
-  /**
-   * Toggling edit mode swaps every visible entry between a plain <div> (sized by the browser's
-   * normal layout pass, correct on the very first frame) and a <textarea> (sized by JS after
-   * mount — see AutoGrowTextarea). Even with initialHeight seeding that JS-driven settling has an
-   * async window during which .log's real scrollHeight can dip below its pre-transition value; if
-   * the user is scrolled at or near the bottom, the browser auto-clamps scrollTop to fit that dip
-   * and never un-clamps as things regrow, which reads as the log jumping toward the top.
-   *
-   * Rather than trying to precisely predict every box's transitional height, this reserves a
-   * scratch buffer — an invisible last child, below the fold — sized to at least the current
-   * scrollHeight, so scrollHeight structurally cannot fall below that floor no matter what happens
-   * above it. Since it only ever occupies space *past* whatever's currently in view, it's invisible
-   * regardless of scroll position. Released after two animation frames — one for AutoGrowTextarea's
-   * synchronous layout-effect resize, one more for its own delayed rAF resize pass — by which point
-   * real content has regrown past the floor anyway, so shrinking the spacer back to 0 is a no-op
-   * visually.
-   */
-  function lockLogHeightDuringTransition() {
-    const logEl = logRef.current;
-    const spacerEl = logSpacerRef.current;
-    if (!logEl || !spacerEl) return;
-    spacerEl.style.height = `${logEl.scrollHeight}px`;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (spacerEl) spacerEl.style.height = "0px";
-      });
-    });
-  }
 
   async function refresh(): Promise<LogEntry[]> {
     const freshEntries = await fetchLog(storyId);
@@ -342,7 +354,7 @@ export default function StoryView({
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
-    if (!draft.trim() || editMode) return;
+    if (!draft.trim() || editingPageId) return;
 
     const content = draft.trim();
     setDraft("");
@@ -414,62 +426,79 @@ export default function StoryView({
     void handleRetry(pageId, guidance);
   }
 
-  async function toggleEditMode() {
-    lockLogHeightDuringTransition();
-    if (!editMode) {
-      const seeded: Record<string, string> = {};
-      const heights: Record<string, number> = {};
-      for (const entry of shown) {
-        seeded[entry.pageId] = entry.content ?? "";
-        const contentEl = entryElRefs.current[entry.pageId]?.querySelector<HTMLElement>(".entry-content");
-        if (contentEl) heights[entry.pageId] = contentEl.offsetHeight;
-      }
-      initialEditHeights.current = heights;
-      setEditDrafts(seeded);
-      setEditMode(true);
-      return;
-    }
+  /** Delegated on .log rather than a per-entry onClick — a per-entry closure prop would defeat
+   * EntryContent's React.memo (a new function reference every render forces a re-render
+   * regardless of whether content actually changed), which matters here since every streamed
+   * token re-renders the whole list via the pendingReplies effect above. */
+  function handleLogClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (editingPageId || busy) return;
+    const contentEl = (e.target as HTMLElement).closest<HTMLElement>(".entry-content");
+    if (!contentEl) return;
+    const entryEl = contentEl.closest<HTMLElement>(".entry");
+    const pageId = entryEl?.dataset.pageId;
+    if (!entryEl || !pageId) return;
+    const entry = shown.find((en) => en.pageId === pageId);
+    if (!entry) return;
+    const content = entry.content ?? "";
+    const clicked = resolveClickOffset(e.clientX, e.clientY, contentEl);
+    pendingCaretRef.current = clicked !== null ? Math.max(0, Math.min(clicked, content.length)) : content.length;
+    setEditingPageId(pageId);
+    setEditDraft(content);
+    setEditInitialHeight(contentEl.offsetHeight);
+  }
 
-    const changed = shown.filter((entry) => {
-      const value = editDrafts[entry.pageId];
-      return value !== undefined && value !== (entry.content ?? "");
-    });
-    setEditMode(false);
-    if (changed.length > 0) {
+  function cancelEdit() {
+    setEditingPageId(null);
+    setEditDraft("");
+    setEditInitialHeight(undefined);
+    editTextareaRef.current = null;
+    pendingCaretRef.current = null;
+  }
+
+  async function saveEdit() {
+    const pageId = editingPageId;
+    if (!pageId) return;
+    const entry = shown.find((en) => en.pageId === pageId);
+    const changed = !!entry && editDraft !== (entry.content ?? "");
+    cancelEdit();
+    if (changed) {
       try {
-        await Promise.all(changed.map((entry) => editPost(storyId, entry.pageId, editDrafts[entry.pageId])));
+        await editPost(storyId, pageId, editDraft);
         await refresh();
       } catch (err) {
         console.error(err);
         setError(err instanceof Error ? err.message : String(err));
       }
     }
-    setEditDrafts({});
-    activeEditRef.current = null;
   }
 
-  /** Performs an actual forward-delete on whichever edit box was last focused, bypassing
-   * whatever native key-entry UI the platform did or didn't show for the current selection.
-   * Routed through execCommand (deprecated but still broadly supported, including Android Chrome)
-   * rather than a direct value splice, since only edits made that way register in the browser's
-   * own undo stack — a plain state update wouldn't be Ctrl+Z-able the way a real keypress is. */
+  async function forkFromEdit() {
+    const pageId = editingPageId;
+    if (!pageId) return;
+    cancelEdit();
+    await handleFork(pageId);
+  }
+
+  /** Performs an actual forward-delete in the single open edit box, bypassing whatever native
+   * key-entry UI the platform did or didn't show for the current selection. Routed through
+   * execCommand (deprecated but still broadly supported, including Android Chrome) rather than a
+   * direct value splice, since only edits made that way register in the browser's own undo stack
+   * — a plain state update wouldn't be Ctrl+Z-able the way a real keypress is. */
   function handleDeleteKey() {
-    const active = activeEditRef.current;
-    if (!active) return;
-    const { pageId, el } = active;
+    const el = editTextareaRef.current;
+    if (!el) return;
     el.focus();
     const hasSelection = el.selectionStart !== el.selectionEnd;
     const handled = document.execCommand(hasSelection ? "delete" : "forwardDelete");
     if (handled) {
-      setEditDrafts((prev) => ({ ...prev, [pageId]: el.value }));
+      setEditDraft(el.value);
       return;
     }
     // Fallback for environments without execCommand support — same net result, just not undoable.
-    const value = editDrafts[pageId] ?? "";
-    const start = el.selectionStart ?? value.length;
-    const end = el.selectionEnd ?? value.length;
-    const next = start === end ? value.slice(0, start) + value.slice(start + 1) : value.slice(0, start) + value.slice(end);
-    setEditDrafts((prev) => ({ ...prev, [pageId]: next }));
+    const start = el.selectionStart ?? editDraft.length;
+    const end = el.selectionEnd ?? editDraft.length;
+    const next = start === end ? editDraft.slice(0, start) + editDraft.slice(start + 1) : editDraft.slice(0, start) + editDraft.slice(end);
+    setEditDraft(next);
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(start, start);
@@ -517,7 +546,6 @@ export default function StoryView({
   }
 
   async function handleFork(pageId: string) {
-    setForkMode(false);
     try {
       const forked = await forkStory(storyId, pageId);
       setError(null);
@@ -549,32 +577,48 @@ export default function StoryView({
 
   return (
     <div className="story-view">
-      <div className="log" ref={logRef}>
+      <div className="log" ref={logRef} onClick={handleLogClick}>
         {shown.map((entry) => (
-          <div
-            key={entry.pageId}
-            ref={(el) => { entryElRefs.current[entry.pageId] = el; }}
-            className={`entry entry-${entry.role}`}
-          >
+          <div key={entry.pageId} data-page-id={entry.pageId} className={`entry entry-${entry.role}`}>
             <RoleLabel role={entry.role} mode={mode} />
-            {editMode ? (
-              <AutoGrowTextarea
-                className="edit-box-textarea"
-                value={editDrafts[entry.pageId] ?? entry.content ?? ""}
-                onChange={(value) => setEditDrafts((prev) => ({ ...prev, [entry.pageId]: value }))}
-                onFocus={(e) => { activeEditRef.current = { pageId: entry.pageId, el: e.currentTarget }; }}
-                initialHeight={initialEditHeights.current[entry.pageId]}
-                onBeforeResize={lockLogHeightDuringTransition}
-              />
-            ) : (
+            {entry.pageId === editingPageId ? (
               <>
-                <EntryContent content={entry.content ?? "…"} highlightBlocks={mode === "guide"} />
-                {forkMode && (
-                  <button type="button" className="fork-point-btn" onClick={() => void handleFork(entry.pageId)}>
-                    ⑂ fork from here
-                  </button>
-                )}
+                <AutoGrowTextarea
+                  className="edit-box-textarea"
+                  value={editDraft}
+                  onChange={setEditDraft}
+                  onFocus={(e) => {
+                    const el = e.currentTarget;
+                    editTextareaRef.current = el;
+                    if (pendingCaretRef.current !== null) {
+                      el.setSelectionRange(pendingCaretRef.current, pendingCaretRef.current);
+                      pendingCaretRef.current = null;
+                    }
+                    // Scrolling here (once focused/settled) rather than at click time: at click
+                    // time the box is still its pre-edit read-mode height, so a scroll computed
+                    // then doesn't account for the edit box's extra bottom padding (reserved for
+                    // the Save/Cancel/Fork/Del row) or AutoGrowTextarea's own resize passes —
+                    // scrolling too early was landing with those controls still clipped below the
+                    // fold. Two rAFs matches AutoGrowTextarea's own layout-effect-then-rAF resize,
+                    // so this runs after the box has reached its final height.
+                    requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                        el.closest<HTMLElement>(".entry")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                      });
+                    });
+                  }}
+                  initialHeight={editInitialHeight}
+                  autoFocus
+                />
+                <div className="entry-edit-actions">
+                  <button type="button" onClick={() => void saveEdit()}>Save</button>
+                  <button type="button" onClick={cancelEdit}>Cancel</button>
+                  <button type="button" onClick={() => void forkFromEdit()}>Fork</button>
+                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleDeleteKey}>Del</button>
+                </div>
               </>
+            ) : (
+              <EntryContent content={entry.content ?? "…"} highlightBlocks={mode === "guide"} />
             )}
           </div>
         ))}
@@ -613,7 +657,6 @@ export default function StoryView({
           );
         })}
         <div ref={logEndRef} />
-        <div ref={logSpacerRef} style={{ flexShrink: 0 }} />
       </div>
 
       {error && (
@@ -627,47 +670,31 @@ export default function StoryView({
 
       <div className="play-toolbar">
         <div className="mode-toggle">
-          <button type="button" className={mode === "guide" ? "active" : ""} onClick={() => void handleEnterOoc()} disabled={busy || editMode}>
+          <button type="button" className={mode === "guide" ? "active" : ""} onClick={() => void handleEnterOoc()} disabled={busy || !!editingPageId}>
             OOC
           </button>
-          <button type="button" className={mode === "play" ? "active" : ""} onClick={() => setMode("play")} disabled={busy || editMode}>
+          <button type="button" className={mode === "play" ? "active" : ""} onClick={() => setMode("play")} disabled={busy || !!editingPageId}>
             IC
           </button>
         </div>
-        <button type="button" onClick={handleUndo} disabled={busy || editMode || !position?.canUndo}>
+        <button type="button" onClick={handleUndo} disabled={busy || !!editingPageId || !position?.canUndo}>
           ↶ Undo
         </button>
-        <button type="button" onClick={handleRedo} disabled={busy || editMode || !position?.canRedo}>
+        <button type="button" onClick={handleRedo} disabled={busy || !!editingPageId || !position?.canRedo}>
           ↷ Redo
         </button>
         <button
           type="button"
           onClick={() => lastEntry && handleRetryClick(lastEntry.pageId)}
-          disabled={busy || editMode || !canRetry}
+          disabled={busy || !!editingPageId || !canRetry}
         >
           Retry
         </button>
-        <button type="button" onClick={handleContinueClick} disabled={busy || editMode}>
+        <button type="button" onClick={handleContinueClick} disabled={busy || !!editingPageId}>
           Continue
         </button>
-        <button type="button" onClick={() => void toggleEditMode()} disabled={busy}>
-          {editMode ? "Done editing" : "Edit"}
-        </button>
-        {editMode && (
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleDeleteKey}>
-            Delete
-          </button>
-        )}
-        <button
-          type="button"
-          className={forkMode ? "active" : ""}
-          onClick={() => setForkMode((f) => !f)}
-          disabled={busy || editMode}
-        >
-          Fork
-        </button>
         {mode === "guide" && phase === "setup" && (
-          <button type="button" onClick={() => void handleKickoff()} disabled={busy || editMode}>
+          <button type="button" onClick={() => void handleKickoff()} disabled={busy || !!editingPageId}>
             Kickoff →
           </button>
         )}
@@ -683,7 +710,7 @@ export default function StoryView({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              if (editMode) return;
+              if (editingPageId) return;
               if (draft.trim()) {
                 void handleSubmit();
               } else if (!busy) {
@@ -698,9 +725,9 @@ export default function StoryView({
               ? "Tell the Editor about your story… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
               : "Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
           }
-          disabled={editMode}
+          disabled={!!editingPageId}
         />
-        <button type="submit" disabled={editMode || !draft.trim()}>
+        <button type="submit" disabled={!!editingPageId || !draft.trim()}>
           Send
         </button>
       </form>

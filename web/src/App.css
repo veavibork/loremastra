@@ -57,6 +57,9 @@
   flex-direction: column;
   gap: 0.15rem;
   text-align: left;
+  /* Anchors .entry-edit-actions' bottom-right overlay (StoryView.css) to this one post rather
+     than to .log or the page. */
+  position: relative;
   font-size: var(--entry-font-size, 15px);
   /* Unitless, not index.css's inherited `145%` (which computes to a fixed px value at the
      root's 18px and stays that size regardless of this element's own smaller font-size) —
@@ -95,6 +98,9 @@
    Markdown's block-level <p> + margin approach. */
 .entry-content {
   white-space: pre-wrap;
+  /* Tap-to-edit entry point — StoryView.tsx's handleLogClick is delegated up on .log and looks
+     for the closest .entry-content ancestor of whatever was clicked. */
+  cursor: pointer;
 }
 
 .entry-agent p,
@@ -105,6 +111,9 @@
 .entry-pending p,
 .entry-pending .entry-content {
   opacity: 0.7;
+  /* Still-streaming replies aren't in `shown` yet, so a click here is a silent no-op — don't
+     imply otherwise. */
+  cursor: default;
 }
 
 .error-banner {

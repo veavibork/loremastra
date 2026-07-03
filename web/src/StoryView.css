@@ -52,13 +52,6 @@
   font-style: italic;
 }
 
-.fork-point-btn {
-  align-self: flex-start;
-  margin-top: 0.2rem;
-  font-size: 0.7rem;
-  padding: 0.2rem 0.5rem;
-}
-
 .pending-stop-btn {
   align-self: flex-start;
   margin-top: 0.2rem;
@@ -67,9 +60,10 @@
   opacity: 0.7;
 }
 
-/* Edit mode swaps .entry-content for this in place — no visible chrome, no margin, so the box
-   matches .entry-content's pre-wrap rendering exactly (a textarea is pre-wrap by default) and
-   doesn't change size or jump when toggling edit on/off. */
+/* Tap-to-edit swaps one post's .entry-content for this in place — no visible chrome, no margin,
+   so the box matches .entry-content's pre-wrap rendering exactly (a textarea is pre-wrap by
+   default) and doesn't change size or jump when entering/leaving edit. Bottom padding reserves
+   room for .entry-edit-actions so the overlay never sits on top of the last line being typed. */
 .edit-box-textarea {
   display: block;
   width: 100%;
@@ -85,6 +79,7 @@
   border: none;
   outline: none;
   padding: 0;
+  padding-bottom: 1.75rem;
   margin: 0;
   resize: none;
   overflow: hidden;
@@ -92,6 +87,21 @@
 
 .edit-box-textarea:focus {
   outline: 1px dashed rgba(255, 255, 255, 0.3);
+}
+
+/* Save/Cancel/Fork/Del cluster for whichever single post is being edited — see
+   StoryView.tsx's handleLogClick/editingPageId. */
+.entry-edit-actions {
+  position: absolute;
+  bottom: 0.4rem;
+  right: 0.6rem;
+  display: flex;
+  gap: 0.3rem;
+}
+
+.entry-edit-actions button {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
 }
 
 /* Highlights [CONTENT]/[ROSTER]/[MEMORY] spans in OOC/Guide mode so the player can see in
