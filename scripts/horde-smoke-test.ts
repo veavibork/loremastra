@@ -4,9 +4,13 @@ import type { AgentProfile } from "../src/config.js";
 const POLL_INTERVAL_MS = 5_000;
 const POLL_TIMEOUT_MS = 3 * 60_000;
 
+// Standalone dev script, not part of the app runtime — the app reads each user's Horde key from
+// the DB; this manual tool falls back to the anonymous key like horde.ts itself does when unset.
+const apiKey = process.env.HORDE_API_KEY ?? null;
+
 async function main() {
   console.log("--- available text models (count = workers currently online) ---");
-  const models = await listTextModels();
+  const models = await listTextModels(apiKey);
   const withWorkers = models.filter((m) => m.count > 0).sort((a, b) => b.count - a.count);
   if (!withWorkers.length) {
     console.error("no models currently have any online workers — nothing to test against right now");
@@ -25,7 +29,7 @@ async function main() {
     responseLimit: 60,
     contextLimit: 2048,
   };
-  const { id, kudos } = await submitTextGeneration(profile, [
+  const { id, kudos } = await submitTextGeneration(profile, apiKey, [
     { role: "user", content: "Say hello in exactly one short sentence." },
   ]);
   console.log(`submitted, id=${id} kudos=${kudos}`);
@@ -33,7 +37,7 @@ async function main() {
   const startedAt = Date.now();
   while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    const status = await pollTextGeneration(id);
+    const status = await pollTextGeneration(id, apiKey);
     console.log(
       `poll: done=${status.done} faulted=${status.faulted} isPossible=${status.isPossible} ` +
         `queuePosition=${status.queuePosition} waitTime=${status.waitTime}s`

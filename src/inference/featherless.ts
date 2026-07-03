@@ -1,5 +1,5 @@
 import type { AgentProfile } from "../config.js";
-import { FEATHERLESS_API_KEY, FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from "./featherless-config.js";
+import { FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from "./featherless-config.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { recordModelOutcome } from "../db/model-config-store.js";
 import { logOutboundRequest } from "./outbound-log.js";
@@ -181,12 +181,13 @@ function armTimeout(timeoutMs: number, externalSignal?: AbortSignal): { signal: 
 
 export async function streamInference(
   profile: AgentProfile,
+  apiKey: string,
   messages: ChatMessage[],
   handlers: StreamHandlers,
   options?: StreamOptions
 ): Promise<void> {
-  if (!FEATHERLESS_API_KEY) {
-    handlers.onError(new Error("FEATHERLESS_API_KEY is not set"));
+  if (!apiKey) {
+    handlers.onError(new Error("No Featherless API key configured — set one in the Agents tab"));
     return;
   }
 
@@ -202,7 +203,7 @@ export async function streamInference(
       method: "POST",
       headers: {
         ...BASE_HEADERS,
-        Authorization: `Bearer ${FEATHERLESS_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: profile.model,
@@ -310,11 +311,12 @@ function toWireMessage(m: ChatMessage): Record<string, unknown> {
  */
 export async function completeChat(
   profile: AgentProfile,
+  apiKey: string,
   messages: ChatMessage[],
   options?: { timeoutMs?: number; signal?: AbortSignal }
 ): Promise<string> {
-  if (!FEATHERLESS_API_KEY) {
-    throw new Error("FEATHERLESS_API_KEY is not set");
+  if (!apiKey) {
+    throw new Error("No Featherless API key configured — set one in the Agents tab");
   }
 
   const inputTokens = estimateMessageTokens(messages);
@@ -326,7 +328,7 @@ export async function completeChat(
       method: "POST",
       headers: {
         ...BASE_HEADERS,
-        Authorization: `Bearer ${FEATHERLESS_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: profile.model,
@@ -382,12 +384,13 @@ export interface ToolCallTurnResult {
  */
 export async function callWithTools(
   profile: AgentProfile,
+  apiKey: string,
   messages: ChatMessage[],
   tools: ToolDefinition[],
   options?: { forceToolName?: string; timeoutMs?: number }
 ): Promise<ToolCallTurnResult> {
-  if (!FEATHERLESS_API_KEY) {
-    throw new Error("FEATHERLESS_API_KEY is not set");
+  if (!apiKey) {
+    throw new Error("No Featherless API key configured — set one in the Agents tab");
   }
 
   const inputTokens = estimateMessageTokens(messages);
@@ -399,7 +402,7 @@ export async function callWithTools(
       method: "POST",
       headers: {
         ...BASE_HEADERS,
-        Authorization: `Bearer ${FEATHERLESS_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         model: profile.model,

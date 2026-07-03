@@ -125,6 +125,8 @@ async function apiFetch(path: string, init: RequestInit = {}, opts?: { backgroun
 export interface AccountProfile {
   id: string;
   displayName: string;
+  featherlessKeyMasked: string | null;
+  hordeKeyMasked: string | null;
 }
 
 export async function fetchAccount(): Promise<AccountProfile> {
@@ -151,6 +153,44 @@ export async function changePassword(currentPassword: string, newPassword: strin
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
+}
+
+type KeyFields = Pick<AccountProfile, "featherlessKeyMasked" | "hordeKeyMasked">;
+
+export async function setFeatherlessKey(key: string): Promise<KeyFields> {
+  const res = await apiFetch(`/api/account/featherless-key`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+export async function clearFeatherlessKey(): Promise<KeyFields> {
+  const res = await apiFetch(`/api/account/featherless-key`, { method: "DELETE" });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+export async function setHordeKey(key: string): Promise<KeyFields> {
+  const res = await apiFetch(`/api/account/horde-key`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+export async function clearHordeKey(): Promise<KeyFields> {
+  const res = await apiFetch(`/api/account/horde-key`, { method: "DELETE" });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
 }
 
 export interface StoryStats {

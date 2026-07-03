@@ -402,19 +402,24 @@ event loop. The contention rationale in loremaster.md's Security section doesn't
 throughput far beyond what <10 trusted users produce. The durable reason to eventually split per-user
 data into files is the "encrypt one user's data as a unit" future goal, not contention.
 
-Featherless stays a single shared operator-owned account this phase and beyond, by explicit decision
-(2026-07-03) — no per-user Featherless key, no changes to `concurrency-feed.ts`/`slots.ts`. A
-`featherless_access` per-user boolean (default off, SSH-script-granted) belongs to the Phase 2 backlog,
-not this phase — meaningless without real distinct users.
+**Superseded (2026-07-03, later same day):** the "Featherless stays single shared" decision above
+was reversed once real multi-user login existed. Each user now stores their own Featherless and
+Horde key, encrypted at rest (`users.featherless_key_encrypted`/`horde_key_encrypted`, AES-256-GCM
+via `src/crypto.ts`, keyed off a single `APP_MASTER_KEY` env secret), managed from the Agents tab
+(`ApiKeysSection.tsx`) via `/api/account/{featherless,horde}-key`. `concurrency-feed.ts` and
+`slots.ts` were both reworked to track concurrency per userId instead of one process-wide/global
+counter, since each user now has their own independent account limit. `.env` no longer holds
+either provider key — only `APP_MASTER_KEY` and the unrelated `DEV_BYPASS_SESSION_GUARD` dev
+toggle remain.
 
 **H1. Horde REST client (standalone, unwired)** — ✅ done.
 - `src/inference/horde.ts` (mirrors `featherless.ts`'s shape): submit (`POST /v2/generate/text/async`),
   poll (`GET .../status/{id}`), cancel (`DELETE .../status/{id}`). Treats `is_possible: false`, `429`,
   and `faulted` as first-class outcomes, not exceptions to patch around later.
-- `src/inference/horde-config.ts` (mirrors `featherless-config.ts`): `HORDE_API_KEY` env var, defaulting
-  to the anonymous key `"0000000000"` — plain env var by explicit decision (2026-07-03), matching how
-  `FEATHERLESS_API_KEY` already works; no DB storage or encryption this phase, since nothing per-user
-  exists yet to protect a key from.
+- `src/inference/horde-config.ts` (mirrors `featherless-config.ts`): originally a plain
+  `HORDE_API_KEY` env var by explicit decision (2026-07-03); superseded later the same day — see the
+  per-user key storage note above. `HORDE_ANONYMOUS_KEY` (`"0000000000"`) remains the fallback
+  whenever a user hasn't set their own Horde key.
 - No maintained Node/TS SDK exists for Horde text generation (the one npm package covers image gen
   only) — hand-rolled against the public swagger schema, same as Featherless.
 - **Answers the open tool-calling question first, deliberately sequenced before anything depends on

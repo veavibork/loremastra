@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { decryptSecret, encryptSecret } from "../crypto.js";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 
@@ -61,4 +62,52 @@ export function updateDisplayName(db: Database.Database, id: string, displayName
 
 export function updatePassword(db: Database.Database, id: string, passwordHash: string): void {
   db.prepare(`UPDATE users SET password_verifier = ?, updated_at = ? WHERE id = ?`).run(passwordHash, nowIso(), id);
+}
+
+function maskKey(plaintext: string): string {
+  const tail = plaintext.slice(-4);
+  return `${"•".repeat(8)}${tail}`;
+}
+
+export function setFeatherlessKey(db: Database.Database, id: string, plaintext: string | null): void {
+  const encrypted = plaintext ? encryptSecret(plaintext) : null;
+  db.prepare(`UPDATE users SET featherless_key_encrypted = ?, updated_at = ? WHERE id = ?`).run(
+    encrypted,
+    nowIso(),
+    id
+  );
+}
+
+export function setHordeKey(db: Database.Database, id: string, plaintext: string | null): void {
+  const encrypted = plaintext ? encryptSecret(plaintext) : null;
+  db.prepare(`UPDATE users SET horde_key_encrypted = ?, updated_at = ? WHERE id = ?`).run(encrypted, nowIso(), id);
+}
+
+function getEncryptedKeys(db: Database.Database, id: string): { featherless: string | null; horde: string | null } {
+  const row = db
+    .prepare(`SELECT featherless_key_encrypted, horde_key_encrypted FROM users WHERE id = ?`)
+    .get(id) as { featherless_key_encrypted: string | null; horde_key_encrypted: string | null } | undefined;
+  return { featherless: row?.featherless_key_encrypted ?? null, horde: row?.horde_key_encrypted ?? null };
+}
+
+export function getDecryptedFeatherlessKey(db: Database.Database, id: string): string | null {
+  const { featherless } = getEncryptedKeys(db, id);
+  return featherless ? decryptSecret(featherless) : null;
+}
+
+export function getDecryptedHordeKey(db: Database.Database, id: string): string | null {
+  const { horde } = getEncryptedKeys(db, id);
+  return horde ? decryptSecret(horde) : null;
+}
+
+/** Decrypts only far enough to mask — never returns the raw key. */
+export function getMaskedKeys(
+  db: Database.Database,
+  id: string
+): { featherlessKeyMasked: string | null; hordeKeyMasked: string | null } {
+  const { featherless, horde } = getEncryptedKeys(db, id);
+  return {
+    featherlessKeyMasked: featherless ? maskKey(decryptSecret(featherless)) : null,
+    hordeKeyMasked: horde ? maskKey(decryptSecret(horde)) : null,
+  };
 }

@@ -10,7 +10,6 @@ import { sessionsRoute } from "./routes/sessions.js";
 import { accountRoute } from "./routes/account.js";
 import { sessionGuard, type AppVariables } from "./middleware/session-guard.js";
 import { startPipelineRunner, trackStoryDb } from "./queue/pipeline-runner.js";
-import { startConcurrencyFeed } from "./queue/concurrency-feed.js";
 import { getQueueStatus } from "./queue/slots.js";
 import { getGlobalDb } from "./db/global-db.js";
 import { listAllStories } from "./db/story-store.js";
@@ -41,7 +40,7 @@ app.route("/api/agents", agentsRoute);
 app.route("/api/prompts", promptsRoute);
 app.route("/api/settings", settingsSpacesRoute);
 app.route("/api/client-errors", clientErrorsRoute);
-app.get("/api/debug/slots", (c) => c.json(getQueueStatus()));
+app.get("/api/debug/slots", (c) => c.json(getQueueStatus(c.get("userId"))));
 // Exempt from session-guard (GET only) — the profile picker needs this before any session exists.
 app.get("/api/users", (c) => c.json(listUsers(getGlobalDb())));
 
@@ -69,7 +68,6 @@ function trackAllStoriesAtStartup(): void {
 
 trackAllStoriesAtStartup();
 startPipelineRunner();
-startConcurrencyFeed();
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Loremaster listening on http://localhost:${info.port}`);
 });

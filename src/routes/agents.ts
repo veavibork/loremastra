@@ -12,6 +12,7 @@ import {
 import { getAgentProfile } from "../services/agent-config.js";
 import { listModels } from "../inference/featherless-models.js";
 import { listTextModels } from "../inference/horde.js";
+import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-store.js";
 
 export const agentsRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -25,8 +26,12 @@ export interface CatalogModel {
 // Provider-dispatching model catalog lookup, used by Config > Agents' "Fetch models" action.
 agentsRoute.get("/models", async (c) => {
   const provider = c.req.query("provider") ?? "featherless";
+  const db = getGlobalDb();
+  const userId = c.get("userId");
   if (provider === "featherless") {
-    const models = await listModels({ perPage: 200 });
+    const apiKey = getDecryptedFeatherlessKey(db, userId);
+    if (!apiKey) return c.json({ error: "No Featherless API key configured — set one in the Agents tab" }, 400);
+    const models = await listModels(apiKey, { perPage: 200 });
     const catalog: CatalogModel[] = models.map((m) => ({
       id: m.id,
       contextLength: m.contextLength,
@@ -36,7 +41,7 @@ agentsRoute.get("/models", async (c) => {
     return c.json({ models: catalog });
   }
   if (provider === "horde") {
-    const models = await listTextModels();
+    const models = await listTextModels(getDecryptedHordeKey(db, userId));
     const catalog: CatalogModel[] = models.map((m) => ({ id: m.name }));
     return c.json({ models: catalog });
   }

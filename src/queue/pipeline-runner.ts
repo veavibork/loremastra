@@ -22,6 +22,7 @@ import { getGlobalDb } from "../db/global-db.js";
 import { getStory, renameStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
 import { tryAcquireSlot, releaseSlot } from "./slots.js";
 import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
+import { ensureConcurrencyFeedForUser } from "./concurrency-feed.js";
 import { publishToken, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
 import {
   streamInference,
@@ -33,6 +34,7 @@ import {
   type ChatMessage,
 } from "../inference/featherless.js";
 import { submitTextGeneration, pollTextGeneration } from "../inference/horde.js";
+import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-store.js";
 import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
@@ -133,6 +135,7 @@ const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2;
  */
 async function streamWithFallback(
   profile: AgentProfile,
+  apiKey: string,
   messages: ChatMessage[],
   jobId: string,
   signal?: AbortSignal
@@ -151,6 +154,7 @@ async function streamWithFallback(
         await new Promise<void>((resolve, reject) => {
           void streamInference(
             candidate,
+            apiKey,
             candidateMessages,
             {
               onToken: (text) => {
@@ -265,7 +269,11 @@ function scanStory(db: Database.Database, userId: string, storyId: string): void
       return;
     }
 
-    if (!tryAcquireSlot(job.id, job.slotCost)) {
+    // Lazily (re)connects this user's own concurrency feed before gating on it — a no-op if
+    // already connected with the same key. Fine to call every tick; cheap, and picks up a
+    // freshly-set/replaced key without needing a restart.
+    ensureConcurrencyFeedForUser(userId, getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "");
+    if (!tryAcquireSlot(userId, job.id, job.slotCost)) {
       // Claimed but no slot free right now — put it back rather than block the scan loop.
       db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
       return;
@@ -292,7 +300,7 @@ function scanStory(db: Database.Database, userId: string, storyId: string): void
       void executeStoryNameJob(db, userId, job.id, job.targetTextId, storyId);
     } else {
       finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
-      releaseSlot(job.id);
+      releaseSlot(userId, job.id);
     }
 }
 
@@ -349,7 +357,14 @@ async function executeProseJob(
   const startedAt = Date.now();
   try {
     const { history, targetPage } = buildProseHistory(db, userId, jobId, targetTextId);
-    const { text: fullText, model } = await streamWithFallback(getAgentProfile(userId, "author"), history, jobId, signal);
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    const { text: fullText, model } = await streamWithFallback(
+      getAgentProfile(userId, "author"),
+      featherlessKey,
+      history,
+      jobId,
+      signal
+    );
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —
     // not a real tokenizer, good enough for the Logs telemetry view's ballpark numbers.
@@ -370,7 +385,7 @@ async function executeProseJob(
       publishError(jobId, message);
     }
   } finally {
-    releaseSlot(jobId);
+    releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
   }
 }
@@ -388,7 +403,8 @@ async function executeHordeProseSubmit(db: Database.Database, userId: string, jo
   try {
     const { history } = buildProseHistory(db, userId, jobId, targetTextId);
     const profile = getAgentProfile(userId, "author");
-    const { id: requestId } = await submitTextGeneration(profile, history);
+    const hordeKey = getDecryptedHordeKey(getGlobalDb(), userId);
+    const { id: requestId } = await submitTextGeneration(profile, hordeKey, history);
     setHordeRequestId(db, jobId, requestId);
     setJobModel(db, jobId, profile.model);
   } catch (err) {
@@ -430,7 +446,7 @@ async function resolveHordeJob(db: Database.Database, job: JobRow, storyId: stri
 
   let status;
   try {
-    status = await pollTextGeneration(job.hordeRequestId);
+    status = await pollTextGeneration(job.hordeRequestId, getDecryptedHordeKey(getGlobalDb(), userId));
   } catch (err) {
     // Transient poll failure (network hiccup, rate limit) — leave the job running and try
     // again next tick rather than failing it over what might be a momentary blip.
@@ -582,7 +598,14 @@ async function executeSetupJob(
       editorMessages.push({ role: "system", content });
     }
 
-    const { text: reply, model } = await streamWithFallback(getAgentProfile(userId, "editor"), editorMessages, jobId, signal);
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    const { text: reply, model } = await streamWithFallback(
+      getAgentProfile(userId, "editor"),
+      featherlessKey,
+      editorMessages,
+      jobId,
+      signal
+    );
 
     const tokenEstimate = Math.ceil(reply.length / 4);
     fillTextGeneration(db, targetTextId, { genPackage: reply, genMetrics: JSON.stringify({ tokenEstimate }) });
@@ -629,7 +652,7 @@ async function executeSetupJob(
       publishError(jobId, message);
     }
   } finally {
-    releaseSlot(jobId);
+    releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
   }
 }
@@ -664,7 +687,14 @@ async function executeSetupWorldbookJob(
     if (replyText?.genPackage) conversation.push({ role: "assistant", content: replyText.genPackage });
 
     const worldbookMessages: ChatMessage[] = [{ role: "system", content: EDITOR_SETUP_WORLDBOOK }, ...conversation];
-    const { text: rawText, model } = await streamWithFallback(getAgentProfile(userId, "editor"), worldbookMessages, jobId, signal);
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    const { text: rawText, model } = await streamWithFallback(
+      getAgentProfile(userId, "editor"),
+      featherlessKey,
+      worldbookMessages,
+      jobId,
+      signal
+    );
 
     const tokenEstimate = Math.ceil(rawText.length / 4);
     fillTextGeneration(db, targetTextId, { genPackage: rawText, genMetrics: JSON.stringify({ tokenEstimate }) });
@@ -688,7 +718,7 @@ async function executeSetupWorldbookJob(
       publishError(jobId, message);
     }
   } finally {
-    releaseSlot(jobId);
+    releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
   }
 }
@@ -742,11 +772,12 @@ async function executeCompressJob(
     let usedModel = "";
     let lastError = "unknown error";
 
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     for (let attempt = 1; attempt <= COMPRESS_MAX_ATTEMPTS && !summary; attempt++) {
       try {
         const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, compressMessages);
+          return completeChat(profile, featherlessKey, compressMessages);
         });
         const candidate = extractSummary(rawText) ?? "";
         if (matchesRefusalPrefix(userId, candidate)) {
@@ -771,7 +802,7 @@ async function executeCompressJob(
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
   } finally {
-    releaseSlot(jobId);
+    releaseSlot(userId, jobId);
   }
 }
 
@@ -862,11 +893,12 @@ async function executeTagGenJob(db: Database.Database, userId: string, jobId: st
     let candidates: string[] | null = null;
     let usedModel = "";
     let lastError = "unknown error";
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     for (let attempt = 1; attempt <= TAG_GEN_MAX_ATTEMPTS && candidates === null; attempt++) {
       try {
         const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, tagGenMessages);
+          return completeChat(profile, featherlessKey, tagGenMessages);
         });
         candidates = extractTagCandidates(rawText);
         if (candidates === null) lastError = `no [TAGS] block on attempt ${attempt}: "${rawText.slice(0, 80)}"`;
@@ -893,7 +925,7 @@ async function executeTagGenJob(db: Database.Database, userId: string, jobId: st
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
   } finally {
-    releaseSlot(jobId);
+    releaseSlot(userId, jobId);
   }
 }
 
@@ -918,11 +950,12 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
     let name: string | null = null;
     let usedModel = "";
     let lastError = "unknown error";
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     for (let attempt = 1; attempt <= STORY_NAME_MAX_ATTEMPTS && !name; attempt++) {
       try {
         const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, nameMessages);
+          return completeChat(profile, featherlessKey, nameMessages);
         });
         const candidate = extractStoryName(rawText);
         if (candidate) name = candidate;
@@ -944,7 +977,7 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
   } finally {
-    releaseSlot(jobId);
+    releaseSlot(userId, jobId);
   }
 }
 
@@ -974,11 +1007,12 @@ async function executeArchiveJob(
     let usedModel = "";
     let lastError = "unknown error";
 
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS && !summary; attempt++) {
       try {
         const rawText = await withModelFallback(getAgentProfile(userId, "editor"), (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, [
+          return completeChat(profile, featherlessKey, [
             { role: "system", content: ARCHIVE_SYSTEM_PROMPT },
             { role: "user", content: compressedLines.join("\n") },
           ]);
@@ -1004,6 +1038,6 @@ async function executeArchiveJob(
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
   } finally {
-    releaseSlot(jobId);
+    releaseSlot(userId, jobId);
   }
 }

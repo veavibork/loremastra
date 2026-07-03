@@ -17,7 +17,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { notifyDirectMutation } from "../db/session-store.js";
-import { listAllStories } from "../db/story-store.js";
+import { listAllStories, getStory } from "../db/story-store.js";
 import { getStoryDb, closeStoryDb } from "../db/story-db.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { getBookByType } from "../db/book-store.js";
@@ -115,12 +115,13 @@ server.registerTool(
     inputSchema: { storyId: z.string() },
   },
   async ({ storyId }) =>
-    withStoryDb(storyId, (db) =>
-      textResult({
-        slots: getQueueStatus(),
+    withStoryDb(storyId, (db) => {
+      const story = getStory(getGlobalDb(), storyId);
+      return textResult({
+        slots: story ? getQueueStatus(story.ownerUserId) : null,
         jobs: listRecentJobs(db, 30),
-      })
-    )
+      });
+    })
 );
 
 server.registerTool(

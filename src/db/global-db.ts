@@ -27,6 +27,8 @@ export function getGlobalDb(): Database.Database {
   ensureColumn(db, "agent_configs", "fallback_models", "TEXT");
   ensureColumn(db, "model_configs", "provider", "TEXT NOT NULL DEFAULT 'featherless'");
   ensureColumn(db, "model_configs", "concurrency_cost", "INTEGER");
+  ensureColumn(db, "users", "featherless_key_encrypted", "TEXT");
+  ensureColumn(db, "users", "horde_key_encrypted", "TEXT");
   // One-time retirement of the banned-phrases stop-list mechanism (replaced by the
   // "banned-phrases" settings_spaces entry exposing refusal-detection prefixes instead —
   // see src/services/refusal-detection.ts). Safe to run every startup: DROP IF EXISTS is a

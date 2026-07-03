@@ -1,4 +1,4 @@
-import { FEATHERLESS_API_KEY, FEATHERLESS_USER_AGENT } from "./featherless-config.js";
+import { FEATHERLESS_USER_AGENT } from "./featherless-config.js";
 import { getAlwaysTags, getTopTagsForRole, type AgentRole, type TagCategory } from "./featherless-tag-ratings.js";
 
 const MODELS_URL = "https://api.featherless.ai/v1/models";
@@ -85,13 +85,13 @@ function mapModel(raw: RawFeatherlessModel): FeatherlessModel {
   };
 }
 
-function headers(): Record<string, string> {
+function headers(apiKey: string): Record<string, string> {
   const base: Record<string, string> = { "User-Agent": FEATHERLESS_USER_AGENT };
-  if (FEATHERLESS_API_KEY) base.Authorization = `Bearer ${FEATHERLESS_API_KEY}`;
+  if (apiKey) base.Authorization = `Bearer ${apiKey}`;
   return base;
 }
 
-export async function listModels(filters: ListModelsFilters = {}): Promise<FeatherlessModel[]> {
+export async function listModels(apiKey: string, filters: ListModelsFilters = {}): Promise<FeatherlessModel[]> {
   const params = new URLSearchParams();
   if (filters.q) params.set("q", filters.q);
 
@@ -114,7 +114,7 @@ export async function listModels(filters: ListModelsFilters = {}): Promise<Feath
   params.set("per_page", String(filters.perPage ?? 100));
   if (filters.page) params.set("page", String(filters.page));
 
-  const res = await fetch(`${MODELS_URL}?${params.toString()}`, { headers: headers() });
+  const res = await fetch(`${MODELS_URL}?${params.toString()}`, { headers: headers(apiKey) });
   if (!res.ok) {
     throw new Error(`Featherless models request failed: ${res.status} ${await res.text()}`);
   }
@@ -124,8 +124,8 @@ export async function listModels(filters: ListModelsFilters = {}): Promise<Feath
 }
 
 /** Exact-ID lookup — the API only exposes fuzzy search (`q`), so this filters a search result down to the exact match. */
-export async function getModel(id: string): Promise<FeatherlessModel | null> {
-  const results = await listModels({ q: id, perPage: 100 });
+export async function getModel(apiKey: string, id: string): Promise<FeatherlessModel | null> {
+  const results = await listModels(apiKey, { q: id, perPage: 100 });
   return results.find((m) => m.id === id) ?? null;
 }
 

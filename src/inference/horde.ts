@@ -1,6 +1,6 @@
 import type { AgentProfile } from "../config.js";
 import type { ChatMessage } from "./featherless.js";
-import { HORDE_API_KEY, HORDE_BASE_URL, HORDE_USER_AGENT } from "./horde-config.js";
+import { HORDE_ANONYMOUS_KEY, HORDE_BASE_URL, HORDE_USER_AGENT } from "./horde-config.js";
 
 /** Carries the HTTP status, mirroring FeatherlessError — see featherless.ts. */
 export class HordeError extends Error {
@@ -26,11 +26,11 @@ export class HordeImpossibleError extends Error {
   }
 }
 
-function headers(): Record<string, string> {
+function headers(apiKey: string | null): Record<string, string> {
   return {
     "Content-Type": "application/json",
     "User-Agent": HORDE_USER_AGENT,
-    apikey: HORDE_API_KEY,
+    apikey: apiKey ?? HORDE_ANONYMOUS_KEY,
   };
 }
 
@@ -97,10 +97,14 @@ export interface HordeSubmitResult {
  * immediately with a request id to poll (see pollTextGeneration); the actual generation can
  * take anywhere from seconds to minutes depending on pool availability.
  */
-export async function submitTextGeneration(profile: AgentProfile, messages: ChatMessage[]): Promise<HordeSubmitResult> {
+export async function submitTextGeneration(
+  profile: AgentProfile,
+  apiKey: string | null,
+  messages: ChatMessage[]
+): Promise<HordeSubmitResult> {
   const response = await fetchWithTimeout(`${HORDE_BASE_URL}/v2/generate/text/async`, {
     method: "POST",
-    headers: headers(),
+    headers: headers(apiKey),
     body: JSON.stringify({
       prompt: buildPrompt(messages),
       params: hordeParams(profile),
@@ -126,9 +130,9 @@ export interface HordeStatus {
 }
 
 /** One status check per call — the caller (the queue's poll loop) owns the looping/interval, not this function. */
-export async function pollTextGeneration(requestId: string): Promise<HordeStatus> {
+export async function pollTextGeneration(requestId: string, apiKey: string | null): Promise<HordeStatus> {
   const response = await fetchWithTimeout(`${HORDE_BASE_URL}/v2/generate/text/status/${requestId}`, {
-    headers: headers(),
+    headers: headers(apiKey),
   });
 
   if (!response.ok) {
@@ -155,11 +159,11 @@ export async function pollTextGeneration(requestId: string): Promise<HordeStatus
 }
 
 /** Best-effort — used from the queue's cancel path, which marks the job cancelled locally regardless of whether Horde's own ack succeeds. */
-export async function cancelTextGeneration(requestId: string): Promise<void> {
+export async function cancelTextGeneration(requestId: string, apiKey: string | null): Promise<void> {
   try {
     await fetchWithTimeout(`${HORDE_BASE_URL}/v2/generate/text/status/${requestId}`, {
       method: "DELETE",
-      headers: headers(),
+      headers: headers(apiKey),
     });
   } catch {
     // best-effort — a failed cancel-ack must never block marking the job cancelled locally
@@ -174,9 +178,9 @@ export interface HordeTextModel {
 }
 
 /** Available-models discovery — a model with count: 0 has no worker online right now and would resolve is_possible: false immediately if targeted. */
-export async function listTextModels(): Promise<HordeTextModel[]> {
+export async function listTextModels(apiKey: string | null): Promise<HordeTextModel[]> {
   const response = await fetchWithTimeout(`${HORDE_BASE_URL}/v2/status/models?type=text`, {
-    headers: headers(),
+    headers: headers(apiKey),
   });
 
   if (!response.ok) {

@@ -10,6 +10,7 @@ import {
   type ModelConfig,
   type ModelConfigPatch,
 } from "./api";
+import ApiKeysSection from "./ApiKeysSection";
 import "./AgentsView.css";
 
 function numOrUndefined(value: string): number | undefined {
@@ -204,6 +205,8 @@ export default function AgentsView() {
         Field edits are drafts until you click "Save changes" below the table.
       </p>
       {error && <div className="error-banner">{error}</div>}
+
+      <ApiKeysSection />
 
       <div className="catalog-controls">
         <button type="button" onClick={handleFetchFeatherlessModels}>
