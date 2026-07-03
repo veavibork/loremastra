@@ -9,7 +9,8 @@ import { clientErrorsRoute } from "./routes/client-errors.js";
 import { sessionsRoute } from "./routes/sessions.js";
 import { sessionGuard } from "./middleware/session-guard.js";
 import { startPipelineRunner } from "./queue/pipeline-runner.js";
-import { getMaxSlots, getSlotsInUse } from "./queue/slots.js";
+import { startConcurrencyFeed } from "./queue/concurrency-feed.js";
+import { getQueueStatus } from "./queue/slots.js";
 
 const app = new Hono();
 // The only middleware that actually answers a browser's CORS preflight: it short-circuits
@@ -34,11 +35,12 @@ app.route("/api/agents", agentsRoute);
 app.route("/api/prompts", promptsRoute);
 app.route("/api/settings", settingsSpacesRoute);
 app.route("/api/client-errors", clientErrorsRoute);
-app.get("/api/debug/slots", (c) => c.json({ used: getSlotsInUse(), max: getMaxSlots() }));
+app.get("/api/debug/slots", (c) => c.json(getQueueStatus()));
 
 const port = Number(process.env.PORT ?? 4113);
 
 startPipelineRunner();
+startConcurrencyFeed();
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Loremaster listening on http://localhost:${info.port}`);
 });

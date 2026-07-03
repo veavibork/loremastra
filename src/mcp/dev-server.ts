@@ -25,7 +25,7 @@ import { listWorldbookEntries } from "../db/worldbook-store.js";
 import { listTags } from "../db/tag-store.js";
 import { listTextIdsForTag } from "../db/tag-index-store.js";
 import { listRecentJobs } from "../db/job-store.js";
-import { getMaxSlots, getSlotsInUse } from "../queue/slots.js";
+import { getQueueStatus } from "../queue/slots.js";
 import { buildLogView } from "../services/log-view.js";
 import { readRecentOutboundRequests } from "../inference/outbound-log.js";
 import { ensureSingleInstance } from "./single-instance.js";
@@ -112,7 +112,7 @@ server.registerTool(
   async ({ storyId }) =>
     withStoryDb(storyId, (db) =>
       textResult({
-        slots: { used: getSlotsInUse(), max: getMaxSlots() },
+        slots: getQueueStatus(),
         jobs: listRecentJobs(db, 30),
       })
     )

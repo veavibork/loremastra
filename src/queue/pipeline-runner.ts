@@ -7,7 +7,7 @@ import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { listContentEntries } from "../db/worldbook-store.js";
 import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
-import { tryAcquireSlots, releaseSlots } from "./slots.js";
+import { tryAcquireSlot, releaseSlot } from "./slots.js";
 import { publishToken, publishDone, publishError, publishCancelled } from "./job-events.js";
 import {
   streamInference,
@@ -213,30 +213,30 @@ function scanOnce(): void {
 function scanStory(db: Database.Database): void {
     const job = claimNextJob(db, CLAIMABLE_JOB_TYPES);
     if (!job) return;
-    if (!tryAcquireSlots(job.slotCost)) {
+    if (!tryAcquireSlot(job.id, job.slotCost)) {
       // Claimed but no slot free right now — put it back rather than block the scan loop.
       db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
       return;
     }
     if (job.jobType === "compress" && job.targetTextId) {
-      void executeCompressJob(db, job.id, job.targetTextId, job.slotCost);
+      void executeCompressJob(db, job.id, job.targetTextId);
     } else if (job.jobType === "archive" && job.targetArchiveId) {
-      void executeArchiveJob(db, job.id, job.targetArchiveId, job.slotCost);
+      void executeArchiveJob(db, job.id, job.targetArchiveId);
     } else if (job.jobType === "prose" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
-      void executeProseJob(db, job.id, job.targetTextId, job.slotCost, controller.signal);
+      void executeProseJob(db, job.id, job.targetTextId, controller.signal);
     } else if (job.jobType === "setup" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
-      void executeSetupJob(db, job.id, job.targetTextId, job.slotCost, controller.signal);
+      void executeSetupJob(db, job.id, job.targetTextId, controller.signal);
     } else if (job.jobType === "setup-worldbook" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
-      void executeSetupWorldbookJob(db, job.id, job.targetTextId, job.slotCost, controller.signal);
+      void executeSetupWorldbookJob(db, job.id, job.targetTextId, controller.signal);
     } else {
       finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
-      releaseSlots(job.slotCost);
+      releaseSlot(job.id);
     }
 }
 
@@ -244,7 +244,6 @@ async function executeProseJob(
   db: Database.Database,
   jobId: string,
   targetTextId: string,
-  slotCost: number,
   signal: AbortSignal
 ): Promise<void> {
   const startedAt = Date.now();
@@ -298,7 +297,7 @@ async function executeProseJob(
       publishError(jobId, message);
     }
   } finally {
-    releaseSlots(slotCost);
+    releaseSlot(jobId);
     runningControllers.delete(jobId);
   }
 }
@@ -364,7 +363,6 @@ async function executeSetupJob(
   db: Database.Database,
   jobId: string,
   targetTextId: string,
-  slotCost: number,
   signal: AbortSignal
 ): Promise<void> {
   try {
@@ -443,7 +441,7 @@ async function executeSetupJob(
       publishError(jobId, message);
     }
   } finally {
-    releaseSlots(slotCost);
+    releaseSlot(jobId);
     runningControllers.delete(jobId);
   }
 }
@@ -459,7 +457,6 @@ async function executeSetupWorldbookJob(
   db: Database.Database,
   jobId: string,
   targetTextId: string,
-  slotCost: number,
   signal: AbortSignal
 ): Promise<void> {
   try {
@@ -501,7 +498,7 @@ async function executeSetupWorldbookJob(
       publishError(jobId, message);
     }
   } finally {
-    releaseSlots(slotCost);
+    releaseSlot(jobId);
     runningControllers.delete(jobId);
   }
 }
@@ -525,8 +522,7 @@ async function executeSetupWorldbookJob(
 async function executeCompressJob(
   db: Database.Database,
   jobId: string,
-  targetTextId: string,
-  slotCost: number
+  targetTextId: string
 ): Promise<void> {
   try {
     const targetText = getText(db, targetTextId);
@@ -581,7 +577,7 @@ async function executeCompressJob(
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
   } finally {
-    releaseSlots(slotCost);
+    releaseSlot(jobId);
   }
 }
 
@@ -594,8 +590,7 @@ async function executeCompressJob(
 async function executeArchiveJob(
   db: Database.Database,
   jobId: string,
-  targetArchiveId: string,
-  slotCost: number
+  targetArchiveId: string
 ): Promise<void> {
   try {
     const archive = getArchive(db, targetArchiveId);
@@ -645,6 +640,6 @@ async function executeArchiveJob(
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
   } finally {
-    releaseSlots(slotCost);
+    releaseSlot(jobId);
   }
 }
