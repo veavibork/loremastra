@@ -571,7 +571,14 @@ export type JobStreamEvent =
   | { type: "progress"; label: string }
   | { type: "sync"; text: string; progress?: string }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "cancelled" };
+
+export async function cancelJob(storyId: string, jobId: string): Promise<void> {
+  const res = await apiFetch(`/api/stories/${storyId}/jobs/${jobId}/cancel`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok && data.error) throw new Error(data.error);
+}
 
 export interface ActiveJob {
   id: string;
@@ -613,12 +620,14 @@ export function streamJob(
         onEvent({ type: "error", message: data.error ?? "job not found" });
         return;
       }
-      if (data.job.status === "queued" || data.job.status === "running") {
+      if (data.job.status === "pending" || data.job.status === "running") {
         connect();
         return;
       }
       if (data.job.status === "done") {
         onEvent({ type: "done", fullText: "" });
+      } else if (data.job.status === "cancelled") {
+        onEvent({ type: "cancelled" });
       } else {
         onEvent({ type: "error", message: data.job.error ?? "job failed" });
       }

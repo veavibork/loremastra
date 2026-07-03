@@ -54,6 +54,14 @@ export class FeatherlessError extends Error {
   }
 }
 
+/** Thrown when an in-flight call is aborted because the user cancelled the job — distinct from an idle-timeout or network failure so callers can skip model-fallback and mark the job cancelled rather than failed. */
+export class JobCancelledError extends Error {
+  constructor(message = "cancelled by user") {
+    super(message);
+    this.name = "JobCancelledError";
+  }
+}
+
 // Per docs/featherless-notes.md: 400 (model cold, not loaded), 403 (gated), 503 (overloaded) all
 // mean "this specific model isn't usable right now," not "the request itself is broken" — worth
 // trying a fallback model for these. 401 (bad key) and other errors are not model-specific, so
@@ -311,7 +319,7 @@ export async function callWithForcedTool(
   profile: AgentProfile,
   messages: ChatMessage[],
   tool: ToolDefinition,
-  timeoutMs = DEFAULT_TOOL_CALL_TIMEOUT_MS
+  options?: { timeoutMs?: number; signal?: AbortSignal }
 ): Promise<Record<string, unknown>> {
   if (!FEATHERLESS_API_KEY) {
     throw new Error("FEATHERLESS_API_KEY is not set");
@@ -319,7 +327,7 @@ export async function callWithForcedTool(
 
   const inputTokens = estimateMessageTokens(messages);
   logOutboundRequest({ call: "callWithForcedTool", model: profile.model, messages });
-  const timeout = armTimeout(timeoutMs);
+  const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS, options?.signal);
   let response: Response;
   try {
     response = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {

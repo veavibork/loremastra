@@ -12,7 +12,7 @@ import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-i
 import { enqueueEligibleCompressJobs } from "../services/compression.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
-import { createJob, getJob, listRecentJobs, listActiveJobs } from "../db/job-store.js";
+import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from "../db/job-store.js";
 import { getPage, setPageHidden } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
 import { createTag, getTag, listTags, renameTag, setTagHidden } from "../db/tag-store.js";
@@ -27,8 +27,8 @@ import { getStoryState, setStoryPhase, setKickoffPageId, setCurrentPageId, setOo
 import { recordHistoryEvent, undoHistory, redoHistory, canUndoHistory, canRedoHistory } from "../db/history-store.js";
 import { finalizeSetup } from "../services/kickoff.js";
 import { forkStory } from "../services/fork.js";
-import { trackStoryDb, untrackStoryDb, setJobGuidance } from "../queue/pipeline-runner.js";
-import { subscribeJob, getJobBuffer, type JobEvent } from "../queue/job-events.js";
+import { trackStoryDb, untrackStoryDb, setJobGuidance, requestJobCancel } from "../queue/pipeline-runner.js";
+import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
 import { EDITOR_SETUP_OPENING } from "../prompts.js";
@@ -600,6 +600,34 @@ storiesRoute.get("/:id/jobs/:jobId", (c) => {
 });
 
 /**
+ * Pending jobs (not yet claimed) have no in-flight call to abort — mark cancelled directly.
+ * Running jobs are aborted via requestJobCancel; the executor's own catch/finally in
+ * pipeline-runner.ts does the actual DB update, publishCancelled, and slot release once the
+ * abort propagates, so this route doesn't race it by also writing the cancelled status itself.
+ */
+storiesRoute.post("/:id/jobs/:jobId/cancel", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const jobId = c.req.param("jobId");
+  const job = getJob(storyDb, jobId);
+  if (!job) return c.json({ error: "job not found" }, 404);
+  if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+    return c.json({ job });
+  }
+  if (job.status === "pending") {
+    cancelJob(storyDb, jobId);
+    publishCancelled(jobId);
+    return c.json({ ok: true });
+  }
+  const aborted = requestJobCancel(jobId);
+  if (!aborted) {
+    // Running but has no controller — a job type that doesn't support mid-flight cancel yet
+    // (compress/archive). Nothing to do but say so; it'll resolve on its own soon either way.
+    return c.json({ error: "this job type can't be cancelled mid-generation" }, 409);
+  }
+  return c.json({ ok: true });
+});
+
+/**
  * Subscribes to the job's event bus BEFORE checking its current status.
  * Both operations are synchronous with no await between them, so on Node's
  * single-threaded event loop the job cannot transition states in the gap —
@@ -645,7 +673,12 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
         void finish({ type: "error", message: "job not found" }).then(resolve);
         return;
       }
-      if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+      if (job.status === "cancelled") {
+        unsubscribe();
+        void finish({ type: "cancelled" }).then(resolve);
+        return;
+      }
+      if (job.status === "done" || job.status === "failed") {
         unsubscribe();
         const text = job.targetTextId ? getText(storyDb, job.targetTextId) : null;
         void finish({ type: "done", fullText: text?.genPackage ?? "" }).then(resolve);

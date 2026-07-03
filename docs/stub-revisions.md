@@ -109,8 +109,38 @@ second roadmap.
 - **Agent slot costs are hardcoded**, not read from Featherless's real per-model
   `concurrency_cost` field (`docs/featherless-notes.md` TODOs).
 - **`src/queue/slots.ts` is a local in-memory counter**, not backed by Featherless's real
-  `/v1/account/concurrency` feed — can drift from ground truth, not urgent for a single
-  local dev instance.
+  concurrency feed — can drift from ground truth. Two real account-wide endpoints exist to
+  fix this properly: `GET /account/concurrency` (one-shot snapshot) and
+  `GET /account/concurrency/stream` (SSE, one event on connect then every 2s — `limit`,
+  `used_cost`, `request_count`, per-request `requests[]` with id/cost/model/start
+  time/elapsed). Not yet wired in — see this file's "Job cancellation" entry below for what
+  led here; **next session's task is redesigning `tryAcquireSlots`/`releaseSlots` to gate on
+  this real feed instead of the local counter.**
+- **Job cancellation is now real** (2026-07-03) — `requestCancel`/`cancelJob` in
+  `src/db/job-store.ts` used to be dead code with no HTTP route, no SSE event, and no UI
+  button. Now: `POST /:id/jobs/:jobId/cancel` (`src/routes/stories.ts`) marks a still-`pending`
+  job cancelled directly, or for a `running` one calls `requestJobCancel` (`src/queue/pipeline-runner.ts`),
+  which aborts a per-job `AbortController` threaded through `streamWithFallback` →
+  `streamInference`'s existing `options.signal` plumbing. The executor's own catch branch
+  distinguishes a `JobCancelledError` (`src/inference/featherless.ts`) from a real failure,
+  marking the job `cancelled` (not `failed`) and calling the new `publishCancelled`
+  (`src/queue/job-events.ts`) instead of `publishError`. A Stop button per in-flight entry
+  (`web/src/StoryView.tsx`) calls the new `cancelJob` API helper. Verified live via curl: DB
+  status flips to `cancelled`, `releaseSlots` actually runs (confirmed 0/4 slots after), and
+  the SSE stream emits `{"type":"cancelled"}` — previously a cancelled job's stream was
+  misreported as `{"type":"done"}` (same bug existed in `reconcile()`'s status check, plus a
+  separate pre-existing bug there where `"queued"` never matched real `JobStatus` values;
+  both fixed alongside this). **Only `prose`/`setup`/`setup-worldbook` jobs are abortable
+  mid-flight** — `compress`/`archive` (non-streaming, bounded ≤60s/3-attempt calls via
+  `callWithForcedTool`) were deliberately left un-abortable as a scope cut; the cancel route
+  returns 409 for those if attempted while running.
+  **Still unverified: whether aborting our client fetch has any effect on Featherless's
+  side.** Featherless support confirmed by email they don't support server-side request
+  cancellation — closing our connection early may or may not free their concurrency slot
+  before the generation would have finished naturally anyway. Not yet empirically tested
+  against a real account-wide concurrency limit. This is exactly what the
+  `/account/concurrency/stream` rework above should settle directly (watch `used_cost` drop
+  in real time around a cancel) rather than inferring it from 429 behavior.
 - **No same-model retry-after-backoff for 500/503.** Ranked-choice fallback to a
   *different* model exists and is tested; retrying the *same* model after a wait does not.
 - **Cross-referencing HuggingFace's own tag API for real per-model tags** — deferred idea,

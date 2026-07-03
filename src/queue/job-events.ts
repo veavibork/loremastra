@@ -57,12 +57,19 @@ export function publishError(jobId: string, message: string): void {
   emitter.emit(jobId, { type: "error", message });
 }
 
+/** A user-initiated cancel, distinct from `error` so the client can clear the pending reply without surfacing it as a failure. */
+export function publishCancelled(jobId: string): void {
+  buffers.delete(jobId);
+  emitter.emit(jobId, { type: "cancelled" });
+}
+
 export type JobEvent =
   | { type: "token"; text: string }
   | { type: "progress"; label: string }
   | { type: "sync"; text: string; progress?: string }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "cancelled" };
 
 export function subscribeJob(jobId: string, onEvent: (event: JobEvent) => void): () => void {
   emitter.on(jobId, onEvent);

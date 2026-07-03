@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  cancelJob,
   continuePost,
   editPost,
   fetchActiveJobs,
@@ -153,7 +154,7 @@ export default function StoryView({
   // startedAt backs the "Thinking… (Ns)" placeholder shown before the first token/progress event
   // arrives — Featherless gives no earlier signal than that, so elapsed wall-clock time is the
   // best available substitute for "..." sitting dead.
-  const [pendingReplies, setPendingReplies] = useState<Record<string, { text: string; progress?: string; startedAt: number }>>({});
+  const [pendingReplies, setPendingReplies] = useState<Record<string, { text: string; progress?: string; startedAt: number; jobId: string }>>({});
   const [error, setError] = useState<string | null>(null);
   // Only guards the brief request round-trip for actions that must stay serialized (kickoff,
   // continue, retry) — not held for the whole generation. See the `busy` derivation below for
@@ -267,7 +268,7 @@ export default function StoryView({
   const busy = starting || Object.keys(pendingReplies).length > 0;
 
   function watchJob(jobId: string, pageId: string, onDone?: () => void, startedAt?: number) {
-    setPendingReplies((prev) => ({ ...prev, [pageId]: { text: "", startedAt: startedAt ?? Date.now() } }));
+    setPendingReplies((prev) => ({ ...prev, [pageId]: { text: "", startedAt: startedAt ?? Date.now(), jobId } }));
     streamJob(storyId, jobId, (event) => {
       if (event.type === "token") {
         setPendingReplies((prev) => {
@@ -304,6 +305,12 @@ export default function StoryView({
           return rest;
         });
         setError(event.message);
+        setStarting(false);
+      } else if (event.type === "cancelled") {
+        setPendingReplies((prev) => {
+          const { [pageId]: _cancelled, ...rest } = prev;
+          return rest;
+        });
         setStarting(false);
       }
     });
@@ -555,6 +562,15 @@ export default function StoryView({
                 <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
               ) : (
                 <p className="pending-thinking">{pending?.progress ?? `Thinking… (${elapsed}s)`}</p>
+              )}
+              {pending?.jobId && (
+                <button
+                  type="button"
+                  className="pending-stop-btn"
+                  onClick={() => void cancelJob(storyId, pending.jobId)}
+                >
+                  ✕ stop
+                </button>
               )}
             </div>
           );

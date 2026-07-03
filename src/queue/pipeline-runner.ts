@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { claimNextJob, createJob, finishJob, type JobType } from "../db/job-store.js";
+import { claimNextJob, createJob, finishJob, cancelJob, type JobType } from "../db/job-store.js";
 import { fillTextExtract, fillTextGeneration, getText } from "../db/text-store.js";
 import { getPage, listChronologicalPages, setPageHidden } from "../db/page-store.js";
 import { createPageWithText } from "../db/content-store.js";
@@ -8,12 +8,13 @@ import { listContentEntries } from "../db/worldbook-store.js";
 import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { tryAcquireSlots, releaseSlots } from "./slots.js";
-import { publishToken, publishDone, publishError } from "./job-events.js";
+import { publishToken, publishDone, publishError, publishCancelled } from "./job-events.js";
 import {
   streamInference,
   callWithForcedTool,
   withModelFallback,
   FeatherlessError,
+  JobCancelledError,
   isReasoningModel,
   type ChatMessage,
   type ToolDefinition,
@@ -113,7 +114,8 @@ const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2;
 async function streamWithFallback(
   profile: AgentProfile,
   messages: ChatMessage[],
-  jobId: string
+  jobId: string,
+  signal?: AbortSignal
 ): Promise<{ text: string; model: string }> {
   let reply = "";
   let usedModel = profile.model;
@@ -127,20 +129,26 @@ async function streamWithFallback(
       reply = "";
       try {
         await new Promise<void>((resolve, reject) => {
-          void streamInference(candidate, candidateMessages, {
-            onToken: (text) => {
-              reply += text;
-              publishToken(jobId, text);
+          void streamInference(
+            candidate,
+            candidateMessages,
+            {
+              onToken: (text) => {
+                reply += text;
+                publishToken(jobId, text);
+              },
+              onDone: () => {
+                if (reply.trim()) resolve();
+                else reject(new FeatherlessError(503, `${candidate.model} returned an empty completion`));
+              },
+              onError: reject,
             },
-            onDone: () => {
-              if (reply.trim()) resolve();
-              else reject(new FeatherlessError(503, `${candidate.model} returned an empty completion`));
-            },
-            onError: reject,
-          });
+            { signal }
+          );
         });
         return;
       } catch (err) {
+        if (err instanceof JobCancelledError) throw err;
         const isEmptyCompletion = err instanceof FeatherlessError && err.message.includes("empty completion");
         if (!isEmptyCompletion || attempt === EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE) throw err;
       }
@@ -155,6 +163,17 @@ async function streamWithFallback(
 // interactions, not what happens to work already in flight.
 let timer: NodeJS.Timeout | null = null;
 const trackedDbs = new Map<string, Database.Database>();
+
+/** One AbortController per currently-running job, so a cancel request can actually abort its in-flight Featherless call instead of just flipping a DB flag. Populated when a job is claimed, deleted in its executor's `finally`. */
+const runningControllers = new Map<string, AbortController>();
+
+/** Aborts a running job's in-flight call. Returns false if the job isn't currently running here (already terminal, still pending, or unknown) — callers should fall back to marking it cancelled directly in that case. */
+export function requestJobCancel(jobId: string): boolean {
+  const controller = runningControllers.get(jobId);
+  if (!controller) return false;
+  controller.abort(new JobCancelledError());
+  return true;
+}
 
 /** The pipeline runner only scans stories the API has actually touched this process lifetime — fine for a handful of users, one active story each. */
 export function trackStoryDb(storyId: string, db: Database.Database): void {
@@ -204,11 +223,17 @@ function scanStory(db: Database.Database): void {
     } else if (job.jobType === "archive" && job.targetArchiveId) {
       void executeArchiveJob(db, job.id, job.targetArchiveId, job.slotCost);
     } else if (job.jobType === "prose" && job.targetTextId) {
-      void executeProseJob(db, job.id, job.targetTextId, job.slotCost);
+      const controller = new AbortController();
+      runningControllers.set(job.id, controller);
+      void executeProseJob(db, job.id, job.targetTextId, job.slotCost, controller.signal);
     } else if (job.jobType === "setup" && job.targetTextId) {
-      void executeSetupJob(db, job.id, job.targetTextId, job.slotCost);
+      const controller = new AbortController();
+      runningControllers.set(job.id, controller);
+      void executeSetupJob(db, job.id, job.targetTextId, job.slotCost, controller.signal);
     } else if (job.jobType === "setup-worldbook" && job.targetTextId) {
-      void executeSetupWorldbookJob(db, job.id, job.targetTextId, job.slotCost);
+      const controller = new AbortController();
+      runningControllers.set(job.id, controller);
+      void executeSetupWorldbookJob(db, job.id, job.targetTextId, job.slotCost, controller.signal);
     } else {
       finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
       releaseSlots(job.slotCost);
@@ -219,7 +244,8 @@ async function executeProseJob(
   db: Database.Database,
   jobId: string,
   targetTextId: string,
-  slotCost: number
+  slotCost: number,
+  signal: AbortSignal
 ): Promise<void> {
   const startedAt = Date.now();
   try {
@@ -252,7 +278,7 @@ async function executeProseJob(
       history = [...history, { role: "system", content }];
     }
 
-    const { text: fullText, model } = await streamWithFallback(getAgentProfile("author"), history, jobId);
+    const { text: fullText, model } = await streamWithFallback(getAgentProfile("author"), history, jobId, signal);
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —
     // not a real tokenizer, good enough for the Logs telemetry view's ballpark numbers.
@@ -263,11 +289,17 @@ async function executeProseJob(
     finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
     publishDone(jobId, fullText);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finishJob(db, jobId, "failed", message);
-    publishError(jobId, message);
+    if (err instanceof JobCancelledError) {
+      cancelJob(db, jobId);
+      publishCancelled(jobId);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      finishJob(db, jobId, "failed", message);
+      publishError(jobId, message);
+    }
   } finally {
     releaseSlots(slotCost);
+    runningControllers.delete(jobId);
   }
 }
 
@@ -332,7 +364,8 @@ async function executeSetupJob(
   db: Database.Database,
   jobId: string,
   targetTextId: string,
-  slotCost: number
+  slotCost: number,
+  signal: AbortSignal
 ): Promise<void> {
   try {
     const targetText = getText(db, targetTextId);
@@ -369,7 +402,7 @@ async function executeSetupJob(
       editorMessages.push({ role: "system", content });
     }
 
-    const { text: reply, model } = await streamWithFallback(getAgentProfile("editor"), editorMessages, jobId);
+    const { text: reply, model } = await streamWithFallback(getAgentProfile("editor"), editorMessages, jobId, signal);
 
     const tokenEstimate = Math.ceil(reply.length / 4);
     fillTextGeneration(db, targetTextId, { genPackage: reply, genMetrics: JSON.stringify({ tokenEstimate }) });
@@ -401,11 +434,17 @@ async function executeSetupJob(
     finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
     publishDone(jobId, reply, followUp);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finishJob(db, jobId, "failed", message);
-    publishError(jobId, message);
+    if (err instanceof JobCancelledError) {
+      cancelJob(db, jobId);
+      publishCancelled(jobId);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      finishJob(db, jobId, "failed", message);
+      publishError(jobId, message);
+    }
   } finally {
     releaseSlots(slotCost);
+    runningControllers.delete(jobId);
   }
 }
 
@@ -420,7 +459,8 @@ async function executeSetupWorldbookJob(
   db: Database.Database,
   jobId: string,
   targetTextId: string,
-  slotCost: number
+  slotCost: number,
+  signal: AbortSignal
 ): Promise<void> {
   try {
     const targetText = getText(db, targetTextId);
@@ -438,7 +478,7 @@ async function executeSetupWorldbookJob(
     if (replyText?.genPackage) conversation.push({ role: "assistant", content: replyText.genPackage });
 
     const worldbookMessages: ChatMessage[] = [{ role: "system", content: EDITOR_SETUP_WORLDBOOK }, ...conversation];
-    const { text: rawText, model } = await streamWithFallback(getAgentProfile("editor"), worldbookMessages, jobId);
+    const { text: rawText, model } = await streamWithFallback(getAgentProfile("editor"), worldbookMessages, jobId, signal);
 
     const tokenEstimate = Math.ceil(rawText.length / 4);
     fillTextGeneration(db, targetTextId, { genPackage: rawText, genMetrics: JSON.stringify({ tokenEstimate }) });
@@ -452,11 +492,17 @@ async function executeSetupWorldbookJob(
     finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
     publishDone(jobId, rawText);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finishJob(db, jobId, "failed", message);
-    publishError(jobId, message);
+    if (err instanceof JobCancelledError) {
+      cancelJob(db, jobId);
+      publishCancelled(jobId);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      finishJob(db, jobId, "failed", message);
+      publishError(jobId, message);
+    }
   } finally {
     releaseSlots(slotCost);
+    runningControllers.delete(jobId);
   }
 }
 
