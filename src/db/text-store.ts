@@ -99,7 +99,11 @@ export function fillTextGeneration(
   return result.changes > 0;
 }
 
-/** Fills in the worker-generated compressed summary. No-op if already filled — gen_extract is write-once. */
+/** Clears compressed summary so postNeedsCompress returns true. */
+export function clearTextExtract(db: Database.Database, textId: string): void {
+  db.prepare(`UPDATE text SET gen_extract = NULL, compress_metrics = NULL WHERE id = ?`).run(textId);
+}
+
 export function fillTextExtract(
   db: Database.Database,
   id: string,

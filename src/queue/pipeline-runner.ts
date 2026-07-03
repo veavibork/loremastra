@@ -21,6 +21,15 @@ import { getStoryState } from "../db/story-state-store.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { getStory, renameStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
 import { tryAcquireSlot, releaseSlot } from "./slots.js";
+import {
+  refreshWorkerLaneLimits,
+  isProsePreempting,
+  isWorkerLaneBusy,
+  tryAcquireProseLane,
+  releaseProseLane,
+  tryAcquireWorkerLane,
+  releaseWorkerLane,
+} from "./worker-lanes.js";
 import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
 import { ensureConcurrencyFeedForUser } from "./concurrency-feed.js";
 import { publishToken, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
@@ -39,13 +48,14 @@ import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
-import { buildArchiveUserPrompt } from "../services/archive-worker.js";
+import { buildArchiveUserPrompt, finalizeArchiveSummary } from "../services/archive-worker.js";
 import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
 import { markCompressValid } from "../services/memory-invalidation.js";
 import {
   buildCompressUserPrompt,
   compressRetryHint,
   fallbackNarrativeSummary,
+  finalizeCompressSummary,
   sanitizeCompressResult,
   tryShortVerbatimCompress,
   tryTrivialCompress,
@@ -66,7 +76,8 @@ import {
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const CLAIMABLE_JOB_TYPES: JobType[] = ["prose", "compress", "archive", "setup", "setup-worldbook", "tag-gen", "story-name"];
+const WORKER_JOB_TYPES: JobType[] = ["compress", "archive", "tag-gen", "story-name"];
+const PROSE_JOB_TYPES: JobType[] = ["prose", "setup", "setup-worldbook"];
 
 /**
  * Guided retry's direction text is explicitly not stored as a post
@@ -241,79 +252,133 @@ export function stopPipelineRunner(): void {
 }
 
 function scanOnce(): void {
+  refreshWorkerLaneLimits();
   const globalDb = getGlobalDb();
   for (const [storyId, db] of trackedDbs) {
-    // Belt-and-suspenders on top of untrackStoryDb: a closed connection (or any other
-    // per-story fault) must never take down the shared setInterval loop that every other
-    // tracked story depends on. An uncaught throw here is fatal to the whole process — this
-    // is exactly what happened before untrackStoryDb existed (see stub-revisions.md).
     try {
       const story = getStory(globalDb, storyId);
       if (!story) {
         trackedDbs.delete(storyId);
         continue;
       }
-      scanStory(db, story.ownerUserId, storyId);
       scanHordeJobs(db, storyId, story.ownerUserId);
     } catch (err) {
       if (!db.open) trackedDbs.delete(storyId);
-      console.error(`pipeline scan failed for story ${storyId}:`, err instanceof Error ? err.message : err);
+      console.error(`pipeline horde scan failed for story ${storyId}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  dispatchWorkerJobs(globalDb);
+
+  for (const [storyId, db] of trackedDbs) {
+    try {
+      const story = getStory(globalDb, storyId);
+      if (!story) {
+        trackedDbs.delete(storyId);
+        continue;
+      }
+      dispatchProseJob(db, story.ownerUserId, storyId);
+    } catch (err) {
+      if (!db.open) trackedDbs.delete(storyId);
+      console.error(`pipeline prose scan failed for story ${storyId}:`, err instanceof Error ? err.message : err);
     }
   }
 }
 
-function scanStory(db: Database.Database, userId: string, storyId: string): void {
-    const job = claimNextJob(db, CLAIMABLE_JOB_TYPES);
-    if (!job) return;
+function unclaimJob(db: Database.Database, jobId: string): void {
+  db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(jobId);
+}
 
-    // Horde branch (prose only for now — see docs/roadmap.md's P5a): skips tryAcquireSlot
-    // entirely (Featherless-specific, backed by concurrency-feed.ts's account signal that
-    // doesn't exist for Horde) and submits-then-returns rather than awaiting completion here,
-    // since a Horde generation can take minutes and this tick can't block on it. The job stays
-    // 'running' with a horde_request_id recorded; scanHordeJobs (P5b) polls it to resolution
-    // on later ticks.
-    if (job.jobType === "prose" && job.targetTextId && getAgentProfile(userId, "author").provider === "horde") {
-      if (!tryAcquireHordeSlot(job.id)) {
-        db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
-        return;
+/** Lorepebble-style parallel worker dispatch — up to WORKER_THREADS compress/archive jobs at once. */
+function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
+  if (isProsePreempting()) return;
+
+  while (true) {
+    if (!tryAcquireWorkerLane()) break;
+
+    let dispatched = false;
+    for (const [storyId, db] of trackedDbs) {
+      const story = getStory(globalDb, storyId);
+      if (!story) continue;
+
+      const job = claimNextJob(db, WORKER_JOB_TYPES);
+      if (!job) continue;
+
+      ensureConcurrencyFeedForUser(story.ownerUserId, getDecryptedFeatherlessKey(globalDb, story.ownerUserId) ?? "");
+      if (!tryAcquireSlot(story.ownerUserId, job.id, job.slotCost)) {
+        unclaimJob(db, job.id);
+        continue;
       }
-      void executeHordeProseSubmit(db, userId, job.id, job.targetTextId);
-      return;
+
+      dispatched = true;
+      if (job.jobType === "compress" && job.targetTextId) {
+        void executeCompressJob(db, story.ownerUserId, job.id, job.targetTextId);
+      } else if (job.jobType === "archive" && job.targetArchiveId) {
+        void executeArchiveJob(db, story.ownerUserId, job.id, job.targetArchiveId);
+      } else if (job.jobType === "tag-gen" && job.targetTextId) {
+        void executeTagGenJob(db, story.ownerUserId, job.id, job.targetTextId);
+      } else if (job.jobType === "story-name" && job.targetTextId) {
+        void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId);
+      } else {
+        finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
+        releaseSlot(story.ownerUserId, job.id);
+        releaseWorkerLane();
+      }
+      break;
     }
 
-    // Lazily (re)connects this user's own concurrency feed before gating on it — a no-op if
-    // already connected with the same key. Fine to call every tick; cheap, and picks up a
-    // freshly-set/replaced key without needing a restart.
-    ensureConcurrencyFeedForUser(userId, getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "");
-    if (!tryAcquireSlot(userId, job.id, job.slotCost)) {
-      // Claimed but no slot free right now — put it back rather than block the scan loop.
-      db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
+    if (!dispatched) {
+      releaseWorkerLane();
+      break;
+    }
+  }
+}
+
+function dispatchProseJob(db: Database.Database, userId: string, storyId: string): void {
+  if (isWorkerLaneBusy()) return;
+
+  const job = claimNextJob(db, PROSE_JOB_TYPES);
+  if (!job) return;
+
+  // Horde prose: submit-then-poll — does not hold the prose lane (workers may run while queued).
+  if (job.jobType === "prose" && job.targetTextId && getAgentProfile(userId, "author").provider === "horde") {
+    if (!tryAcquireHordeSlot(job.id)) {
+      unclaimJob(db, job.id);
       return;
     }
-    if (job.jobType === "compress" && job.targetTextId) {
-      void executeCompressJob(db, userId, job.id, job.targetTextId);
-    } else if (job.jobType === "archive" && job.targetArchiveId) {
-      void executeArchiveJob(db, userId, job.id, job.targetArchiveId);
-    } else if (job.jobType === "prose" && job.targetTextId) {
-      const controller = new AbortController();
-      runningControllers.set(job.id, controller);
-      void executeProseJob(db, userId, job.id, job.targetTextId, controller.signal, storyId);
-    } else if (job.jobType === "setup" && job.targetTextId) {
-      const controller = new AbortController();
-      runningControllers.set(job.id, controller);
-      void executeSetupJob(db, userId, job.id, job.targetTextId, controller.signal);
-    } else if (job.jobType === "setup-worldbook" && job.targetTextId) {
-      const controller = new AbortController();
-      runningControllers.set(job.id, controller);
-      void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal);
-    } else if (job.jobType === "tag-gen" && job.targetTextId) {
-      void executeTagGenJob(db, userId, job.id, job.targetTextId);
-    } else if (job.jobType === "story-name" && job.targetTextId) {
-      void executeStoryNameJob(db, userId, job.id, job.targetTextId, storyId);
-    } else {
-      finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
-      releaseSlot(userId, job.id);
-    }
+    void executeHordeProseSubmit(db, userId, job.id, job.targetTextId);
+    return;
+  }
+
+  if (!tryAcquireProseLane()) {
+    unclaimJob(db, job.id);
+    return;
+  }
+
+  ensureConcurrencyFeedForUser(userId, getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "");
+  if (!tryAcquireSlot(userId, job.id, job.slotCost)) {
+    unclaimJob(db, job.id);
+    releaseProseLane();
+    return;
+  }
+
+  if (job.jobType === "prose" && job.targetTextId) {
+    const controller = new AbortController();
+    runningControllers.set(job.id, controller);
+    void executeProseJob(db, userId, job.id, job.targetTextId, controller.signal, storyId);
+  } else if (job.jobType === "setup" && job.targetTextId) {
+    const controller = new AbortController();
+    runningControllers.set(job.id, controller);
+    void executeSetupJob(db, userId, job.id, job.targetTextId, controller.signal);
+  } else if (job.jobType === "setup-worldbook" && job.targetTextId) {
+    const controller = new AbortController();
+    runningControllers.set(job.id, controller);
+    void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal);
+  } else {
+    finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
+    releaseSlot(userId, job.id);
+    releaseProseLane();
+  }
 }
 
 /**
@@ -399,6 +464,7 @@ async function executeProseJob(
   } finally {
     releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
+    releaseProseLane();
   }
 }
 
@@ -666,6 +732,7 @@ async function executeSetupJob(
   } finally {
     releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
+    releaseProseLane();
   }
 }
 
@@ -732,24 +799,13 @@ async function executeSetupWorldbookJob(
   } finally {
     releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
+    releaseProseLane();
   }
 }
 
 /**
- * Simplification vs. the full doc spec: this only gives the Worker the
- * immediately preceding post's already-compressed line (via the immutable
- * prevPageId link, not the fork-aware selected-chain), so it can frame this
- * post causally (but/therefore) rather than in a vacuum. That's still short
- * of real cross-post redundancy checking across the whole window — see
- * docs/stub-revisions.md. If the prior post hasn't been compressed yet (or
- * this is the first post), no prior context is sent — the summary just
- * describes this post's beat on its own, same as before this change.
- *
- * Forces the summary through a tool call rather than a plain-text
- * instruction, and validates + retries — a plain system-prompt instruction
- * to this worker model was observed to fail silently (empty output) or
- * ignore the instruction entirely (a full story continuation instead of a
- * summary) in real testing.
+ * KAI-style compress: CONTENT block for PC identity, prior prose snippets (not compressed
+ * lines) for pronoun context, validation + retries, and third-person PC cleanup after generation.
  */
 async function executeCompressJob(
   db: Database.Database,
@@ -829,6 +885,8 @@ async function executeCompressJob(
       }
     }
 
+    summary = finalizeCompressSummary(db, summary);
+
     const tokenEstimate = Math.ceil(summary.length / 4);
     const compressMetrics = JSON.stringify({ elapsedMs: Date.now() - startedAt, tokenEstimate });
     fillTextExtract(db, targetTextId, summary, compressMetrics);
@@ -843,6 +901,7 @@ async function executeCompressJob(
     finishJob(db, jobId, "failed", message);
   } finally {
     releaseSlot(userId, jobId);
+    releaseWorkerLane();
   }
 }
 
@@ -966,6 +1025,7 @@ async function executeTagGenJob(db: Database.Database, userId: string, jobId: st
     finishJob(db, jobId, "failed", message);
   } finally {
     releaseSlot(userId, jobId);
+    releaseWorkerLane();
   }
 }
 
@@ -1018,14 +1078,12 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
     finishJob(db, jobId, "failed", message);
   } finally {
     releaseSlot(userId, jobId);
+    releaseWorkerLane();
   }
 }
 
 /**
- * Doc: archive blocks are generated by the Editor, not the Worker — this
- * uses editorProfile. Input is the compressed (not verbose) form of each
- * member post, since the point is synthesizing a block-level narrative from
- * the facts, not re-summarizing full prose.
+ * Archive blocks use full member prose (KAI-style), not compressed lines — see archive-worker.ts.
  */
 async function executeArchiveJob(
   db: Database.Database,
@@ -1068,6 +1126,7 @@ async function executeArchiveJob(
 
     if (!summary) throw new Error(`archiving failed after ${ARCHIVE_MAX_ATTEMPTS} attempts — ${lastError}`);
 
+    summary = finalizeArchiveSummary(db, summary);
     fillArchiveSummary(db, targetArchiveId, summary);
     finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate: Math.ceil(summary.length / 4) });
   } catch (err) {
@@ -1075,5 +1134,6 @@ async function executeArchiveJob(
     finishJob(db, jobId, "failed", message);
   } finally {
     releaseSlot(userId, jobId);
+    releaseWorkerLane();
   }
 }

@@ -28,6 +28,7 @@ import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../src/services/t
 import { assembleAuthorPrompt } from "../src/services/history.js";
 import { activateTagsFromQuery, buildTagQueryText } from "../src/services/tag-retrieval.js";
 import { buildArchiveUserPrompt } from "../src/services/archive-worker.js";
+import { buildCompressUserPrompt } from "../src/services/compress-worker.js";
 import {
   backfillContentStamps,
   buildMemoryManifest,
@@ -69,7 +70,7 @@ function runInProcessSmoke(): void {
   createWorldbookEntry(db, {
     bookId: worldbook.id,
     entryType: "content",
-    content: "A fantasy realm where ancient Dragons guard mountain passes.",
+    content: "PC: Lex. Mid-forties, solid build.\nA fantasy realm where ancient Dragons guard mountain passes.",
   });
   const rosterEntry = createWorldbookEntry(db, {
     bookId: worldbook.id,
@@ -121,8 +122,17 @@ function runInProcessSmoke(): void {
   fillArchiveSummary(db, firstArchive.id, "Earlier: the party explored the Dragon's lair.");
   const thirdArchive = archivesBefore[2]!;
   const archivePrompt = buildArchiveUserPrompt(db, thirdArchive.id);
-  assert(archivePrompt.includes("Compressed:"), "archive prompt includes member lines");
+  assert(archivePrompt.includes("Messages to archive"), "archive prompt uses full prose blob");
+  assert(archivePrompt.includes('"role"'), "archive prompt JSON includes role labels");
   assert(archivePrompt.includes("Earlier story summary"), "non-overlapping prior archive included in prompt");
+  assert(archivePrompt.includes("PC: Lex"), "archive prompt includes CONTENT PC line");
+
+  const samplePage = getPage(db, pageIds[10]!)!;
+  const sampleText = getText(db, samplePage.selectedTextId!)!;
+  const compressPrompt = buildCompressUserPrompt(db, sampleText, samplePage);
+  assert(compressPrompt.includes("PC: Lex"), "compress prompt includes CONTENT PC line");
+  assert(compressPrompt.includes("Prior context"), "compress prompt includes prior prose snippets");
+  assert(!compressPrompt.includes("[ROSTER]"), "compress prompt does not dump ROSTER entries");
 
   const headId = findHeadPageId(db, logbook.id)!;
   const pages = listChronologicalPages(db, logbook.id).filter((p) => !p.hidden);

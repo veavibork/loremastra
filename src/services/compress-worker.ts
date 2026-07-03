@@ -2,10 +2,15 @@ import type Database from "better-sqlite3";
 import type { TextRole, TextRow } from "../db/text-store.js";
 import { getPage, type PageRow } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
-import { getBookByType } from "../db/book-store.js";
-import { listContentEntries, listWorldbookEntries } from "../db/worldbook-store.js";
+import {
+  buildContentBlockForWorker,
+  compressPcGuidance,
+  resolvePcInSummary,
+  resolvePcNameFromContent,
+} from "./worldbook-pc.js";
 
-const PRIOR_COMPRESSED_LINES = 3;
+const PRIOR_PROSE_MESSAGES = 2;
+const PRIOR_PROSE_MAX_CHARS = 180;
 
 function plainMessageText(content: string): string {
   return content
@@ -141,59 +146,67 @@ export function sanitizeCompressResult(messageContent: string, result: { summary
   return { summary };
 }
 
-/** Walk backward via prev_page_id collecting up to N prior compressed lines. */
-function collectPriorCompressedLines(db: Database.Database, startPage: PageRow): string[] {
-  const lines: string[] = [];
-  let currentId: string | null = startPage.prevPageId;
-  while (currentId && lines.length < PRIOR_COMPRESSED_LINES) {
+/** KAI-style: prior prose turns for pronoun context — not prior compressed lines. */
+function collectPriorProseSnippets(db: Database.Database, targetPage: PageRow): Array<{ role: TextRole; snippet: string }> {
+  const snippets: Array<{ role: TextRole; snippet: string }> = [];
+  let currentId: string | null = targetPage.prevPageId;
+
+  while (currentId && snippets.length < PRIOR_PROSE_MESSAGES) {
     const page = getPage(db, currentId);
     if (!page?.selectedTextId) break;
     const text = getText(db, page.selectedTextId);
-    if (text?.genExtract) lines.unshift(text.genExtract);
+    if (text?.genPackage?.trim()) {
+      const plain = plainMessageText(text.genPackage);
+      const truncated = plain.length > PRIOR_PROSE_MAX_CHARS ? `${plain.slice(0, PRIOR_PROSE_MAX_CHARS)}…` : plain;
+      snippets.unshift({ role: text.role, snippet: truncated });
+    }
     currentId = page.prevPageId;
   }
-  return lines;
+
+  return snippets;
 }
 
-function buildNameRoster(db: Database.Database): string {
-  const worldbook = getBookByType(db, "worldbook");
-  if (!worldbook) return "";
-
-  const blocks: string[] = [];
-  for (const entry of listContentEntries(db, worldbook.id)) {
-    blocks.push(`[CONTENT]\n${entry.content}`);
-  }
-  for (const entry of listWorldbookEntries(db, worldbook.id, { includeHidden: false })) {
-    if (entry.entryType === "content") continue;
-    blocks.push(`[${entry.entryType.toUpperCase()}]\n${entry.content}`);
-  }
-  return blocks.join("\n\n");
+function roleLabel(role: TextRole): string {
+  if (role === "agent") return "assistant";
+  if (role === "user") return "user";
+  return "system";
 }
 
-/** User-turn payload for the compress worker — target post plus prior compressed context. */
+/** User-turn payload for the compress worker — target post plus CONTENT + prior prose context. */
 export function buildCompressUserPrompt(db: Database.Database, targetText: TextRow, targetPage: PageRow): string {
   const plainTarget = plainMessageText(targetText.genPackage!);
   const wordCount = plainTarget.split(/\s+/).filter(Boolean).length;
+  const pcName = resolvePcNameFromContent(db);
   const roleHint =
     targetText.role === "agent"
       ? "This is GM/narration — cover description, action, and dialogue beats across the entire post."
       : "This is a player line — include every sentence, including any opening reaction before questions.";
 
-  const roster = buildNameRoster(db);
-  let out = `Summarize ONLY the target post below. Do not summarize prior context or any other turn.\n`;
+  let out = `${compressPcGuidance(pcName)}\n\n`;
+  out += `Summarize ONLY the target post below. Do not summarize prior context or any other turn.\n`;
   out += `Target length: ~${wordCount} words. ${roleHint}\n\n`;
 
-  if (roster) {
-    out += `Name roster (use these proper nouns instead of pronouns):\n${roster}\n\n`;
+  const content = buildContentBlockForWorker(db);
+  if (content) {
+    out += `CONTENT (always-on worldbook — PC identity and setting live here):\n${content}\n\n`;
   }
 
-  const priorLines = collectPriorCompressedLines(db, targetPage);
-  if (priorLines.length) {
-    out += `Prior compressed context (reference only — do NOT repeat these facts verbatim):\n`;
-    for (const line of priorLines) out += `- ${line}\n`;
+  const priorSnippets = collectPriorProseSnippets(db, targetPage);
+  if (priorSnippets.length) {
+    out += `Prior context (reference only — do NOT summarize these):\n`;
+    for (const { role, snippet } of priorSnippets) {
+      out += `[${roleLabel(role)}]: ${snippet}\n`;
+    }
     out += "\n";
   }
 
   out += `TARGET POST:\n>>> ${plainTarget}`;
   return out;
+}
+
+/** Apply PC third-person cleanup after compress generation. */
+export function finalizeCompressSummary(db: Database.Database, summary: string): string {
+  const pcName = resolvePcNameFromContent(db);
+  if (!pcName) return summary;
+  return resolvePcInSummary(summary, pcName);
 }

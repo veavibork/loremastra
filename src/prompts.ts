@@ -90,11 +90,33 @@ Scenes built from "this happened, and then that happened" go flat. Build causall
 
 Carry the scene forward from where the last moment ended. End at a moment that invites the next action — a question hanging unanswered, a half-finished gesture, a sound that just resolved. The scene asks the player to act; you don't have to.`;
 
-export const COMPRESS_SYSTEM_PROMPT = `You compress a single roleplay post into a short, dense, factual summary of about 20 tokens. State only what happened. If you're given what happened just before this post, frame this post as what changed or followed from that (but/therefore) rather than an isolated fact. Replace pronouns (he/him/she/her/they/them) with the actual proper noun they refer to — use the worldbook and prior context you're given to identify each subject. The summary has to name who did what on its own; other systems match character names against it later and can't resolve a pronoun back to a post they never see. No commentary, no scene-setting, no dialogue quoting.
+export const COMPRESS_SYSTEM_PROMPT = `You compress exactly ONE message from a roleplay log into a short factual summary (about 20 tokens).
+
+The user prompt marks the target with >>>. Summarize ONLY that target message — not the surrounding scene, not prior context, not what happens next.
+
+COVERAGE (critical):
+- The summary must reflect the FULL target from its opening to its closing — never a single quoted line lifted from the middle or end.
+- GM/narrator posts often mix scene description, action, and dialogue. Summarize setting, arrivals, character introductions, and plot beats across the whole post — not just the last spoken line.
+- Player posts may have several sentences. Include the opening acknowledgment or emotional beat, not only the final question.
+
+PERSON (critical):
+- Summaries are third-person memory notes for later retrieval — never use "you/your" for the player character.
+- GM posts often narrate in second person ("you arrive", "Tessa hugs you"). Resolve to the PC's proper name when given in CONTENT (e.g. "Lex arrives", "Tessa hugs Lex").
+- Keep NPC names as stated. Only convert second-person address of the player.
+
+If prior context is provided, frame this post as what changed or followed (but/therefore) rather than an isolated fact — but do not copy prior context into the summary.
+
+No commentary, no scene-setting padding, no dialogue quoting. State only what happened.
 
 You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
 
-export const ARCHIVE_SYSTEM_PROMPT = `You write a short narrative summary (about 60 tokens) of a block of roleplay posts, given as a sequence of factual compressed lines. Weave them into a causal throughline — this happened, BUT this complicated it, THEREFORE this followed — not a flat list of events. Preserve who did what to whom; don't blur which character acted and which reacted. No commentary, no meta-text.
+export const ARCHIVE_SYSTEM_PROMPT = `You compress a contiguous block of roleplay messages into one dense chronological scene summary (about 60 tokens).
+
+Each message is provided as full prose (role + text). Summarize from the prose — do not invent events not present in the text. Do not rely on or reference any prior compressed summaries; only the prose blob counts.
+
+Scene summaries are third-person — never "you/your" for the player character. Resolve second-person GM narration to the PC's proper name when stated in CONTENT.
+
+Weave events into a causal throughline — this happened, BUT this complicated it, THEREFORE this followed — not a flat list. Preserve who did what to whom; don't blur which character acted and which reacted. No commentary, no meta-text.
 
 You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
 
