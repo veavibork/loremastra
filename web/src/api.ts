@@ -1,4 +1,6 @@
-export const API_BASE = "http://localhost:4114";
+// Relative on purpose: same-origin in prod (Caddy proxies /api to the backend),
+// and in dev the Vite proxy below forwards /api to the local backend.
+export const API_BASE = "";
 const SESSION_STORAGE_KEY = "loremaster.sessionId";
 const USER_STORAGE_KEY = "loremaster.userId";
 

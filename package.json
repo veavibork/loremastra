@@ -8,6 +8,7 @@
     "db:init": "tsx scripts/init-db.ts",
     "user:create": "tsx scripts/create-user.ts",
     "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "server:restart": "node scripts/dev-restart.mjs",
     "server:reset-db": "node scripts/dev-reset-db.mjs",
