@@ -499,6 +499,27 @@ export async function fetchLog(storyId: string, opts?: { background?: boolean })
   return data.entries;
 }
 
+export interface SummaryPage {
+  entries: LogEntry[];
+  total: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export async function fetchSummaries(
+  storyId: string,
+  options: { offset?: number; limit?: number; includeHidden?: boolean; background?: boolean } = {}
+): Promise<SummaryPage> {
+  const params = new URLSearchParams();
+  if (options.offset != null) params.set("offset", String(options.offset));
+  if (options.limit != null) params.set("limit", String(options.limit));
+  if (options.includeHidden) params.set("includeHidden", "true");
+  const qs = params.toString();
+  const res = await apiFetch(`/api/stories/${storyId}/summaries${qs ? `?${qs}` : ""}`, {}, { background: options.background });
+  return res.json() as Promise<SummaryPage>;
+}
+
 export async function postMessage(
   storyId: string,
   content: string

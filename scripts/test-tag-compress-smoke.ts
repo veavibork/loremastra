@@ -15,6 +15,7 @@ import {
   validateCompressSummary,
   fallbackNarrativeSummary,
 } from "../src/services/compress-worker.js";
+import { balanceSpeechQuotes } from "../src/services/worldbook-pc.js";
 import { listChronologicalPages } from "../src/db/page-store.js";
 import { getText } from "../src/db/text-store.js";
 import { newId } from "../src/uuid.js";
@@ -44,6 +45,10 @@ assert(!bad.ok, "validation rejects single-quoted fragment");
 
 const fb = fallbackNarrativeSummary("The knight entered the castle. Guards watched from the walls.");
 assert(fb.length > 20, "fallback narrative produces text");
+
+assert(balanceSpeechQuotes('Lex said "hello') === 'Lex said "hello"', "balanceSpeechQuotes closes dangling straight quote");
+assert(balanceSpeechQuotes('Lex said “hello') === 'Lex said “hello”', "balanceSpeechQuotes closes dangling curly quote");
+assert(balanceSpeechQuotes('Lex said "hi there"') === 'Lex said "hi there"', "balanceSpeechQuotes leaves paired quotes alone");
 
 // --- tag indexing on genExtract ---
 const tag = createTag(db, { bookId: logbook.id, name: "Dragon" });

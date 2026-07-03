@@ -106,7 +106,7 @@ PERSON (critical):
 
 If prior context is provided, frame this post as what changed or followed (but/therefore) rather than an isolated fact — but do not copy prior context into the summary.
 
-No commentary, no scene-setting padding, no dialogue quoting. State only what happened.
+No commentary, no scene-setting padding. Prefer paraphrase over long dialogue quotes; if you include a short spoken fragment, use paired opening and closing quotation marks.
 
 You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
 

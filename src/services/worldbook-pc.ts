@@ -40,6 +40,21 @@ export function compressPcGuidance(pcName: string | null): string {
   );
 }
 
+/** If a summary includes speech with an opening quote but no closing quote, add one. */
+export function balanceSpeechQuotes(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return text;
+
+  const straight = (trimmed.match(/"/g) ?? []).length;
+  if (straight % 2 === 1) return `${trimmed}"`;
+
+  const openCurly = (trimmed.match(/“/g) ?? []).length;
+  const closeCurly = (trimmed.match(/”/g) ?? []).length;
+  if (openCurly > closeCurly) return `${trimmed}”`;
+
+  return text;
+}
+
 /** Post-process: convert lingering second-person PC address to proper name. */
 export function resolvePcInSummary(summary: string, pcName: string): string {
   if (!summary.trim() || !pcName.trim()) return summary;

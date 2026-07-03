@@ -30,7 +30,7 @@ import { forkStory } from "../services/fork.js";
 import { onCanonicalTextChangedForStory } from "../services/memory-invalidation.js";
 import { trackStoryDb, untrackStoryDb, setJobGuidance, requestJobCancel } from "../queue/pipeline-runner.js";
 import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
-import { buildLogView } from "../services/log-view.js";
+import { buildLogView, buildSummaryPage } from "../services/log-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
 import {
   buildMemoryManifest,
@@ -157,6 +157,19 @@ storiesRoute.get("/:id/log", (c) => {
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
   return c.json({ entries: buildLogView(storyDb, logbook.id) });
+});
+
+/** Compressed summaries for the Summary tab — paginated, most-recent-first. */
+storiesRoute.get("/:id/summaries", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+
+  const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10) || 0);
+  const limit = Math.max(1, parseInt(c.req.query("limit") ?? "50", 10) || 50);
+  const includeHidden = c.req.query("includeHidden") === "true";
+
+  return c.json(buildSummaryPage(storyDb, logbook.id, { offset, limit, includeHidden }));
 });
 
 /**

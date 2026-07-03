@@ -4,6 +4,7 @@ import { getArchive, listArchivesForBook, listMemberTextIds, type ArchiveRow } f
 import { listChronologicalPages } from "../db/page-store.js";
 import {
   buildContentBlockForWorker,
+  balanceSpeechQuotes,
   compressPcGuidance,
   resolvePcInSummary,
   resolvePcNameFromContent,
@@ -82,7 +83,8 @@ export function buildArchiveUserPrompt(db: Database.Database, targetArchiveId: s
 }
 
 export function finalizeArchiveSummary(db: Database.Database, summary: string): string {
+  let out = summary;
   const pcName = resolvePcNameFromContent(db);
-  if (!pcName) return summary;
-  return resolvePcInSummary(summary, pcName);
+  if (pcName) out = resolvePcInSummary(out, pcName);
+  return balanceSpeechQuotes(out);
 }

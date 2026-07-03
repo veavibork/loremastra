@@ -4,6 +4,7 @@ import { getPage, type PageRow } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
 import {
   buildContentBlockForWorker,
+  balanceSpeechQuotes,
   compressPcGuidance,
   resolvePcInSummary,
   resolvePcNameFromContent,
@@ -204,9 +205,10 @@ export function buildCompressUserPrompt(db: Database.Database, targetText: TextR
   return out;
 }
 
-/** Apply PC third-person cleanup after compress generation. */
+/** Apply PC third-person cleanup and speech-quote balancing after compress generation. */
 export function finalizeCompressSummary(db: Database.Database, summary: string): string {
+  let out = summary;
   const pcName = resolvePcNameFromContent(db);
-  if (!pcName) return summary;
-  return resolvePcInSummary(summary, pcName);
+  if (pcName) out = resolvePcInSummary(out, pcName);
+  return balanceSpeechQuotes(out);
 }
