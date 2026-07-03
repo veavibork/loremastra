@@ -157,7 +157,7 @@ export function guidedRegenerateNote(guidance: string): string {
   return `[Take the following into special consideration for your next reply: ${guidance}]`;
 }
 
-/** Continue's forward-extending phrasing, distinct from regenerate's replace-in-place phrasing — mirrors SillyTavern's own promptGuidedResponse/promptGuidedContinue split. */
+/** Continue's forward-extending phrasing, distinct from regenerate's replace-in-place phrasing — mirrors the Guided-Generations SillyTavern extension's own Guided Response/Guided Continue split (github.com/Samueras/GuidedGenerations-Extension), not core SillyTavern. */
 export function guidedContinueNote(guidance: string, subject: "story" | "conversation"): string {
   return `[Continue the ${subject} based on the following input: ${guidance}]`;
 }
