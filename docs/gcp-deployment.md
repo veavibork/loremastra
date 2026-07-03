@@ -166,3 +166,26 @@ sudo systemctl restart loremaster
 ```
 
 Caddy doesn't need a restart for frontend changes — it serves `web/dist` directly off disk.
+
+**Docs-only or backend-only changes** skip the `web/` build. After `git pull`, if `package.json` /
+`package-lock.json` changed, run `npm install` before `npm run build`.
+
+### Verify memory pipeline after deploy
+
+From your laptop (replace host, story id, session header):
+
+```
+curl -s https://your-domain.example.com/api/stories/<id>/memory/summary \
+  -H "X-Loremaster-Session: <session>"
+curl -s https://your-domain.example.com/api/stories/<id>/memory/tag-activation \
+  -H "X-Loremaster-Session: <session>"
+```
+
+On the VM, run smoke tests against the checkout (uses ephemeral server — does not need the live service):
+
+```
+cd /opt/loremaster && npx tsx scripts/test-memory-pipeline-smoke.ts
+```
+
+Existing stories opened after deploy get `memory_content_stamp` backfilled automatically on first
+`getStoryDb()` open (posts that already had `gen_extract` adopt stamps without mass recompress).

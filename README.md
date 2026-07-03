@@ -15,7 +15,7 @@ A lightweight, private roleplaying platform for a small group of trusted users, 
    npm install
    cd web && npm install
    ```
-2. Copy `.env.example` to `.env` and fill in `FEATHERLESS_API_KEY`.
+2. Copy `.env.example` to `.env` and fill in `APP_MASTER_KEY` (32-byte hex — encrypts per-user API keys at rest). Provider keys are set per user in the Agents tab, not in `.env`.
 3. Initialize the database:
    ```
    npm run db:init
@@ -43,10 +43,24 @@ Other useful scripts:
 |---|---|
 | `npm run typecheck` | Type-check the backend without emitting |
 | `npm run build` | Compile the backend |
-| `npm run mcp` | Start the dev-tools MCP server (queue status, logs, worldbook inspection) |
+| `npm run mcp` | Dev-tools MCP server (queue, logs, worldbook, memory manifest, prompt preview) |
 | `npm run server:restart` | Restart the dev backend process |
 | `npm run server:reset-db` | Reset the local database |
 | `npm run server:fresh` | Reset the database and restart the backend |
+| `npx tsx scripts/test-memory-pipeline-smoke.ts` | Memory pipeline smoke tests (in-process + HTTP, no browser) |
+
+## Memory diagnostics (dev)
+
+While a story is open, quick health checks:
+
+```
+GET  /api/stories/:id/memory/summary
+GET  /api/stories/:id/memory/tag-activation
+GET  /api/stories/:id/prompt-preview
+POST /api/stories/:id/memory/backfill
+```
+
+See [loremaster.md](loremaster.md) (MCP Server section) for the full MCP tool list. Production deploy: [docs/gcp-deployment.md](docs/gcp-deployment.md).
 
 ## Project layout
 

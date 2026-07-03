@@ -146,8 +146,9 @@ Inference-based auto-tagging was evaluated and rejected. The results were unreli
   tag at a specific entry; dropped in favor of matching everything the same way).
 - A tag must be a single word, letters only, at least three characters (`/^[A-Za-z]{3,}$/`).
 - Tags are maintained by the user in a tag cloud visible throughout the story phase.
-- When a tag is added or edited, the back end performs a retroactive grep across all existing posts and worldbook entries and stores the resulting index (which content contains that tag).
-- At prompt assembly time, this index drives two independent things: which archive blocks/compressed rows get promoted to verbose (matches against post/compressed content), and which non-CONTENT worldbook entries (ROSTER/MEMORY) get pulled into the prompt (matches against entry content). CONTENT entries are always injected regardless of tags.
+- When a tag is added or edited, the back end performs a retroactive grep across all existing posts and worldbook entries and stores the resulting index (which content contains that tag). The grep runs against both verbose post text (`gen_package`) and compressed lines (`gen_extract`) once compression has run (2026-07-03).
+- **Tag activation at prompt time (2026-07-03):** which tags are "live" for a generation is determined by a **query**, not only by tags matched on the trigger post alone. The query is built from the latest user message plus up to two recent assistant turns (KAI-style). Word-boundary grep against the tag cloud yields the active set. The Memory panel's prompt inspector can override this set for what-if simulation via the `tags` query param on `/prompt-preview`.
+- At prompt assembly time, the active tag set drives two independent things: which archive blocks/compressed rows get promoted to verbose (via the tag index — posts whose verbose or compressed text matched the tag), and which non-CONTENT worldbook entries (ROSTER/MEMORY) get pulled into the prompt (via the tag index against entry content). CONTENT entries are always injected regardless of tags.
 - Tags whose match doesn't resolve to a worldbook entry are evaluated before tags that do, during prompt assembly. This prioritizes surface area (events, references) over known lore, since the lore is already in the worldbook.
 
 ### Tag Cloud Lifecycle
@@ -167,7 +168,7 @@ LM has three agents, each with a distinct role and prompt strategy.
 
 **Author** — Story-phase agent. Receives worldbook entries (persistent and tag-triggered), the assembled log, and the user's latest post. Prompted to treat the user's input as describing the PC's actions — not as direct user commands. Responsible for all prose generation during play.
 
-**Worker** — Background agent. Handles compression and archiving without editorializing. Prompted to return facts only, avoid redundancy with prior compressed history, and not revise or embellish. Has tooling for tag resolution including recursive lookup (a post mentions Halia → also retrieve Phandalin) and pronoun disambiguation (two uses of "her" in a post → resolve each to a specific character before tag lookup).
+**Worker** — Background agent. Handles compression and archiving without editorializing. Prompted to return facts only, avoid redundancy with prior compressed history, and not revise or embellish. Compression uses lorepebble-proven validation (reject single-quoted fragments, too-short narrative summaries, etc.), trivial/verbatim shortcuts for short lines, and a name roster pulled from CONTENT/ROSTER/MEMORY worldbook entries plus up to three prior compressed lines as context. Archiving synthesizes from compressed member lines (with prose fallback when compress is missing) and may include a prior non-overlapping archive summary for continuity.
 
 ---
 
@@ -194,7 +195,22 @@ factors in scoping Phase 1 to Featherless alone (see Provider Abstraction).
 
 ### MCP Server (Developer-Facing)
 
-LM's back end exposes an MCP server primarily so AI coding assistants working on LM itself — Cursor, Claude Code, or similar — can inspect live application state during a development session: recent logs, queue status, a story's worldbook or tag index, and similar. This addresses a concrete pain point: without it, debugging requires manually copying state out of the running instance and pasting it into a chat session. With it, a coding assistant can query the actual system directly.
+LM's back end exposes an MCP server primarily so AI coding assistants working on LM itself — Cursor, Claude Code, or similar — can inspect live application state during a development session: recent logs, queue status, a story's worldbook or tag index, memory health, assembled prompts, and similar. This addresses a concrete pain point: without it, debugging requires manually copying state out of the running instance and pasting it into a chat session. With it, a coding assistant can query the actual system directly.
+
+Run locally with `npm run mcp`. Tools include: `list_stories`, `get_worldbook`, `get_tags`, `get_queue_status`, `get_recent_log`, `get_memory_manifest`, `get_memory_summary`, `preview_tag_activation`, `get_prompt_preview`, `backfill_memory`, `reindex_tags`, `enqueue_memory_jobs`, `notify_direct_mutation`, `tail_dev_server_log`, `get_recent_outbound_requests`.
+
+Equivalent HTTP routes for curl/automation (session required unless `DEV_BYPASS_SESSION_GUARD` is set on the server):
+
+```
+GET  /api/stories/:id/memory/summary
+GET  /api/stories/:id/memory/manifest
+GET  /api/stories/:id/memory/tag-activation?fromPageId=...
+POST /api/stories/:id/memory/backfill   { "reindexTags": true, "enqueueJobs": true }
+POST /api/stories/:id/memory/enqueue
+GET  /api/stories/:id/prompt-preview    ?tags=id1,id2   (optional tag override)
+```
+
+Smoke tests (no browser): `npx tsx scripts/test-memory-pipeline-smoke.ts` runs in-process integration, ephemeral HTTP API checks, and unit smokes.
 
 This is a development convenience, not a means of opening LM to third-party MCP clients. Supporting external MCP servers as a consumer (LM calling out to other people's tools) is a future-phase idea with no concrete use case yet identified — it stays out of scope until one exists.
 
@@ -208,9 +224,22 @@ This is the core of LM's context management. Every post exists in up to three fo
 
 **Verbose** — The full text of the post as generated or entered. Always preserved.
 
-**Compressed** — A factual distillation of the post (~20 tokens). Generated by the worker, deferred: a post becomes eligible for compression once it is five or more posts behind the current position. The worker uses the full log assembly technique up to that moment as context, with strong prompting to return only the facts of that specific post without redundancy.
+**Compressed** — A factual distillation of the post (~20 tokens). Generated by the worker, deferred: a post becomes eligible for compression once it is five or more posts behind the current position — **unless** the post is stale (canonical content changed but compress/extract no longer matches; see Content stamps below), in which case it re-queues immediately regardless of lag. The worker receives the target post, up to three prior compressed lines, and a name roster from worldbook CONTENT/ROSTER/MEMORY entries, with validation and retry on bad summaries.
 
-**Archive block** — A narrative summary (~60 tokens) covering a sliding window of ten posts. Generated by the editor. A block is created whenever a complete set of ten valid, fully-compressed posts exists with no archive block yet assigned. This trigger is state-based, not position-based — it handles rewrites, undos, and branches correctly because it checks for the precondition rather than counting rows.
+**Archive block** — A narrative summary (~60 tokens) covering a sliding window of ten posts. Generated by the editor. A block is created whenever a complete set of ten valid, fully-compressed posts exists with no archive block yet assigned at that window's start point. This trigger is state-based, not position-based — it handles rewrites, undos, and branches correctly because it checks for the precondition rather than counting rows. Input is compressed member lines (prose fallback if compress is missing); non-overlapping prior archive summaries may be included as continuity context.
+
+### Content stamps and invalidation (2026-07-03)
+
+Each page stores `memory_content_stamp`: a SHA-256 fingerprint of normalized canonical `gen_package`. A compress is **valid** only when the stamp matches, `gen_extract` is present, and the text is not marked broken.
+
+When canonical text changes (edit, retry, undo/redo restoring a different text version, fork truncate), the back end:
+
+1. Syncs archive membership to the new canonical text id.
+2. Deletes overlapping archive blocks (and their pending jobs) covering the changed page.
+3. Clears/recomputes the stamp and re-queues compress if needed.
+4. Recreates eligible archive blocks once all posts in a window are validly compressed again.
+
+Undo and redo that swap canonical text on a page trigger the same invalidation path as edit. Assembly skips archive lines with no summary or marked `broken`.
 
 ### Sliding Windows
 
@@ -225,7 +254,7 @@ At the time of each author call, the back end assembles the prompt iteratively w
 1. Subtract maximum declared output length from the budget.
 2. Subtract maximum declared reasoning length (may be zero — reasoning modes are not always beneficial for RP and must be togglable per agent).
 3. Always include: core prompt, all CONTENT worldbook entries (in creation order).
-4. Include all tag-triggered ROSTER/MEMORY worldbook entries.
+4. Include all tag-triggered ROSTER/MEMORY worldbook entries (active tags from query activation — see Tag System).
 5. Fill the most recent posts as verbose, up to 20% of the remaining budget.
 6. Fill all remaining older posts as archive blocks.
 7. Iterate from most recent to least recent archive block: if a block contains a tagged post, swap it for the individually compressed rows of that block, budget permitting. This is iterative to allow relative weighting. Tags without a matching worldbook entry evaluated before tags that have one.
@@ -297,8 +326,8 @@ Branches are auto-named on creation (e.g. "Branch — Post 47 — 2026-03-15 14:
 These rules apply uniformly across all controls above:
 
 - **Compression eligibility** is based on a post's position relative to the current end of the canonical log, not its creation timestamp. A post that gets un-rewound, re-edited, or moved by a branch re-enters the eligibility check fresh.
-- **Compressed and archived forms are invalidated** when a post's canonical content changes (via edit or version lock-in). The worker re-queues compression for that post. Any archive block containing that post is likewise invalidated and re-queued once all its constituent posts are re-compressed.
-- **Tag indexing** runs retroactively on any content change. An edited post, a newly canonical version, or a branch all trigger a grep pass against current tags for affected posts. The index is updated before the next prompt assembly.
+- **Compressed and archived forms are invalidated** when a post's canonical content changes (via edit, retry, or undo/redo swapping text versions). Content stamps detect staleness; the worker re-queues compression. Overlapping archive blocks containing that post are deleted and recreated once all constituent posts are validly compressed again.
+- **Tag indexing** runs retroactively on any content change and after compress completes (`gen_extract` is indexed too). An edited post, a newly canonical version, or undo/redo all trigger re-indexing for affected text.
 - **Alternate versions** (from retries, guided retries, edits) are not indexed or compressed — only the current canonical version enters the pipeline. On version lock-in, non-canonical versions are deleted.
 
 ### Worldbook Versioning

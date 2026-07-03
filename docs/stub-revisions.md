@@ -27,19 +27,11 @@ second roadmap.
   "pronoun declarations per tag" idea below — that was about matching tags *on* pronouns;
   this is about the Author/compress pipeline never emitting an unresolvable pronoun into
   text the tag system reads in the first place.
-  **Known gap opened 2026-07-03:** the worldbook refactor (see this file's superseded
-  extraction entry above) dropped the `character` entry type — there's no structured "NPC
-  name" field to pull a roster from anymore. Compress context now uses `listContentEntries`
-  (CONTENT-type entries — setting/premise material, which usually includes the PC's name)
-  instead, which doesn't cover NPC names living in ROSTER entries. Flagged, not yet fixed —
-  revisit by also passing tag-triggered ROSTER/MEMORY entries into compress context if
-  pronoun-resolution quality regresses in real use.
-- **Compress prompt now gets one post of prior context** (2026-07-01) — threads the
-  immediately-preceding post's compressed line (via the immutable `prevPageId` link) into
-  the compress call so it can frame this post causally instead of in a vacuum. Verified
-  against a real job: the prior summary was correctly found and passed. Still short of
-  real cross-post redundancy checking across a whole window (already flagged in its own
-  code comment) — that's a bigger, separate refinement, not in scope.
+  **Resolved 2026-07-03:** compress context now pulls a name roster from all CONTENT entries plus
+  ROSTER/MEMORY worldbook entries (`buildNameRoster` in `src/services/compress-worker.ts`), with up
+  to three prior compressed lines — not just CONTENT alone.
+- **Compress prompt now gets one post of prior context** (2026-07-01) — superseded 2026-07-03 by up
+  to **three** prior compressed lines in `buildCompressUserPrompt`. Verified via smoke tests.
 - **Archive prompt now asks for causal framing** (2026-07-01) — `ARCHIVE_SYSTEM_PROMPT`
   asks for a "but/therefore" throughline and preserving who-did-what-to-whom, instead of
   neutral listing. Pure wording change, already had full block context.
@@ -172,6 +164,16 @@ second roadmap.
   `GET, POST, PATCH, OPTIONS`, so a real browser would have silently blocked every DELETE
   behind a CORS failure despite curl-based testing "passing" (curl doesn't preflight).
   Confirmed via a real preflight-shaped request before and after the fix.
+
+## Memory pipeline
+
+- **MemoryView UI copy still says Setting/Register/PC** in places — worldbook is now
+  CONTENT/ROSTER/MEMORY. Cosmetic; deferred until Lore UI polish pass.
+- **Scene names on archive blocks** — not implemented; archives are anonymous sliding windows.
+- **Compress-time auto-tagging from summaries** — deferred; tag-gen after worldbook creation
+  remains the population path. Disable tag-gen if play-testing shows conflicts.
+- **tag-gen worker** — runs after setup-worldbook extraction; may overlap with user-curated tags.
+  Monitor during VM play-testing.
 
 ## Data model
 

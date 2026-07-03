@@ -5,11 +5,12 @@ a minimal real UI) and **Phase 1 Complete** (everything loremaster.md scopes to 
 Future Phases appendix). Still building one step at a time — this exists so "push on to something else"
 has a target, not so we jump ahead of confirming each step.
 
-**Current status (2026-07-02): Vertical Slice reached. Milestones A-E and G done. Milestone F
-(Security) is partially done** — single-active-session eviction is built and verified; real
-password auth and encryption at rest remain deliberately deferred, not blockers. Everything below
-this line reflects that state; see each milestone's own section for what "done" actually covers and
-what's explicitly still missing within it.
+**Current status (2026-07-03): Vertical Slice reached. Milestones A-E and G done. Milestone F
+(Security) is partially done** — per-user login, session claim, and encrypted API keys are built;
+encryption at rest for story content remains deliberately deferred, not a blocker. **Memory pipeline
+reliability (KAI-style restoration)** landed 2026-07-03 — see "Memory pipeline" below and
+`loremaster.md` Log Compression Pipeline. Everything below this line reflects that state; see each
+milestone's own section for what "done" actually covers and what's explicitly still missing within it.
 
 ## Done so far (proven, not full-featured)
 
@@ -17,13 +18,21 @@ what's explicitly still missing within it.
 - Job queue: durable job table, cost-based concurrency slots, timeouts, stale-job recovery on restart,
   handshake+poll+SSE client protocol (no more silent-hang class of bugs).
 - Tags: mutable tag cloud, retroactive grep indexing (both directions — new content vs. existing tags).
-- Compression: 5-turn-lag trigger, forced-tool-call worker summarization with validation+retry.
+  **2026-07-03:** tag index matches both `genPackage` and `genExtract`; prompt assembly activates tags
+  from a **query** (latest user message + ~2 recent assistant turns), not only the trigger post.
+- Compression: 5-turn-lag trigger; lorepebble-proven worker path with validation/retry/fallback,
+  trivial/verbatim shortcuts, prior compressed lines + worldbook name roster as context. **Content
+  stamps** (`page.memory_content_stamp`) tie each compress to canonical `gen_package`; stale posts
+  bypass the lag window and re-queue immediately.
 - Real Featherless integration: streaming author calls, forced tool-calling, model catalog + tag-rating
   scaffold for role-based model discovery.
 - Minimal React UI: single story, post a message, watch it stream in.
 - Archive tier + real tiered/tag-driven prompt assembly (`assembleAuthorPrompt`, steps 5-8 of the doc's
   algorithm) — verified end-to-end 2026-07-01: two overlapping 10-post archive blocks formed correctly,
   editor-generated narrative summaries, ownership computed and assigned correctly across overlapping blocks.
+  **2026-07-03:** archive invalidation on canonical text change (delete + recreate overlapping blocks);
+  archive worker uses compressed lines with prose fallback and prior non-overlapping archive summary as
+  continuity context.
 - Worldbook + Tags UI (Milestone B) — verified end-to-end 2026-07-01: `worldbook_entry` table keyed to
   `page.id` (reuses existing page/text versioning — edits are `createRetryText`, giving version history
   for free; singleton enforcement for Setting/Register/PC via partial unique indexes, not just app-layer
@@ -45,14 +54,39 @@ Also fixed along the way: the CORS `Access-Control-Allow-Methods` header (both t
 tags PATCH route's preflight from a real browser (curl doesn't preflight, so this went unnoticed until
 now).
 
-Not yet implemented: a "core prompt" (Author system prompt/identity) — the Author still has zero system
-prompt at all, an explicit deferred decision from earlier in the session. Step 3's "core prompt" half is
-still missing; only its register/setting/PC half is done.
-
 Creature/Faction field shapes: loremaster.md doesn't spell out explicit "Fields:" lists for these two the
 way it does for Location and Character. Pulled the actual field lists from lorepebble's `st1.json`
 (Setup Assistant card) instead, per explicit instruction — Creature: identity, how they think, speech,
 wants, disposition, do-not; Faction: identity, how they appear, stance toward the PC, leader.
+
+## Memory pipeline (KAI-style restoration) — ✅ done (2026-07-03)
+
+Ported lorepebble-proven memory behavior into the refactored Loremaster stack without reverting the
+purpose-built UI or overlapping archive geometry. Confirmed via in-process + ephemeral-HTTP smoke tests
+(`scripts/test-memory-pipeline-smoke.ts` — no browser automation).
+
+**Invalidation (content stamps):** each page stores a SHA-256 of normalized canonical `gen_package`.
+Compress is valid only when stamp matches and `gen_extract` exists. Edit, retry, undo, redo, and fork
+truncate all invalidate overlapping archives (delete + recreate) and re-queue compress (stale posts skip
+the 5-post lag). `onCanonicalTextChanged` is wired from HTTP routes and undo/redo.
+
+**Compress worker:** `src/services/compress-worker.ts` — trivial/verbatim shortcuts, validation with
+retry hints, narrative fallback, 3 prior compressed lines + CONTENT/ROSTER/MEMORY name roster in prompt.
+Wired in `pipeline-runner.ts`; re-indexes tags on `gen_extract` after success.
+
+**Tag retrieval:** `src/services/tag-retrieval.ts` — query activation from latest user message + ~2
+recent assistant turns; tag index greps both verbose and compressed text.
+
+**Archive worker:** prose fallback when compress missing; prior completed archive summary when the prior
+block ends strictly before the current block start (overlapping blocks correctly omit the overlapping
+prior).
+
+**Dev ops:** MCP tools (`get_memory_manifest`, `get_memory_summary`, `preview_tag_activation`,
+`get_prompt_preview`, `backfill_memory`, `reindex_tags`, `enqueue_memory_jobs`) and HTTP routes under
+`/api/stories/:id/memory/*` — see `loremaster.md` MCP section.
+
+**Still deferred:** scene names on archives, compress-time auto-tagging from summaries, MemoryView stale
+copy ("Setting/Register/PC"), tag-gen disable if it conflicts in play-testing.
 
 ## Path to Vertical Slice
 
