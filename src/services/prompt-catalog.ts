@@ -6,7 +6,6 @@ import {
   AUTHOR_SYSTEM_PROMPT,
   COMPRESS_SYSTEM_PROMPT,
   ARCHIVE_SYSTEM_PROMPT,
-  EDITOR_UPDATE_OPENING,
   EDITOR_UPDATE_PROMPT,
 } from "../prompts.js";
 import { SUMMARY_TOOL, ARCHIVE_TOOL } from "../queue/pipeline-runner.js";
@@ -80,14 +79,6 @@ export function getPromptCatalog(): PromptCatalogEntry[] {
       kind: "system-prompt",
       sourceFile: "src/prompts.ts",
       content: EDITOR_SETUP_WORLDBOOK,
-    },
-    {
-      id: "editor-update-opening",
-      name: "Editor — new OOC session opening line",
-      usedBy: "Editor (update session, canned)",
-      kind: "instruction",
-      sourceFile: "src/prompts.ts",
-      content: EDITOR_UPDATE_OPENING,
     },
     {
       id: "editor-update-prompt",

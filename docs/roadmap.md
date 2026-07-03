@@ -328,6 +328,46 @@ the pre-first-token gap showed a dead "…" with no signal at all.
   `Thinking… (Ns)` counter (elapsed since the job was created), only running the interval while
   something is actually in that dead zone.
 
+**Additional, post-Phase-1: silent OOC session boundary + Story tab mode persistence** — ✅ done,
+2026-07-03. The post-kickoff OOC "update session" boundary (`ooc_session_start_page_id`) used to be
+set by dropping a canned `EDITOR_UPDATE_OPENING` "Welcome back" message as a real hidden page every
+time the user toggled Play→OOC — jarring on its own, and repeated toggling stacked up multiple copies
+in the log. `POST /:id/ooc/start-session` no longer creates a page or writes anything to the log; it
+just moves the boundary to whichever hidden page is already most recent, so the Editor's context still
+resets per session with nothing new visible and no cost to toggling back and forth. `EDITOR_UPDATE_OPENING`
+removed from `src/prompts.ts` and the prompt catalog entirely — no replacement needed.
+- Separately, closing and reopening the Story tab (Nav's tab columns fully unmount a panel on close)
+  reset IC/OOC mode back to its phase-based default, which combined with the above meant reopening
+  into OOC re-triggered a session boundary move mid-conversation, truncating the Editor's context out
+  from under an in-progress design chat. `StoryView.tsx` now persists `mode` to `localStorage` keyed by
+  story id and restores it on mount — the toggle button's own handler is still the only thing that ever
+  calls `startOocSession`, so restoring a persisted "guide" mode on remount is a pure client-side no-op.
+
+**Additional, post-Phase-1: Logs/Worldbook collapsed-by-default content, Preview tab retired for a new Summary tab** —
+✅ done, 2026-07-03.
+- Logs and Worldbook both showed full post/entry content inline at all times, which got noisy fast.
+  Both now default to collapsed: Logs shows a truncated single-line preview per row (click to
+  expand/collapse in place, full pre-wrap text when open) instead of a dedicated content column;
+  Worldbook's entry cards collapse to just the header (entry type + truncated preview + caret) until
+  clicked, with `EntryContent` (and its `.entry-card-content`) only rendered while expanded.
+- Config > Preview (the assembled-prompt inspector) was an intentional duplicate of Lore > Memory from
+  Phase 1 (see the "reused prompt-inspector component" note earlier in this doc) that never earned its
+  keep as a second surface — retired. `PromptInspectorView.tsx` deleted; its shared `.prompt-message`
+  CSS survives as `PromptMessage.css`, now imported directly by `MemoryView.tsx`.
+- New Story > Summary tab (`SummaryView.tsx`) shows the rolling compressed log — one line per post's
+  `text.gen_extract` once compression has run on it, most recent first. No new endpoint: `LogEntry`
+  (`src/services/log-view.ts` and its frontend mirror in `web/src/api.ts`) just grew a `genExtract`
+  field, reusing the existing `GET /:id/log`. Initially shipped without polling and looked broken —
+  compress jobs land in the background with nothing to trigger a local refetch, so a tab opened before
+  a job finished stayed stuck on that first (often empty) snapshot forever, same class of problem
+  `WorldbookView`'s existing 3s poll already solves for live worldbook extraction. Fixed by giving
+  `fetchLog` the same optional `{ background }` opt `fetchJobs`/`fetchWorldbook`/`fetchTags` already
+  take, and polling `SummaryView` every 3s the same way.
+- `DEFAULT_LAYOUT_CONFIG` (`src/services/layout.ts`) updated to match (Preview removed, Summary added
+  after Logs). Since a layout config had already been persisted to `data/global.sqlite` from an earlier
+  session (the active row wins over the code default — see `GET /api/layout`), that row was updated
+  directly to match; a fresh install would pick up the new default with no such step needed.
+
 ## Notes on sequencing
 
 This is a suggested order, not a fixed contract — A→B→C is chosen because it finishes what's already

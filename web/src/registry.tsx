@@ -4,9 +4,9 @@ import WorldbookView from "./WorldbookView";
 import StoryPanel from "./StoryPanel";
 import SavesView from "./SavesView";
 import LogsView from "./LogsView";
+import SummaryView from "./SummaryView";
 import DebugView from "./DebugView";
 import AgentsView from "./AgentsView";
-import PromptInspectorView from "./PromptInspectorView";
 import MemoryView from "./MemoryView";
 import PromptsView from "./PromptsView";
 import SettingsView from "./SettingsView";
@@ -22,11 +22,11 @@ const REGISTRY: Record<string, ComponentType<PanelProps>> = {
   "story:play": StoryPanel,
   "story:saves": SavesView,
   "story:logs": LogsView,
+  "story:summary": SummaryView,
   "lore:tags": TagsView,
   "lore:worldbook": WorldbookView,
   "lore:memory": MemoryView,
   "config:agents": AgentsView,
-  "config:preview": PromptInspectorView,
   "config:prompts": PromptsView,
   "debug:": DebugView,
   "settings:": SettingsView,

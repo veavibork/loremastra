@@ -306,6 +306,7 @@ export interface LogEntry {
   hidden: boolean;
   createdAt: string | null;
   genMetrics: string | null;
+  genExtract: string | null;
 }
 
 export type StoryPhase = "setup" | "kickoff" | "story";
@@ -343,12 +344,11 @@ export async function kickoff(storyId: string): Promise<{ agentPageId: string; j
   return data;
 }
 
-/** Starts a fresh post-kickoff OOC "update session" — drops a canned opener, no job attached. */
-export async function startOocSession(storyId: string): Promise<{ agentPageId: string }> {
+/** Marks a fresh post-kickoff OOC "update session" boundary — no page created, nothing new in the log. */
+export async function startOocSession(storyId: string): Promise<void> {
   const res = await apiFetch(`/api/stories/${storyId}/ooc/start-session`, { method: "POST" });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
-  return data;
 }
 
 export async function listStories(): Promise<Story[]> {
@@ -373,8 +373,8 @@ export async function deleteStory(storyId: string): Promise<void> {
   if (data.error) throw new Error(data.error);
 }
 
-export async function fetchLog(storyId: string): Promise<LogEntry[]> {
-  const res = await apiFetch(`/api/stories/${storyId}/log`);
+export async function fetchLog(storyId: string, opts?: { background?: boolean }): Promise<LogEntry[]> {
+  const res = await apiFetch(`/api/stories/${storyId}/log`, {}, opts);
   const data = (await res.json()) as { entries: LogEntry[] };
   return data.entries;
 }

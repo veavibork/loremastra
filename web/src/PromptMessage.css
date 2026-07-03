@@ -1,15 +1,3 @@
-.prompt-inspector {
-  padding: 0.5rem 0;
-  text-align: left;
-  font-size: 15px;
-}
-
-.prompt-inspector-note {
-  font-size: 0.8rem;
-  opacity: 0.65;
-  margin-bottom: 1rem;
-}
-
 .prompt-message {
   border: 1px solid #333;
   border-radius: 8px;

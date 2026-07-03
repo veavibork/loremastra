@@ -114,6 +114,21 @@ function AutoGrowTextarea({
   );
 }
 
+/** Nav's tab-based layout unmounts a panel entirely when its column is closed, so plain
+ * useState loses which mode (IC/OOC) a story was in the moment the Story tab is reopened —
+ * it'd always fall back to the phase-based default below. Restoring from here on mount (and
+ * writing to it on every change) means reopening the tab lands back exactly where it was left,
+ * with no extra startOocSession call — see handleEnterOoc, which only fires from an explicit
+ * toggle click, never from this restore path. */
+function modeStorageKey(storyId: string): string {
+  return `loremaster.storyMode.${storyId}`;
+}
+
+function loadPersistedMode(storyId: string): "guide" | "play" | null {
+  const raw = localStorage.getItem(modeStorageKey(storyId));
+  return raw === "guide" || raw === "play" ? raw : null;
+}
+
 export default function StoryView({
   storyId,
   phase,
@@ -123,7 +138,13 @@ export default function StoryView({
   phase: StoryPhase;
   onKickedOff?: () => void;
 }) {
-  const [mode, setMode] = useState<"guide" | "play">(() => (phase === "setup" ? "guide" : "play"));
+  const [mode, setMode] = useState<"guide" | "play">(
+    () => loadPersistedMode(storyId) ?? (phase === "setup" ? "guide" : "play")
+  );
+
+  useEffect(() => {
+    localStorage.setItem(modeStorageKey(storyId), mode);
+  }, [storyId, mode]);
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [position, setPosition] = useState<Position | null>(null);
   const [draft, setDraft] = useState("");
@@ -445,17 +466,16 @@ export default function StoryView({
   }
 
   /**
-   * Every Play→OOC switch post-kickoff needs a real backend call now — it drops a canned
-   * EDITOR_UPDATE_OPENING opener and marks a fresh session boundary so the Editor's context
-   * resets instead of replaying every OOC turn the story has ever had. Pre-kickoff setup is
-   * already in guide mode by default (from the initial useState above), so this only fires
-   * once the story has actually reached story phase.
+   * Every Play→OOC switch post-kickoff marks a fresh session boundary so the Editor's context
+   * resets instead of replaying every OOC turn the story has ever had — silently, nothing is
+   * added to the log, so there's nothing to refresh. Pre-kickoff setup is already in guide mode
+   * by default (from the initial useState above), so this only fires once the story has
+   * actually reached story phase.
    */
   async function handleEnterOoc() {
     if (phase !== "setup") {
       try {
         await startOocSession(storyId);
-        await refresh();
       } catch (err) {
         console.error(err);
         setError(err instanceof Error ? err.message : String(err));

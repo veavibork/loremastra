@@ -32,6 +32,16 @@ export default function WorldbookView({ story }: PanelProps) {
   const [entries, setEntries] = useState<WorldbookEntry[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(pageId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(pageId)) next.delete(pageId);
+      else next.add(pageId);
+      return next;
+    });
+  }
 
   async function reload(opts?: { background?: boolean }) {
     if (!storyId) return;
@@ -103,26 +113,36 @@ export default function WorldbookView({ story }: PanelProps) {
             items.length > 0 && (
               <div key={type} className="entry-group">
                 <h3>{type}</h3>
-                {items.map((entry) => (
-                  <div key={entry.pageId} className={`entry-card ${entry.hidden ? "entry-hidden" : ""}`}>
-                    <div className="entry-card-top">
-                      <div className="entry-card-header">
-                        <strong>{previewText(entry.content)}</strong>
-                      </div>
-                      <div className="entry-card-actions">
-                        <button type="button" onClick={() => startEdit(entry)}>
-                          Edit
+                {items.map((entry) => {
+                  const isExpanded = expanded.has(entry.pageId);
+                  return (
+                    <div key={entry.pageId} className={`entry-card ${entry.hidden ? "entry-hidden" : ""}`}>
+                      <div className="entry-card-top">
+                        <button
+                          type="button"
+                          className="entry-card-header"
+                          onClick={() => toggleExpanded(entry.pageId)}
+                        >
+                          <span className={`entry-card-caret ${isExpanded ? "entry-card-caret-open" : ""}`}>▸</span>
+                          <strong>{previewText(entry.content)}</strong>
                         </button>
-                        <button type="button" onClick={() => toggleHidden(entry)}>
-                          {entry.hidden ? "unhide" : "hide"}
-                        </button>
+                        <div className="entry-card-actions">
+                          <button type="button" onClick={() => startEdit(entry)}>
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => toggleHidden(entry)}>
+                            {entry.hidden ? "unhide" : "hide"}
+                          </button>
+                        </div>
                       </div>
+                      {isExpanded && (
+                        <div className="entry-card-content">
+                          <EntryContent content={entry.content} />
+                        </div>
+                      )}
                     </div>
-                    <div className="entry-card-content">
-                      <EntryContent content={entry.content} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )
         )

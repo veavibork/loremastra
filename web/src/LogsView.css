@@ -16,9 +16,38 @@
   vertical-align: top;
 }
 
-.logs-content {
-  max-width: 420px;
+.logs-content-cell {
+  padding-top: 0;
+}
+
+.logs-content-toggle {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: 0.8;
+  padding: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.logs-content-toggle:hover {
+  opacity: 1;
+}
+
+.logs-content-collapsed {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logs-content-expanded {
   white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .logs-row-hidden {

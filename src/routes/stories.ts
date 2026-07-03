@@ -7,7 +7,7 @@ import { getOrCreateDefaultUser } from "../db/user-store.js";
 import { createStory, listStories, getStory, renameStory, deleteStory } from "../db/story-store.js";
 import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
-import { findHeadPageId, collectAncestorIds } from "../db/page-store.js";
+import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../db/page-store.js";
 import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
 import { enqueueEligibleCompressJobs } from "../services/compression.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
@@ -31,7 +31,7 @@ import { trackStoryDb, untrackStoryDb, setJobGuidance } from "../queue/pipeline-
 import { subscribeJob, getJobBuffer, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
-import { EDITOR_SETUP_OPENING, EDITOR_UPDATE_OPENING } from "../prompts.js";
+import { EDITOR_SETUP_OPENING } from "../prompts.js";
 
 export const storiesRoute = new Hono();
 
@@ -470,12 +470,14 @@ storiesRoute.post("/:id/kickoff", (c) => {
 });
 
 /**
- * Starts a fresh post-kickoff OOC "update session" — every Play→OOC switch after kickoff calls
- * this. Drops a canned EDITOR_UPDATE_OPENING message directly (no inference, no job, same
- * "content supplied directly" pattern as an edit) and marks it as the session boundary so the
- * Editor's context resets to just this session's turns (plus read-only IC awareness) rather
- * than every OOC turn the story has ever had. Pre-kickoff setup doesn't need this — it's
- * already in OOC mode by default from story creation's own canned opener.
+ * Marks a fresh post-kickoff OOC "update session" boundary — every Play→OOC switch after
+ * kickoff calls this. No page is created and nothing is added to the log (a canned opener
+ * used to be dropped here, but it showed up as a visible chat line and stacked up if someone
+ * flipped Play/OOC repeatedly). The boundary is just the most recent existing hidden page, so
+ * the Editor's context still resets to this session's turns (plus read-only IC awareness)
+ * instead of replaying every OOC turn the story has ever had — silently, with nothing new to
+ * see in the log. Pre-kickoff setup doesn't need this — it's already in OOC mode by default
+ * from story creation's own canned opener.
  */
 storiesRoute.post("/:id/ooc/start-session", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
@@ -484,19 +486,11 @@ storiesRoute.post("/:id/ooc/start-session", (c) => {
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
-  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
-  const { page } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    prevPageId: attachAt,
-    role: "agent",
-    genPackage: EDITOR_UPDATE_OPENING,
-  });
-  setPageHidden(storyDb, page.id, true);
-  setOocSessionStartPageId(storyDb, page.id);
-  setCurrentPageId(storyDb, null);
-  recordHistoryEvent(storyDb, { kind: "page", pageId: page.id, fromValue: attachAt, toValue: page.id });
+  const hiddenPages = listChronologicalPages(storyDb, logbook.id).filter((p) => p.hidden);
+  const boundaryPageId = hiddenPages.length > 0 ? hiddenPages[hiddenPages.length - 1].id : null;
+  setOocSessionStartPageId(storyDb, boundaryPageId);
 
-  return c.json({ agentPageId: page.id });
+  return c.json({ ok: true });
 });
 
 storiesRoute.get("/:id/tags", (c) => {

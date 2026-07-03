@@ -7,7 +7,7 @@ export interface StoryState {
   kickoffPageId: string | null;
   /** Raw stored value — NULL means "at the head," resolved by the caller (page-store has no notion of story_state). Use getCurrentPageId in routes/services instead of reading this directly. */
   currentPageId: string | null;
-  /** The page id of the canned EDITOR_UPDATE_OPENING message that started the current post-kickoff OOC "update session" — null before any such session has started. Scopes buildUpdateSessionConversation to just this session's turns. */
+  /** The most recent hidden page that existed when the current post-kickoff OOC "update session" started — null before any such session has started. Scopes buildSetupConversation to just this session's turns, without adding a visible marker page of its own. */
   oocSessionStartPageId: string | null;
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchPromptPreview, fetchTags, type PromptMessage, type Tag } from "./api";
 import type { PanelProps } from "./panel-types";
-import "./PromptInspectorView.css";
+import "./PromptMessage.css";
 import "./MemoryView.css";
 
 export default function MemoryView({ story }: PanelProps) {

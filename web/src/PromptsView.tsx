@@ -7,8 +7,8 @@ import "./PromptsView.css";
  * docs/stub-revisions.md) but the underlying gap this used to describe — "there's no core
  * prompt to look at" — is gone now that the Author/Editor/Worker all run on real prompt
  * constants. This shows the actual current template library: what exists, who uses it, and
- * where it lives in source, as distinct from Preview/Memory which show one story's *assembled*
- * prompt (worldbook entries and history mixed in) rather than the source templates themselves.
+ * where it lives in source, as distinct from Memory which shows one story's *assembled* prompt
+ * (worldbook entries and history mixed in) rather than the source templates themselves.
  */
 export default function PromptsView() {
   const [prompts, setPrompts] = useState<PromptCatalogEntry[] | null>(null);

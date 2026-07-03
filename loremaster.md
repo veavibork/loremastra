@@ -342,15 +342,17 @@ Two-column layout. The left column holds the Tags panel, always visible. The rig
 - *Archived* — archive management; edit, hide (toggle), requeue. Hydrates with blocks that cover the complete set of eligible index entries. Unarchived but eligible blocks are highlighted.
 
 **Story**
-Two tabs: Saves and Logs.
+Three tabs: Saves, Logs, and Summary.
 - *Saves* — session/slot management; load, name, rename, and switch between active stories and branches.
 - *Logs* — recent activity telemetry: timestamps, input text, observed tags, prompt text, response text, token counts, turnaround times, error codes. Input toggle state (length and mood) is included in this view as a part of the prompt assembly record.
+- *Summary* — the rolling compressed log, most recent first: one dense line per post once compression has run on it. A read-only Phase 1 stand-in for the Compressed tab's full management (edit/hide/requeue) described under Lore below — Phase 1's flat tab bar (see UI Structure) has no Lore/Story section split yet, so this landed alongside Logs rather than there.
 
 **Config**
-Three tabs: Agents, Preview, and Prompts.
+Two tabs: Agents and Prompts.
 - *Agents* — model and parameter selection per agent (Editor, Author, Worker). Controls for reasoning mode toggle and token budget per agent. Controls for concurrent thread counts allowed.
-- *Preview* — the assembled prompt inspector for the current story, shown outside of play so configuration changes can be tested without consuming a turn.
 - *Prompts* — the prompt template for each element, exposed for direct editing. Not expected to be used frequently, but must not require SSH access. Any changes made to prompts are per-user and do not alter the defaults.
+
+Config previously had a third tab, Preview, duplicating Lore > Memory's assembled-prompt inspector outside of play. Dropped (2026-07-03) as a redundant surface — Memory already covers the same need.
 
 **Debug**
 Live queue state and worker status. Distinct from Logs (which is historical) — Debug shows what's happening right now: what's queued, what's in flight, what's blocked, and why.

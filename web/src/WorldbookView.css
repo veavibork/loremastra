@@ -49,6 +49,31 @@
   align-items: baseline;
   gap: 0.5rem;
   min-width: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  flex: 1;
+}
+
+.entry-card-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-card-caret {
+  display: inline-block;
+  opacity: 0.6;
+  transition: transform 0.1s ease;
+  flex-shrink: 0;
+}
+
+.entry-card-caret-open {
+  transform: rotate(90deg);
 }
 
 .entry-card-content {
