@@ -8,14 +8,14 @@ import { createStory, listStories, getStory, renameStory, deleteStory } from "..
 import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { findHeadPageId, collectAncestorIds } from "../db/page-store.js";
-import { indexTextAgainstAllTags, reindexTagAcrossBook, autoLinkTagToEntry, autoLinkEntryToTags } from "../services/tag-index.js";
+import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
 import { enqueueEligibleCompressJobs } from "../services/compression.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
-import { createJob, getJob, listRecentJobs } from "../db/job-store.js";
-import { getPage } from "../db/page-store.js";
+import { createJob, getJob, listRecentJobs, listActiveJobs } from "../db/job-store.js";
+import { getPage, setPageHidden } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
-import { createTag, getTag, listTags, renameTag, setTagHidden, setTagWorldbookPage } from "../db/tag-store.js";
+import { createTag, getTag, listTags, renameTag, setTagHidden } from "../db/tag-store.js";
 import {
   createWorldbookEntry,
   listWorldbookEntries,
@@ -23,14 +23,15 @@ import {
   setWorldbookEntryHidden,
   type WorldbookEntryType,
 } from "../db/worldbook-store.js";
-import { getStoryState, setStoryPhase, setKickoffPageId, setCurrentPageId } from "../db/story-state-store.js";
+import { getStoryState, setStoryPhase, setKickoffPageId, setCurrentPageId, setOocSessionStartPageId } from "../db/story-state-store.js";
 import { recordHistoryEvent, undoHistory, redoHistory, canUndoHistory, canRedoHistory } from "../db/history-store.js";
 import { finalizeSetup } from "../services/kickoff.js";
 import { forkStory } from "../services/fork.js";
 import { trackStoryDb, untrackStoryDb, setJobGuidance } from "../queue/pipeline-runner.js";
-import { subscribeJob, type JobEvent } from "../queue/job-events.js";
+import { subscribeJob, getJobBuffer, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
+import { EDITOR_SETUP_OPENING, EDITOR_UPDATE_OPENING } from "../prompts.js";
 
 export const storiesRoute = new Hono();
 
@@ -58,8 +59,17 @@ storiesRoute.post("/", async (c) => {
 
   const storyDb = openTrackedStoryDb(story.id);
   const gameBook = createBook(storyDb, { bookType: "game" });
-  createBook(storyDb, { bookType: "logbook", parentBookId: gameBook.id });
+  const logbook = createBook(storyDb, { bookType: "logbook", parentBookId: gameBook.id });
   createBook(storyDb, { bookType: "worldbook", parentBookId: gameBook.id });
+
+  // The Editor "speaks first" — a canned opening line, no inference call, before the user
+  // has typed anything. See EDITOR_SETUP_OPENING in src/prompts.ts.
+  const { page: openingPage } = createPageWithText(storyDb, {
+    bookId: logbook.id,
+    role: "agent",
+    genPackage: EDITOR_SETUP_OPENING,
+  });
+  setPageHidden(storyDb, openingPage.id, true);
 
   return c.json({ story });
 });
@@ -199,11 +209,13 @@ storiesRoute.post("/:id/messages", async (c) => {
  * Regenerate an existing agent post in place — a new text version on the same page, per
  * loremaster.md's Retry / Guided retry. Works on any agent page regardless of phase (the
  * setup conversation and story posts share the same logbook), but which *job type* to queue
- * depends on which side of kickoff the page falls on: a setup-phase page needs the Editor's
- * tool-calling turn (executeSetupJob), not a plain prose continuation — retrying it as
- * "prose" would run it through the Author's core prompt instead of the setup flow entirely.
- * A page is "setup" if kickoff hasn't happened yet, or if it's a strict ancestor of the
- * kickoff page (the kickoff page itself, and everything after, is prose).
+ * depends on what kind of page it is: an OOC/setup page needs the Editor's tool-calling turn
+ * (executeSetupJob), not a plain prose continuation — retrying it as "prose" would run it
+ * through the Author's core prompt instead of the setup flow entirely. Every OOC/setup page is
+ * hidden the moment it's created (see POST /:id/setup/messages) and no other page ever is, so
+ * page.hidden is a direct, phase-independent answer — including for a page created by a resumed
+ * post-kickoff OOC conversation, which isn't an ancestor of kickoffPageId the way a pre-kickoff
+ * setup page is.
  */
 storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { guidance?: string };
@@ -217,8 +229,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
   if (!currentText) return c.json({ error: "current text not found" }, 404);
   if (currentText.role !== "agent") return c.json({ error: "only agent posts can be retried" }, 400);
 
-  const { kickoffPageId } = getStoryState(storyDb);
-  const isSetupPage = !kickoffPageId || (pageId !== kickoffPageId && collectAncestorIds(storyDb, kickoffPageId).has(pageId));
+  const isSetupPage = page.hidden;
 
   const newText = createRetryText(storyDb, {
     pageId,
@@ -264,7 +275,14 @@ storiesRoute.post("/:id/posts/:pageId/edit", async (c) => {
   return c.json({ ok: true, textId: newText.id });
 });
 
-/** Generate a continuation from the current position (or the head, if nothing's been rewound) — a new agent page, not appended to the existing one. */
+/**
+ * Generate a continuation from the current position (or the head, if nothing's been rewound) —
+ * a new agent page, not appended to the existing one. Whether this is an Editor (OOC) or Author
+ * (IC) continuation isn't decided by phase alone: post-kickoff, the current position can be a
+ * resumed OOC conversation's hidden page just as easily as an in-character one, since both share
+ * the same page chain. Checking the attach point's own hidden flag (same invariant as retry, see
+ * POST /:id/posts/:pageId/retry) gets this right in both cases.
+ */
 storiesRoute.post("/:id/continue", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { guidance?: string };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
@@ -276,13 +294,16 @@ storiesRoute.post("/:id/continue", async (c) => {
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
   const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
+  const isSetupContinuation = phase === "setup" || !!(attachAt && getPage(storyDb, attachAt)?.hidden);
+
   const { page, text } = createPageWithText(storyDb, { bookId: logbook.id, prevPageId: attachAt, role: "agent" });
+  if (isSetupContinuation) setPageHidden(storyDb, page.id, true);
   setCurrentPageId(storyDb, null);
   recordHistoryEvent(storyDb, { kind: "page", pageId: page.id, fromValue: attachAt, toValue: page.id });
 
   const job = createJob(storyDb, {
     targetTextId: text.id,
-    jobType: phase === "setup" ? "setup" : "prose",
+    jobType: isSetupContinuation ? "setup" : "prose",
     slotCost: 4,
     priority: 10,
   });
@@ -380,25 +401,32 @@ storiesRoute.post("/:id/fork", async (c) => {
   }
 });
 
+/**
+ * OOC/setup conversation — usable both before the initial kickoff and any time after (the Story
+ * tab's OOC toggle isn't phase-gated, see web/src/StoryView.tsx), e.g. to revise the worldbook
+ * without touching the in-character story. Both pages are hidden immediately: it's what lets
+ * these turns share the logbook's single page chain with in-character content (advancing the same
+ * "head" as everything else) without ever being seen by the Author or shown in Play/IC mode — and
+ * what lets buildSetupConversation (pipeline-runner.ts) find just this conversation's own history
+ * later, even with a whole IC story now interleaved in between.
+ */
 storiesRoute.post("/:id/setup/messages", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { content?: string };
   const content = body.content ?? "";
   if (!content.trim()) return c.json({ error: "content is required" }, 400);
 
   const storyDb = openTrackedStoryDb(c.req.param("id"));
-  if (getStoryState(storyDb).phase !== "setup") {
-    return c.json({ error: "story is not in setup phase" }, 400);
-  }
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
-  const headPageId = findHeadPageId(storyDb, logbook.id);
+  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
   const { page: userPage, text: userText } = createPageWithText(storyDb, {
     bookId: logbook.id,
-    prevPageId: headPageId,
+    prevPageId: attachAt,
     role: "user",
     genPackage: content,
   });
+  setPageHidden(storyDb, userPage.id, true);
   indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, logbook.id), userText.id);
 
   const { page: agentPage, text: agentText } = createPageWithText(storyDb, {
@@ -406,6 +434,9 @@ storiesRoute.post("/:id/setup/messages", async (c) => {
     prevPageId: userPage.id,
     role: "agent",
   });
+  setPageHidden(storyDb, agentPage.id, true);
+  setCurrentPageId(storyDb, null);
+  recordHistoryEvent(storyDb, { kind: "page", pageId: agentPage.id, fromValue: attachAt, toValue: agentPage.id });
 
   const job = createJob(storyDb, { targetTextId: agentText.id, jobType: "setup", slotCost: 4, priority: 10 });
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
@@ -438,6 +469,36 @@ storiesRoute.post("/:id/kickoff", (c) => {
   return c.json({ agentPageId: page.id, jobId: job.id });
 });
 
+/**
+ * Starts a fresh post-kickoff OOC "update session" — every Play→OOC switch after kickoff calls
+ * this. Drops a canned EDITOR_UPDATE_OPENING message directly (no inference, no job, same
+ * "content supplied directly" pattern as an edit) and marks it as the session boundary so the
+ * Editor's context resets to just this session's turns (plus read-only IC awareness) rather
+ * than every OOC turn the story has ever had. Pre-kickoff setup doesn't need this — it's
+ * already in OOC mode by default from story creation's own canned opener.
+ */
+storiesRoute.post("/:id/ooc/start-session", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  if (getStoryState(storyDb).phase !== "story") return c.json({ error: "story hasn't reached story phase yet" }, 400);
+
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+
+  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
+  const { page } = createPageWithText(storyDb, {
+    bookId: logbook.id,
+    prevPageId: attachAt,
+    role: "agent",
+    genPackage: EDITOR_UPDATE_OPENING,
+  });
+  setPageHidden(storyDb, page.id, true);
+  setOocSessionStartPageId(storyDb, page.id);
+  setCurrentPageId(storyDb, null);
+  recordHistoryEvent(storyDb, { kind: "page", pageId: page.id, fromValue: attachAt, toValue: page.id });
+
+  return c.json({ agentPageId: page.id });
+});
+
 storiesRoute.get("/:id/tags", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
@@ -446,7 +507,7 @@ storiesRoute.get("/:id/tags", (c) => {
 });
 
 storiesRoute.post("/:id/tags", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { name?: string; worldbookPageId?: string | null };
+  const body = (await c.req.json().catch(() => ({}))) as { name?: string };
   const name = body.name ?? "";
 
   const storyDb = openTrackedStoryDb(c.req.param("id"));
@@ -454,14 +515,8 @@ storiesRoute.post("/:id/tags", async (c) => {
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
   try {
-    const tag = createTag(storyDb, {
-      bookId: getTagScopeBookId(storyDb, logbook.id),
-      name,
-      worldbookPageId: body.worldbookPageId ?? null,
-    });
+    const tag = createTag(storyDb, { bookId: getTagScopeBookId(storyDb, logbook.id), name });
     reindexTagAcrossBook(storyDb, tag.id);
-    const worldbook = getBookByType(storyDb, "worldbook");
-    if (worldbook) autoLinkTagToEntry(storyDb, worldbook.id, tag);
     return c.json({ tag: getTag(storyDb, tag.id) ?? tag });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
@@ -469,11 +524,7 @@ storiesRoute.post("/:id/tags", async (c) => {
 });
 
 storiesRoute.patch("/:id/tags/:tagId", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    name?: string;
-    hidden?: boolean;
-    worldbookPageId?: string | null;
-  };
+  const body = (await c.req.json().catch(() => ({}))) as { name?: string; hidden?: boolean };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const tagId = c.req.param("tagId");
 
@@ -481,14 +532,9 @@ storiesRoute.patch("/:id/tags/:tagId", async (c) => {
     if (typeof body.name === "string") {
       const tag = renameTag(storyDb, tagId, body.name);
       reindexTagAcrossBook(storyDb, tag.id);
-      const worldbook = getBookByType(storyDb, "worldbook");
-      if (worldbook) autoLinkTagToEntry(storyDb, worldbook.id, tag);
     }
     if (typeof body.hidden === "boolean") {
       setTagHidden(storyDb, tagId, body.hidden);
-    }
-    if ("worldbookPageId" in body) {
-      setTagWorldbookPage(storyDb, tagId, body.worldbookPageId ?? null);
     }
     return c.json({ ok: true });
   } catch (err) {
@@ -504,27 +550,16 @@ storiesRoute.get("/:id/worldbook", (c) => {
 });
 
 storiesRoute.post("/:id/worldbook", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    entryType?: WorldbookEntryType;
-    isPc?: boolean;
-    name?: string;
-    fields?: Record<string, string>;
-  };
-  if (!body.entryType || !body.name) return c.json({ error: "entryType and name are required" }, 400);
+  const body = (await c.req.json().catch(() => ({}))) as { entryType?: WorldbookEntryType; content?: string };
+  if (!body.entryType || !body.content?.trim()) return c.json({ error: "entryType and content are required" }, 400);
 
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const worldbook = getBookByType(storyDb, "worldbook");
   if (!worldbook) return c.json({ error: "worldbook not found" }, 404);
 
   try {
-    const entry = createWorldbookEntry(storyDb, {
-      bookId: worldbook.id,
-      entryType: body.entryType,
-      isPc: body.isPc ?? false,
-      name: body.name,
-      fields: body.fields ?? {},
-    });
-    autoLinkEntryToTags(storyDb, getTagScopeBookId(storyDb, worldbook.id), entry);
+    const entry = createWorldbookEntry(storyDb, { bookId: worldbook.id, entryType: body.entryType, content: body.content });
+    indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, worldbook.id), entry.currentTextId);
     return c.json({ entry });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
@@ -532,21 +567,15 @@ storiesRoute.post("/:id/worldbook", async (c) => {
 });
 
 storiesRoute.patch("/:id/worldbook/:pageId", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    name?: string;
-    fields?: Record<string, string>;
-    hidden?: boolean;
-  };
+  const body = (await c.req.json().catch(() => ({}))) as { content?: string; hidden?: boolean };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const pageId = c.req.param("pageId");
 
   try {
     if (typeof body.hidden === "boolean") setWorldbookEntryHidden(storyDb, pageId, body.hidden);
-    if (typeof body.name === "string" || body.fields) {
-      const entry = updateWorldbookEntry(storyDb, pageId, { name: body.name, fields: body.fields });
-      if (typeof body.name === "string") {
-        autoLinkEntryToTags(storyDb, getTagScopeBookId(storyDb, entry.bookId), entry);
-      }
+    if (typeof body.content === "string") {
+      const entry = updateWorldbookEntry(storyDb, pageId, { content: body.content });
+      indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, entry.bookId), entry.currentTextId);
     }
     return c.json({ ok: true });
   } catch (err) {
@@ -557,6 +586,16 @@ storiesRoute.patch("/:id/worldbook/:pageId", async (c) => {
 storiesRoute.get("/:id/jobs", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   return c.json({ jobs: listRecentJobs(storyDb) });
+});
+
+/**
+ * Jobs still in flight for this story — lets a freshly (re)mounted client find a generation
+ * it isn't already watching (e.g. after closing and reopening the story tab) and reattach to
+ * its stream. Registered before the `:jobId` route below so "active" isn't swallowed as an id.
+ */
+storiesRoute.get("/:id/jobs/active", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  return c.json({ jobs: listActiveJobs(storyDb) });
 });
 
 storiesRoute.get("/:id/jobs/:jobId", (c) => {
@@ -616,6 +655,16 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
         unsubscribe();
         const text = job.targetTextId ? getText(storyDb, job.targetTextId) : null;
         void finish({ type: "done", fullText: text?.genPackage ?? "" }).then(resolve);
+        return;
+      }
+      // Still pending/running: replay whatever's accumulated so far (a reconnecting client —
+      // e.g. the story tab was closed and reopened mid-generation — sees the post at its
+      // current stage instead of nothing until it lands). Safe against the subscribe-then-read
+      // race above: no await happened between subscribeJob and this read, so nothing else could
+      // have run on Node's single thread to add tokens the buffer read would miss.
+      const buffered = getJobBuffer(jobId);
+      if (buffered && (buffered.text || buffered.progress)) {
+        void sse.writeSSE({ data: JSON.stringify({ type: "sync", text: buffered.text, progress: buffered.progress }) });
       }
     });
   });

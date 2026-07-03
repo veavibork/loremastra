@@ -66,28 +66,22 @@ CREATE TABLE IF NOT EXISTS archive_member (
 );
 CREATE INDEX IF NOT EXISTS idx_archive_member_text ON archive_member(text_id);
 
--- One row per worldbook entry, keyed to its page. Field content lives in
--- text.gen_package (JSON), so editing an entry is just createRetryText --
--- the same write-once-per-version primitive posts already use. That's what
--- gives worldbook entries version history/rollback for free (loremaster.md's
--- "Worldbook Versioning" section) without a second versioning mechanism.
--- Singleton enforcement (one Setting, one Register, one PC) is a DB-level
--- invariant via partial unique indexes, not just app-layer discipline.
+-- One row per worldbook entry, keyed to its page. Content lives in
+-- text.gen_package as a raw freeform string (no structured fields), so
+-- editing an entry is just createRetryText -- the same write-once-per-version
+-- primitive posts already use. That's what gives worldbook entries version
+-- history/rollback for free without a second versioning mechanism. No
+-- singleton enforcement -- content/roster/memory entries can repeat freely;
+-- CONTENT entries accumulate over a story's life and are read in order.
 CREATE TABLE IF NOT EXISTS worldbook_entry (
   page_id TEXT PRIMARY KEY REFERENCES page(id),
-  entry_type TEXT NOT NULL CHECK (entry_type IN ('setting','register','location','creature','faction','character')),
-  is_pc INTEGER NOT NULL DEFAULT 0,
-  name TEXT NOT NULL
+  entry_type TEXT NOT NULL CHECK (entry_type IN ('content','roster','memory'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_worldbook_singleton_setting ON worldbook_entry(entry_type) WHERE entry_type = 'setting';
-CREATE UNIQUE INDEX IF NOT EXISTS idx_worldbook_singleton_register ON worldbook_entry(entry_type) WHERE entry_type = 'register';
-CREATE UNIQUE INDEX IF NOT EXISTS idx_worldbook_singleton_pc ON worldbook_entry(is_pc) WHERE is_pc = 1;
 
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY,
   book_id TEXT NOT NULL REFERENCES book(id),
   name TEXT NOT NULL,
-  worldbook_page_id TEXT REFERENCES page(id),
   hidden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -120,6 +114,10 @@ CREATE TABLE IF NOT EXISTS story_state (
   kickoff_page_id TEXT REFERENCES page(id),
   current_page_id TEXT REFERENCES page(id)
 );
+-- ooc_session_start_page_id deliberately omitted here too (see ensureColumn in
+-- story-db.ts) -- it marks where the current post-kickoff OOC "update session"
+-- began, so the Editor's context can be scoped to just this session rather than
+-- every OOC turn the story has ever had.
 -- current_page_id deliberately omitted here (see ensureColumn in story-db.ts) so this
 -- insert works unchanged against pre-existing story_state tables from before that column
 -- existed — SQLite's CREATE TABLE IF NOT EXISTS is a no-op on an existing table regardless
@@ -153,7 +151,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at TEXT NOT NULL,
   target_text_id TEXT REFERENCES text(id),
   target_archive_id TEXT REFERENCES archive(id),
-  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup')),
+  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
   priority INTEGER NOT NULL DEFAULT 0,
   slot_cost INTEGER NOT NULL DEFAULT 1,

@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 
-export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup";
+export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook";
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
 export interface JobRow {
@@ -118,6 +118,14 @@ export function hasActiveJobForArchive(db: Database.Database, targetArchiveId: s
 /** Most recent jobs regardless of status, for the Debug section's live queue view. */
 export function listRecentJobs(db: Database.Database, limit = 30): JobRow[] {
   const rows = db.prepare(`SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?`).all(limit) as RawJobRow[];
+  return rows.map(mapJobRow);
+}
+
+/** Jobs not yet resolved (queued or actively generating), for clients reattaching to an in-flight generation after a remount. */
+export function listActiveJobs(db: Database.Database): JobRow[] {
+  const rows = db
+    .prepare(`SELECT * FROM jobs WHERE status IN ('pending', 'running') ORDER BY created_at ASC`)
+    .all() as RawJobRow[];
   return rows.map(mapJobRow);
 }
 

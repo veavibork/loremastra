@@ -84,35 +84,51 @@ Compounding this: context limits are finite. At 32k tokens, a long story starts 
 
 ## Structured Schema
 
-All worldbook entries, prompts, and tooling share a consistent schema. This keeps LLM inputs predictable, makes tooling easier to write and validate, and ensures the editor agent can reliably populate and validate entries.
+Worldbook entries are freeform prose, not structured fields. An earlier design used six typed
+entry schemas (Setting/Register/Location/Creature/Faction/Character) with structured fields,
+each populated via the Editor calling a validated tool per entry. That was tried and dropped
+(2026-07-03) — model tool-calling reliably invoking the right schema, with the right field
+casing, across a multi-turn conversation proved to be the weak link, not the schema design
+itself (see docs/stub-revisions.md's superseded entry for the specifics that led to the
+switch).
+
+The current mechanism: the Editor writes plain prose during setup and OOC "update session"
+turns, wrapping anything worldbook-worthy in a bracket tag. The back end detects these
+deterministically via regex — no model-side tool call, no structured field extraction — and
+stores the tagged span verbatim as a single string.
 
 ### Entry Types
 
-**Setting** — The elevator pitch of the scenario. No subdivisions. One entry per story.
+**CONTENT** — Setting/premise/register material: the elevator pitch, tone, what's welcome,
+what's off the table. Accumulates rather than singleton — later CONTENT entries are treated as
+deltas/contradictions to earlier ones, not replacements. Always injected into every Author
+prompt, in creation order.
 
-**Register** — The baseline contract for how the story is told: tense (first/second/third person, past/present), tone, motifs, what's welcome, what's off the table.
+**ROSTER** — A character, faction, creature, or location worth remembering — whatever the
+Editor judges is worth recording, with no forced subdivision by kind. Tag-triggered like any
+other non-CONTENT entry, not always-injected.
 
-**Location** — A specific place that matters to the story. Only used for bespoke locations — the LLM already knows what a city looks like. Fields: tags, atmosphere, who's present, what's available, how it responds to expected PC actions.
+**MEMORY** — A story-state fact or event worth remembering going forward (an established
+promise, a revealed secret, a changed relationship) — also tag-triggered, not always-injected.
 
-**Creature** — A nonhuman type with meaningfully distinct behavior, cognition, or culture. Only used when the story centers on that creature type. The LLM doesn't need a goblin entry for a broad fantasy setting; it does need one for a story that lives inside goblin society.
-
-**Faction** — A group with shared identity, goals, and presence. Minor characters can be tucked into faction entries as single-paragraph notes. Only used for factions that are specific to the story — the LLM doesn't need an entry for office workers.
-
-**Character (NPC)** — A major character. Fields: tags, identity, wants, knows, disposition, secrets, voice.
-
-**Character (PC)** — Always present. Uses the same schema as NPC but is handled differently throughout the prompt — the PC is treated as another character, not as the user, to prevent the LLM from conflating "obey the user" with "obey the PC."
-
-### Example NPC Entry
+### Bracket Format
 
 ```
-Tags: Halia, Thornton
-Identity: Late thirties, sharply dressed for a frontier town. Runs the Miner's Exchange.
-Wants: The Redbrand leadership gone, but someone else takes the risk. Long term: run Phandalin in all but name.
-Knows: The Redbrands have a base under Tresendar Manor. A goblin in their service knows more.
-Disposition: Calculating. Friendly on the surface. Keeps score.
-Secrets: Zhentarim agent. Wants the Redbrand operation for herself, not just dissolved.
-Voice: Measured. Smiles often, with her mouth.
+[CONTENT]
+A frontier mining town under Zhentarim influence, tone: grounded low fantasy, welcomes moral
+ambiguity, off the table: sexual violence.
+[/CONTENT]
+
+[ROSTER]
+Halia Thornton — late thirties, sharply dressed, runs the Miner's Exchange. Wants the
+Redbrands gone but doesn't want to take the risk herself; long term wants to run Phandalin in
+all but name. Secretly a Zhentarim agent.
+[/ROSTER]
 ```
+
+Nothing inside a bracket span is reinterpreted or reformatted — the raw prose the Editor wrote
+is the entry's content, verbatim. No name field, no tags field, no per-kind field list. The UI
+identifies an entry by its type plus an auto-truncated preview of its first line.
 
 ---
 
@@ -124,18 +140,22 @@ Inference-based auto-tagging was evaluated and rejected. The results were unreli
 
 ### How Tags Work
 
-- Each worldbook entry has one or more tags (e.g. `halia`, `thornton`).
+- Tags are pure grep/index constructs. There is no pointer from a tag to a worldbook entry or
+  from an entry to a tag — a tag "belongs" to whatever content it happens to textually match,
+  posts and worldbook entries alike (2026-07-03: an earlier design let the user manually point a
+  tag at a specific entry; dropped in favor of matching everything the same way).
+- A tag must be a single word, letters only, at least three characters (`/^[A-Za-z]{3,}$/`).
 - Tags are maintained by the user in a tag cloud visible throughout the story phase.
-- When a tag is added or edited, the back end performs a retroactive grep across all existing posts and stores the resulting index (which posts contain that tag).
-- At prompt assembly time, this index drives decisions about which archive blocks to expand and which compressed rows to promote to verbose.
-- Tags without worldbook entries are evaluated before tags with worldbook entries during prompt assembly. This prioritizes surface area (events, references) over known lore, since the lore is already in the worldbook.
-- The PC tag is always excluded from the expansion priority loop — the PC entry is always present and would otherwise dominate the budget.
+- When a tag is added or edited, the back end performs a retroactive grep across all existing posts and worldbook entries and stores the resulting index (which content contains that tag).
+- At prompt assembly time, this index drives two independent things: which archive blocks/compressed rows get promoted to verbose (matches against post/compressed content), and which non-CONTENT worldbook entries (ROSTER/MEMORY) get pulled into the prompt (matches against entry content). CONTENT entries are always injected regardless of tags.
+- Tags whose match doesn't resolve to a worldbook entry are evaluated before tags that do, during prompt assembly. This prioritizes surface area (events, references) over known lore, since the lore is already in the worldbook.
 
 ### Tag Cloud Lifecycle
 
-- **Setup phase:** The editor agent proposes an initial tag cloud alongside the worldbook. The user reviews and edits both.
+- **Setup phase:** The user creates tags as the worldbook takes shape. Tags are entirely
+  user-created — the Editor never creates, edits, or points a tag at anything (2026-07-03).
 - **Story phase:** Tags are live and visible. The user adds tags as new characters, locations, or concepts emerge. Low friction is a hard UI requirement here — tagging during play must be fast.
-- **Post-edit:** Any tag change triggers a retroactive re-index of existing posts.
+- **Post-edit:** Any tag change triggers a retroactive re-index of existing posts and worldbook entries.
 
 ---
 
@@ -143,7 +163,7 @@ Inference-based auto-tagging was evaluated and rejected. The results were unreli
 
 LM has three agents, each with a distinct role and prompt strategy.
 
-**Editor** — Conversational agent for setup and maintenance. Conducts structured "shop talk" with the user to populate the worldbook and tag cloud. Has tooling to initialize stories, generate archive blocks, and update worldbook entries. Also used during kickoff to generate and iterate on the opening post.
+**Editor** — Conversational agent for setup and maintenance. Conducts "shop talk" with the user, writing plain prose that wraps anything worldbook-worthy in a bracket tag the back end detects deterministically (see Structured Schema) — not a tool call. Also used during kickoff to generate and iterate on the opening post.
 
 **Author** — Story-phase agent. Receives worldbook entries (persistent and tag-triggered), the assembled log, and the user's latest post. Prompted to treat the user's input as describing the PC's actions — not as direct user commands. Responsible for all prose generation during play.
 
@@ -159,7 +179,18 @@ LM makes deliberate use of model-side tool calling and exposes its own internals
 
 Each agent's capabilities are implemented as discrete tools — functions with enforced inputs and outputs — rather than monolithic prompts. This keeps prompts scoped tightly to what's actually needed: pronoun disambiguation, for example, is only loaded into the Worker's context when a post actually contains ambiguous pronouns, not on every compression call. Tool use is what makes the three-agent architecture composable rather than each agent carrying one enormous catch-all prompt.
 
-Not all of this is deterministic prompt assembly the backend can pre-compute. The Editor's setup conversation is the clearest counterexample: the backend has no reliable way to know in advance when the user has supplied enough information to justify creating a worldbook entry — that is a judgment call the model itself must make mid-conversation, by recognizing it has enough to call a tool (e.g. `create_worldbook_entry`) and doing so. This requires the provider's API to support native function calling, not just text generation. Phase 1 requires the inference provider to support native function calling as a baseline; this is one of the deciding factors in scoping Phase 1 to Featherless alone (see Provider Abstraction).
+The Editor's worldbook authoring is a deliberate exception to this: an earlier design had the
+Editor call a tool (e.g. `create_worldbook_entry`) mid-conversation, on its own judgment that
+enough had been established to record. In practice this proved to be the least reliable part
+of the whole tool-use approach — schema/field-casing drift and inconsistent completeness
+across otherwise-identical conversations (see docs/stub-revisions.md's superseded entry) — so
+it was replaced (2026-07-03) with plain bracket-tagged prose the back end parses
+deterministically via regex, no tool call involved. Compression and archiving still depend on
+real forced tool-calling (the Worker's `submit_summary`/`submit_archive_summary`), which has
+been reliable throughout — the problem was specific to open-ended, judgment-call extraction,
+not tool-calling as a mechanism. Phase 1 still requires the inference provider to support
+native function calling as a baseline for the Worker's role; this remains one of the deciding
+factors in scoping Phase 1 to Featherless alone (see Provider Abstraction).
 
 ### MCP Server (Developer-Facing)
 
@@ -193,11 +224,11 @@ At the time of each author call, the back end assembles the prompt iteratively w
 
 1. Subtract maximum declared output length from the budget.
 2. Subtract maximum declared reasoning length (may be zero — reasoning modes are not always beneficial for RP and must be togglable per agent).
-3. Always include: core prompt, register, setting, PC entry.
-4. Include all tag-triggered worldbook entries.
+3. Always include: core prompt, all CONTENT worldbook entries (in creation order).
+4. Include all tag-triggered ROSTER/MEMORY worldbook entries.
 5. Fill the most recent posts as verbose, up to 20% of the remaining budget.
 6. Fill all remaining older posts as archive blocks.
-7. Iterate from most recent to least recent archive block: if a block contains a tagged post, swap it for the individually compressed rows of that block, budget permitting. This is iterative to allow relative weighting. PC tag excluded. Tags without worldbook entries evaluated before tags with worldbook entries.
+7. Iterate from most recent to least recent archive block: if a block contains a tagged post, swap it for the individually compressed rows of that block, budget permitting. This is iterative to allow relative weighting. Tags without a matching worldbook entry evaluated before tags that have one.
 8. Iterate from most recent to least recent compressed row: if a row is tagged, swap it for its verbose form, budget permitting. Same ordering rules apply.
 
 The result: the most recent history is always verbose. Any history relevant to the current action is promoted as far toward verbose as the budget allows. Everything else degrades gracefully from compressed to archived.
@@ -210,7 +241,7 @@ The result: the most recent history is always verbose. Any history relevant to t
 
 1. User initiates a new story.
 2. The editor opens a structured conversation, asking what kind of story the user wants and probing for details.
-3. As the conversation develops, the editor calls tooling to populate worldbook entries and the tag cloud. Both are presented to the user as a live preview beside the chat.
+3. As the conversation develops, the back end regex-scans the editor's OOC replies for bracket-tagged blocks and creates a worldbook entry per detected block, highlighted live in the chat. The tag cloud is user-maintained, not editor-populated. Both are presented to the user as a live preview beside the chat.
 4. User clicks **Kickoff** on the live worldbook. The editor finalizes the worldbook and transitions to the kickoff phase.
 
 ### 2. Kickoff
@@ -304,9 +335,9 @@ The goal is that a user never needs to be in more than one section to accomplish
 
 **Lore**
 Two-column layout. The left column holds the Tags panel, always visible. The right column has four tabs: Memory, Worldbook, Compressed, and Archived. This gives the user a live view of the lore state at any point during play. Hidden elements are excluded from any assembled prompt; hiding a compressed line requeues the corresponding archive.
-- *Tags* — tag management; create, edit, hide (toggle), delete (toggle), filter (toggle). Tags are alphabetic only with no support for special characters, punctuation, or spaces. Edit, hide, and delete toggles prompt a save button to lock in the change. The filter toggle acts as a filter on each of the right column's four tabs. With a tag filter active, the Memory tab generates its prompt as if the tag had been picked up in the user's input text; the Worldbook tab shows entries with that tag first, then entries *matching* that tag by text but not tagged; the Compressed tab shows only entries indexed for the tag; the Archived tab shows only blocks covering compressed posts indexed for the tag.
+- *Tags* — tag management; create, edit, hide (toggle), delete (toggle), filter (toggle). Tags are a single word, letters only, at least three characters. Edit, hide, and delete toggles prompt a save button to lock in the change. The filter toggle acts as a filter on each of the right column's four tabs. With a tag filter active, the Memory tab generates its prompt as if the tag had been picked up in the user's input text; the Worldbook tab shows entries the tag's grep matched; the Compressed tab shows only entries indexed for the tag; the Archived tab shows only blocks covering compressed posts indexed for the tag. There's no separate "tagged" vs. "matches by text" distinction to show — a tag's relationship to an entry is always the grep match itself, nothing is stored on the entry.
 - *Memory* — the assembled prompt inspector: shows the finalized prompt as it would be sent, with each component's source identified. The purpose is to explore the interactions of tags and compression/archives.
-- *Worldbook* — worldbook management; create, edit, hide (toggle), delete. Entries not conforming to the expected schema are highlighted, but creation/saving is not blocked. Entries with no tags are highlighted; entries matching a tag by text but not carrying that tag are highlighted less obtrusively. Schema selection is maintained as a discrete flag. Tag selection is maintained as a discrete array.
+- *Worldbook* — worldbook management; create, edit, hide (toggle), delete. Entry type (CONTENT/ROSTER/MEMORY) is a discrete flag; content is freeform prose with no field schema to conform to or validate against.
 - *Compressed* — compression management; edit, hide (toggle), requeue. Hydrates with the complete set of eligible index entries. Uncompressed but eligible rows are highlighted.
 - *Archived* — archive management; edit, hide (toggle), requeue. Hydrates with blocks that cover the complete set of eligible index entries. Unarchived but eligible blocks are highlighted.
 

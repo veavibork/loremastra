@@ -46,7 +46,7 @@
   background: #3a3a3a;
 }
 
-.pending-progress {
+.pending-thinking {
   font-size: 0.75rem;
   opacity: 0.6;
   font-style: italic;
@@ -79,4 +79,29 @@
 
 .edit-box-textarea:focus {
   outline: 1px dashed rgba(255, 255, 255, 0.3);
+}
+
+/* Highlights [CONTENT]/[ROSTER]/[MEMORY] spans in OOC/Guide mode so the player can see in
+   advance what's about to become a worldbook entry — see EntryContent.tsx's highlightBlocks prop. */
+.worldbook-block {
+  display: inline;
+  border-radius: 4px;
+  padding: 0 0.15rem;
+  color: inherit;
+}
+
+.worldbook-block p {
+  display: inline;
+}
+
+.worldbook-block-content {
+  background: rgba(122, 162, 247, 0.25);
+}
+
+.worldbook-block-roster {
+  background: rgba(158, 206, 106, 0.25);
+}
+
+.worldbook-block-memory {
+  background: rgba(224, 175, 104, 0.25);
 }

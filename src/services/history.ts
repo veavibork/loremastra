@@ -5,15 +5,10 @@ import { getOwnerArchiveForText, listMemberTextIds, type ArchiveRow } from "../d
 import { listTagIdsForText, listTextIdsForTag } from "../db/tag-index-store.js";
 import { getTag, type TagRow } from "../db/tag-store.js";
 import { getBookByType } from "../db/book-store.js";
-import {
-  getPcEntry,
-  getSingletonEntry,
-  getWorldbookEntry,
-  WORLDBOOK_FIELD_SCHEMAS,
-  type WorldbookEntry,
-} from "../db/worldbook-store.js";
+import { listContentEntries, listWorldbookEntries, type WorldbookEntry } from "../db/worldbook-store.js";
 import type { ChatMessage } from "../inference/featherless.js";
 import { getAgentProfile } from "./agent-config.js";
+import { AUTHOR_SYSTEM_PROMPT, AUTHOR_KICKOFF_PROMPT } from "../prompts.js";
 
 // No real tokenizer wired up yet (Featherless exposes /v1/tokenize — see
 // docs/featherless-notes.md — not yet used). This is a rough approximation,
@@ -39,116 +34,21 @@ interface Line {
   archiveId?: string;
 }
 
-/** Renders a worldbook entry the same way the doc's own example NPC entry is formatted (Tags: ... / Label: value). */
-function formatWorldbookEntry(entry: WorldbookEntry, tagNames: string[]): string {
-  const schema = WORLDBOOK_FIELD_SCHEMAS[entry.entryType];
-  const lines = [`[${entry.entryType}${entry.isPc ? " - PC" : ""}] ${entry.name}`];
-  if (tagNames.length) lines.push(`Tags: ${tagNames.join(", ")}`);
-  for (const { key, label } of schema) {
-    const value = entry.fields[key];
-    if (value) lines.push(`${label}: ${value}`);
-  }
-  return lines.join("\n");
+/** Renders a worldbook entry as its raw bracket-tagged content — entries have no structured fields or name, just freeform prose. */
+function formatWorldbookEntry(entry: WorldbookEntry): string {
+  return `[${entry.entryType.toUpperCase()}]\n${entry.content}`;
 }
-
-function tagNamesForEntry(db: Database.Database, worldbookBookId: string, pageId: string): string[] {
-  // Tags don't reference a book directly, but every tag pointing at this page belongs to
-  // the story's tag scope regardless of book id — a simple lookup by worldbook_page_id.
-  const rows = db.prepare(`SELECT name FROM tags WHERE worldbook_page_id = ?`).all(pageId) as Array<{ name: string }>;
-  return rows.map((r) => r.name);
-}
-
-/**
- * The Author's core identity/rules. Combines lorepebble's st2.json GM prompt
- * (three jobs, PC-action boundaries, worldbook usage rules, pacing/voice
- * craft) with three ideas from Alex's improv/social-contract notes: the
- * user/player/character layering (LLMs conflate "the user" with "the PC" and
- * inherit obedience instincts toward them), the yes-and/no-but improv
- * contract, and "but, therefore" causal structure over flat "and then" event
- * chains. PC address deliberately kept as st2.json's existing 2nd-person
- * convention — an open question pending real play-testing, see
- * docs/stub-revisions.md.
- */
-export const AUTHOR_SYSTEM_PROMPT = `You are the Game Master for the player's solo roleplay session. Three jobs at once:
-narrating what the player perceives, voicing every NPC with distinct wants and reactions,
-and tracking what's happening in the world beyond what's directly seen — how it shifts in
-response to what the player does.
-
-You don't narrate the player's thoughts, feelings, intentions, or actions. They write their
-own character. You write everything else. If they say "I approach the door," describe what
-they see and hear — not how they approached, and never what they're thinking or feeling
-while doing it.
-
-Carry the scene forward from where the last moment ended. End at a moment that invites the
-next action — a question hanging unanswered, a half-finished gesture, a sound that just
-resolved. The scene asks the player to act; you don't have to.
-
-THREE LAYERS, ONE PLAYER
-
-The person you're responding to occupies three roles, and they are not the same:
-
-- As a USER, they get obeyed. Out-of-character requests — pacing, formatting, content
-  limits — are instructions.
-- As a PLAYER, their character's actions are a move in a scene, not a command. Respond
-  like an improv scene partner: extend what earns it ("yes, and—"), complicate what needs
-  tension ("no, but—"). Challenge them. Take the story somewhere they didn't ask for. A GM
-  who always gives the player what they asked for isn't running a game.
-- As a CHARACTER (their PC), they have real narrative weight but no special immunity. NPCs
-  can disagree with them, dislike them, refuse them, act against them — exactly as they
-  would against anyone else in the fiction — unless the Content Register says otherwise.
-  Don't let any instinct to please the user leak into how the world treats their PC.
-
-BUT, THEREFORE — NOT AND, THEN
-
-Scenes built from "this happened, and then that happened" go flat. Build causally: this
-happens, BUT [complication], THEREFORE [consequence]. Every beat should follow from what
-came before, not just sit next to it.
-
-WORLDBOOK ENTRIES
-
-Structured information about the world comes to you through worldbook entries. Treat them
-as authoritative. NPC entries describe individuals — use them for the character and for
-inferring how they'd react to situations they don't directly cover. Location entries
-describe places. Faction entries describe organized groups. Creature entries include
-explicit "do not" rails — read them; the point is that non-human minds shouldn't think or
-speak like small humans. Role entries cover generic members of a type (the unnamed
-librarian); a named NPC entry overrides a Role entry for that individual. Setting entries
-flavor everything. Content Register defines what content space the game occupies — stay
-inside it.
-
-Where an entry contains a secret, you know it; the player doesn't. NPCs reveal information
-through behavior, slip-ups, or earned trust — never narrator exposition.
-
-You can invent details to fill unspecified gaps — a face in a crowd, an unmapped room's
-layout, weather. You can't invent major developments that override the worldbook or trap
-the player somewhere they can't escape. The worldbook is the spine; your improvisation
-fleshes it out, doesn't rewrite it.
-
-CRAFT
-
-Scenes have shape — sensory opening, development through choice and consequence, close
-when a decision lands or a moment resolves. Don't extend a scene past its natural end.
-Response length matches the weight of the moment: a glance across a room is a sentence or
-two; a confrontation earns more. When in doubt, write less. Reach for the specific over the
-generic — the bartender wipes a glass that's already clean, not "a tough-looking
-bartender." NPCs sound like who they are; a dwarf miner and an elven priestess don't share
-a voice. Broken Common, alien syntax, and accents live only inside that character's quoted
-dialogue — your narration voice stays clean regardless of who's been talking.
-
-Tone is calibrated by the Setting entry and Content Register. Within whatever those
-establish: the world existed before the player arrived and continues without them. NPCs
-have lives, not quest-dispensers.`;
 
 /**
  * Implements the doc's full tiered prompt assembly, steps 3-8 of the Log
  * Compression Pipeline algorithm. Step 3 always-includes the core prompt plus
- * Register/Setting/PC. Step 4 includes tag-triggered worldbook entries. Steps
- * 7-8 split trigger tags into "no worldbook entry" vs "has a worldbook entry"
- * and promote using the first group before the second, per the doc's
- * ordering rule (entries already surfaced via step 4 don't need their raw
- * post promoted as urgently as tags with no entry at all — those are the
- * only way that surface area reaches the prompt). Token counting is a
- * chars/4 estimate, not real tokenization.
+ * every CONTENT entry (in creation order). Step 4 includes tag-triggered
+ * ROSTER/MEMORY entries. Steps 7-8 split trigger tags into "no worldbook
+ * entry" vs "has a worldbook entry" and promote using the first group before
+ * the second, per the doc's ordering rule (entries already surfaced via step
+ * 4 don't need their raw post promoted as urgently as tags with no entry at
+ * all — those are the only way that surface area reaches the prompt). Token
+ * counting is a chars/4 estimate, not real tokenization.
  */
 /**
  * `overrideTagIds`, when passed (even as an empty array), replaces the real trigger-post
@@ -185,30 +85,34 @@ export function assembleAuthorPrompt(
   let hasEntryTagIds: string[] = [];
   if (worldbookBook) {
     const includedPageIds = new Set<string>();
-    const setting = getSingletonEntry(db, worldbookBook.id, "setting");
-    const register = getSingletonEntry(db, worldbookBook.id, "register");
-    const pc = getPcEntry(db, worldbookBook.id);
-    for (const entry of [register, setting, pc]) {
-      if (!entry) continue;
+    for (const entry of listContentEntries(db, worldbookBook.id)) {
       includedPageIds.add(entry.pageId);
-      worldbookHeaderLines.push(formatWorldbookEntry(entry, tagNamesForEntry(db, worldbookBook.id, entry.pageId)));
+      worldbookHeaderLines.push(formatWorldbookEntry(entry));
     }
 
-    const triggerTags = triggerTagIds.map((id) => getTag(db, id)).filter((t): t is TagRow => t !== null);
-    // The PC tag (whichever tag(s) point at the PC entry) is excluded from the
-    // expansion/promotion priority loop — the PC entry is already always-included
-    // and would otherwise dominate the budget since nearly every post mentions the PC.
-    const pcPageId = pc?.pageId ?? null;
-    const eligibleTags = triggerTags.filter((t) => t.worldbookPageId !== pcPageId);
-    noEntryTagIds = eligibleTags.filter((t) => !t.worldbookPageId).map((t) => t.id);
-    hasEntryTagIds = eligibleTags.filter((t) => t.worldbookPageId).map((t) => t.id);
+    // Tag-triggered ROSTER/MEMORY lookup, via the tag_index (pure grep match) rather than
+    // any stored pointer — CONTENT is excluded since it's already always-injected above.
+    const taggableEntries = listWorldbookEntries(db, worldbookBook.id, { includeHidden: false }).filter(
+      (e) => e.entryType !== "content"
+    );
+    const entryByTextId = new Map(taggableEntries.map((e) => [e.currentTextId, e]));
 
-    for (const tag of eligibleTags) {
-      if (!tag.worldbookPageId || includedPageIds.has(tag.worldbookPageId)) continue;
-      const entry = getWorldbookEntry(db, tag.worldbookPageId);
-      if (!entry || entry.hidden) continue;
-      includedPageIds.add(entry.pageId);
-      worldbookHeaderLines.push(formatWorldbookEntry(entry, tagNamesForEntry(db, worldbookBook.id, entry.pageId)));
+    const triggerTags = triggerTagIds.map((id) => getTag(db, id)).filter((t): t is TagRow => t !== null);
+    noEntryTagIds = [];
+    hasEntryTagIds = [];
+    for (const tag of triggerTags) {
+      const matchedEntry = listTextIdsForTag(db, tag.id)
+        .map((textId) => entryByTextId.get(textId))
+        .find((e): e is WorldbookEntry => e !== undefined);
+      if (matchedEntry) {
+        hasEntryTagIds.push(tag.id);
+        if (!includedPageIds.has(matchedEntry.pageId)) {
+          includedPageIds.add(matchedEntry.pageId);
+          worldbookHeaderLines.push(formatWorldbookEntry(matchedEntry));
+        }
+      } else {
+        noEntryTagIds.push(tag.id);
+      }
     }
   }
   const worldbookTokens = worldbookHeaderLines.reduce((sum, l) => sum + estimateTokens(l), 0);
@@ -325,10 +229,6 @@ export function assembleAuthorPrompt(
   ];
 }
 
-export const KICKOFF_INSTRUCTION =
-  "Generate the opening post for this story based on the worldbook above. Write in the register and " +
-  "voice described. End at a natural moment that invites the player to act.";
-
 /**
  * Kickoff's opening post is generated from the worldbook alone — no log
  * history — deliberately: the setup conversation that produced the
@@ -337,15 +237,10 @@ export const KICKOFF_INSTRUCTION =
  * meta-conversation into the story.
  */
 export function assembleKickoffPrompt(db: Database.Database, worldbookBookId: string): ChatMessage[] {
-  const setting = getSingletonEntry(db, worldbookBookId, "setting");
-  const register = getSingletonEntry(db, worldbookBookId, "register");
-  const pc = getPcEntry(db, worldbookBookId);
-
   const messages: ChatMessage[] = [{ role: "system", content: AUTHOR_SYSTEM_PROMPT }];
-  for (const entry of [register, setting, pc]) {
-    if (!entry) continue;
-    messages.push({ role: "system", content: formatWorldbookEntry(entry, tagNamesForEntry(db, worldbookBookId, entry.pageId)) });
+  for (const entry of listContentEntries(db, worldbookBookId)) {
+    messages.push({ role: "system", content: formatWorldbookEntry(entry) });
   }
-  messages.push({ role: "system", content: KICKOFF_INSTRUCTION });
+  messages.push({ role: "system", content: AUTHOR_KICKOFF_PROMPT });
   return messages;
 }

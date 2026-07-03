@@ -27,6 +27,38 @@ function ensureColumn(db: Database.Database, table: string, column: string, ddl:
   }
 }
 
+/** Same lightweight stand-in as ensureColumn, for the rarer case of dropping a column. */
+function dropColumnIfExists(db: Database.Database, table: string, column: string): void {
+  try {
+    db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+  } catch (err) {
+    if (!(err instanceof Error) || !err.message.includes("no such column")) throw err;
+  }
+}
+
+/**
+ * worldbook_entry's shape changed incompatibly (six typed schemas with is_pc/name ->
+ * three freeform types, content-only) as part of the tags/prompts/worldbook refactor.
+ * This is a dev-only, single-file-per-story codebase with no real users yet, so rather
+ * than inventing lossy heuristics to carry old structured entries into the new freeform
+ * shape, old rows are just dropped -- their underlying page/text rows are orphaned, not
+ * deleted, which is harmless since listWorldbookEntries only surfaces rows that still
+ * join to a live worldbook_entry row.
+ */
+function migrateWorldbookEntryShape(db: Database.Database): void {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'worldbook_entry'`)
+    .get() as { sql: string } | undefined;
+  if (!row || !row.sql.includes("'setting'")) return;
+
+  db.exec(`
+    DROP TABLE worldbook_entry;
+    DROP INDEX IF EXISTS idx_worldbook_singleton_setting;
+    DROP INDEX IF EXISTS idx_worldbook_singleton_register;
+    DROP INDEX IF EXISTS idx_worldbook_singleton_pc;
+  `);
+}
+
 /**
  * `selected_fork_page_id` existed in the schema from day one but nothing
  * ever wrote to it until page chain traversal became fork-aware (Milestone
@@ -66,9 +98,12 @@ export function getStoryDb(storyId: string): Database.Database {
   const db = new Database(storyDbPath(storyId));
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  migrateWorldbookEntryShape(db);
   db.exec(STORY_SCHEMA_SQL);
+  dropColumnIfExists(db, "tags", "worldbook_page_id");
   ensureColumn(db, "story_state", "current_page_id", "TEXT REFERENCES page(id)");
   ensureColumn(db, "story_state", "history_cursor_seq", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "story_state", "ooc_session_start_page_id", "TEXT REFERENCES page(id)");
   ensureColumn(db, "jobs", "model", "TEXT");
   ensureColumn(db, "jobs", "token_estimate", "INTEGER");
   backfillSelectedForks(db);

@@ -264,6 +264,70 @@ the single-active-session-eviction bullet is done. Future Phases appendix items 
 WYSIWYG layout editing, worldbook deltas, pronoun-per-tag declarations, outside MCP client support)
 stay out of scope unless explicitly requested.
 
+**Additional, post-Phase-1: centralized prompts, freeform worldbook, pure-grep tags** — ✅ done,
+2026-07-03. Replaces the forced-tool-calling worldbook extraction pipeline (Milestone C's
+`runWorldbookExtraction`) with plain bracket-tagged prose the back end regex-scans deterministically —
+see docs/stub-revisions.md's superseded entry for why the old mechanism was dropped, and
+loremaster.md's Structured Schema section for the new one. Summary of what changed:
+- `src/prompts.ts` centralizes all 9 prompt constants (previously scattered/duplicated across
+  `history.ts`, the now-deleted `setup.ts`, and `pipeline-runner.ts`), sourced verbatim from a
+  `prompts.md` the user wrote (deleted once `src/prompts.ts` was confirmed working, to kill the
+  duplication-drift risk).
+- Worldbook entries collapsed from six typed schemas (Setting/Register/Location/Creature/Faction/
+  Character) with structured fields to three freeform types (CONTENT/ROSTER/MEMORY), each a single
+  content string with no name/fields/singleton enforcement. CONTENT accumulates (not a singleton) and
+  is always injected in creation order; ROSTER/MEMORY are tag-triggered like before.
+- `src/services/worldbook-extraction.ts` (backend) + `web/src/worldbookBlocks.ts` (frontend, no shared
+  module path between the two TS projects so this is a deliberately duplicated sibling copy) detect
+  `[CONTENT]`/`[ROSTER]`/`[MEMORY]` bracket pairs via a backreferenced regex — mismatched tags never
+  match, empty result is not an error, content is stored verbatim.
+- Tags dropped their manual `worldbookPageId` pointer entirely — matching is pure grep via the
+  existing `tag_index` infrastructure (already spanned both logbook and worldbook content as siblings
+  under the "game" book), now also wired to fire on worldbook entry create/update, closing a real gap
+  where only post creation triggered re-indexing before. Tag validation tightened to
+  `/^[A-Za-z]{3,}$/` (3-character floor added).
+- Pre-kickoff setup turns stayed dual-pass (conversational reply + a separate `setup-worldbook` job
+  authoring pass, matching `EDITOR_SETUP_PROMPT` + `EDITOR_SETUP_WORLDBOOK` being distinct prompts);
+  post-kickoff OOC "update sessions" became single-pass (`EDITOR_UPDATE_PROMPT` embeds the bracket
+  schema inline, so the one reply is scanned directly) — this asymmetry surfaced by re-reading
+  prompts.md literally mid-implementation, confirmed with the user rather than assumed. Update
+  sessions are session-scoped (`story_state.ooc_session_start_page_id`) but get the current IC log
+  folded in as read-only reference context, reusing `assembleAuthorPrompt`'s existing tiered assembly
+  rather than a second history system.
+- Migration: `worldbook_entry`'s old shape is dropped and recreated on next `getStoryDb()` open (dev-only
+  codebase, no migration framework, explicit no-data-preservation choice) — detected via checking
+  `sqlite_master.sql` for the old `'setting'` CHECK string.
+
+Verified live end-to-end against the running dev server with real Featherless calls (not mocked):
+migration ran clean against 2 pre-existing story DBs, tag validation rejected `"ab"`/`"a1b"` and
+accepted `"gareth"`, bidirectional tag↔entry indexing confirmed both orders, a real dual-pass setup
+turn produced 1 CONTENT + 2 ROSTER + 1 MEMORY entry from one model response, kickoff correctly pulled
+CONTENT entries in, tag-triggered ROSTER/MEMORY injection confirmed via `/prompt-preview`, and an
+update-session turn ("bring me up to date") showed genuine IC awareness with exactly one job created
+(single-pass confirmed).
+
+**Additional, post-Phase-1: reconnect-safe streaming + live "Thinking…" indicator** — ✅ done,
+2026-07-03. Two gaps found in real use: closing the story tab mid-generation and reopening it left the
+post frozen as a literal "…" until some unrelated action happened to call `refresh()` (pendingReplies
+is plain component state, wiped on remount, and nothing re-subscribed to the still-running job); and
+the pre-first-token gap showed a dead "…" with no signal at all.
+- `job-events.ts` now buffers each job's accumulated text/progress in memory (cleared on
+  done/error). A fresh SSE connection — including a genuinely new one after remount, not just
+  EventSource's own auto-reconnect — gets a `sync` event replaying everything generated so far before
+  continuing with live `token` events. Verified live: a second connection opened mid-generation
+  received the exact accumulated text the first listener had, byte-for-byte.
+- New `GET /:id/jobs/active` (registered before the `:jobId` route to avoid the param route
+  swallowing the literal path "active") lets a remounted `StoryView` find any log entry still
+  mid-generation (`content === null`, agent role) and reattach `watchJob` to its job — confined to
+  mount/story-switch only, not every `refresh()` call, since in-session action handlers already call
+  `watchJob` themselves and pendingReplies' state closure wouldn't reflect that yet at the point a
+  general `refresh()`-triggered recovery pass would run, which would otherwise double-subscribe.
+- Confirmed there's genuinely no more granular signal available before the first token — Featherless
+  gives nothing between "request sent" and "first token," and the existing `publishProgress` narration
+  mechanism has never actually been wired up anywhere. Replaced the static "…" with a ticking
+  `Thinking… (Ns)` counter (elapsed since the job was created), only running the interval while
+  something is actually in that dead zone.
+
 ## Notes on sequencing
 
 This is a suggested order, not a fixed contract — A→B→C is chosen because it finishes what's already

@@ -9,27 +9,59 @@ import { EventEmitter } from "node:events";
 const emitter = new EventEmitter();
 emitter.setMaxListeners(0);
 
+/**
+ * Accumulated text/progress per in-flight job, so a client that (re)connects mid-generation
+ * (e.g. the story tab was closed and reopened) can catch up on everything emitted before it
+ * started listening, instead of seeing nothing until the next token or the job's own "done".
+ * Cleared once the job reaches a terminal state.
+ */
+interface JobBuffer {
+  text: string;
+  progress?: string;
+}
+const buffers = new Map<string, JobBuffer>();
+
 export function publishToken(jobId: string, text: string): void {
+  const buf = buffers.get(jobId) ?? { text: "" };
+  buf.text += text;
+  buffers.set(jobId, buf);
   emitter.emit(jobId, { type: "token", text });
 }
 
 /** For non-streaming jobs (e.g. the Editor's tool-calling setup turn) that have no tokens to emit but do have real intermediate steps worth narrating instead of a dead "…". */
 export function publishProgress(jobId: string, label: string): void {
+  const buf = buffers.get(jobId) ?? { text: "" };
+  buf.progress = label;
+  buffers.set(jobId, buf);
   emitter.emit(jobId, { type: "progress", label });
 }
 
-export function publishDone(jobId: string, fullText: string): void {
-  emitter.emit(jobId, { type: "done", fullText });
+/** Snapshot of whatever's accumulated for a job so far — read by the stream route when a client connects, to replay it as a single "sync" event ahead of live tokens. */
+export function getJobBuffer(jobId: string): JobBuffer | undefined {
+  return buffers.get(jobId);
+}
+
+/**
+ * `followUp`, when present, tells the client a second job/page was queued as a direct
+ * consequence of this one finishing (the pre-kickoff setup turn's dual-pass worldbook-authoring
+ * job) — the client can chain a second watch onto it so that message appears live too, instead
+ * of a generic poll.
+ */
+export function publishDone(jobId: string, fullText: string, followUp?: { jobId: string; pageId: string }): void {
+  buffers.delete(jobId);
+  emitter.emit(jobId, { type: "done", fullText, followUp });
 }
 
 export function publishError(jobId: string, message: string): void {
+  buffers.delete(jobId);
   emitter.emit(jobId, { type: "error", message });
 }
 
 export type JobEvent =
   | { type: "token"; text: string }
   | { type: "progress"; label: string }
-  | { type: "done"; fullText: string }
+  | { type: "sync"; text: string; progress?: string }
+  | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string };
 
 export function subscribeJob(jobId: string, onEvent: (event: JobEvent) => void): () => void {

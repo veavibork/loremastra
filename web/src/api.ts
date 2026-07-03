@@ -343,6 +343,14 @@ export async function kickoff(storyId: string): Promise<{ agentPageId: string; j
   return data;
 }
 
+/** Starts a fresh post-kickoff OOC "update session" — drops a canned opener, no job attached. */
+export async function startOocSession(storyId: string): Promise<{ agentPageId: string }> {
+  const res = await apiFetch(`/api/stories/${storyId}/ooc/start-session`, { method: "POST" });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
 export async function listStories(): Promise<Story[]> {
   const res = await apiFetch(`/api/stories`);
   const data = (await res.json()) as { stories: Story[] };
@@ -471,23 +479,16 @@ export async function forkStory(storyId: string, pageId?: string, name?: string)
   return data.story;
 }
 
-export type WorldbookEntryType = "setting" | "register" | "location" | "creature" | "faction" | "character";
-
-export interface WorldbookFieldSchema {
-  key: string;
-  label: string;
-}
+export type WorldbookEntryType = "content" | "roster" | "memory";
 
 export interface WorldbookEntry {
   pageId: string;
   bookId: string;
   entryType: WorldbookEntryType;
-  isPc: boolean;
-  name: string;
   hidden: boolean;
   broken: boolean;
   createdAt: string;
-  fields: Record<string, string>;
+  content: string;
   currentTextId: string;
 }
 
@@ -495,16 +496,9 @@ export interface Tag {
   id: string;
   bookId: string;
   name: string;
-  worldbookPageId: string | null;
   hidden: boolean;
   createdAt: string;
   updatedAt: string;
-}
-
-export async function fetchWorldbookSchemas(): Promise<Record<WorldbookEntryType, WorldbookFieldSchema[]>> {
-  const res = await apiFetch(`/api/worldbook-schemas`);
-  const data = (await res.json()) as { schemas: Record<WorldbookEntryType, WorldbookFieldSchema[]> };
-  return data.schemas;
 }
 
 export async function fetchWorldbook(storyId: string, opts?: { background?: boolean }): Promise<WorldbookEntry[]> {
@@ -515,7 +509,7 @@ export async function fetchWorldbook(storyId: string, opts?: { background?: bool
 
 export async function createWorldbookEntry(
   storyId: string,
-  input: { entryType: WorldbookEntryType; isPc?: boolean; name: string; fields: Record<string, string> }
+  input: { entryType: WorldbookEntryType; content: string }
 ): Promise<WorldbookEntry> {
   const res = await apiFetch(`/api/stories/${storyId}/worldbook`, {
     method: "POST",
@@ -530,7 +524,7 @@ export async function createWorldbookEntry(
 export async function updateWorldbookEntry(
   storyId: string,
   pageId: string,
-  input: { name?: string; fields?: Record<string, string>; hidden?: boolean }
+  input: { content?: string; hidden?: boolean }
 ): Promise<void> {
   const res = await apiFetch(`/api/stories/${storyId}/worldbook/${pageId}`, {
     method: "PATCH",
@@ -547,11 +541,11 @@ export async function fetchTags(storyId: string, opts?: { background?: boolean }
   return data.tags;
 }
 
-export async function createTag(storyId: string, name: string, worldbookPageId?: string | null): Promise<Tag> {
+export async function createTag(storyId: string, name: string): Promise<Tag> {
   const res = await apiFetch(`/api/stories/${storyId}/tags`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, worldbookPageId: worldbookPageId ?? null }),
+    body: JSON.stringify({ name }),
   });
   const data = (await res.json()) as { tag?: Tag; error?: string };
   if (!data.tag) throw new Error(data.error ?? "failed to create tag");
@@ -561,7 +555,7 @@ export async function createTag(storyId: string, name: string, worldbookPageId?:
 export async function updateTag(
   storyId: string,
   tagId: string,
-  input: { name?: string; hidden?: boolean; worldbookPageId?: string | null }
+  input: { name?: string; hidden?: boolean }
 ): Promise<void> {
   const res = await apiFetch(`/api/stories/${storyId}/tags/${tagId}`, {
     method: "PATCH",
@@ -575,8 +569,23 @@ export async function updateTag(
 export type JobStreamEvent =
   | { type: "token"; text: string }
   | { type: "progress"; label: string }
-  | { type: "done"; fullText: string }
+  | { type: "sync"; text: string; progress?: string }
+  | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string };
+
+export interface ActiveJob {
+  id: string;
+  createdAt: string;
+  targetTextId: string | null;
+  jobType: string;
+}
+
+/** In-flight jobs for a story — used to reattach to a generation still running after the story tab was closed and reopened. */
+export async function fetchActiveJobs(storyId: string): Promise<ActiveJob[]> {
+  const res = await apiFetch(`/api/stories/${storyId}/jobs/active`);
+  const data = (await res.json()) as { jobs: ActiveJob[] };
+  return data.jobs;
+}
 
 /**
  * The stream route sends a periodic SSE comment as a heartbeat (see src/routes/stories.ts) so an

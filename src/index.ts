@@ -9,7 +9,6 @@ import { clientErrorsRoute } from "./routes/client-errors.js";
 import { sessionsRoute } from "./routes/sessions.js";
 import { sessionGuard } from "./middleware/session-guard.js";
 import { startPipelineRunner } from "./queue/pipeline-runner.js";
-import { WORLDBOOK_FIELD_SCHEMAS } from "./db/worldbook-store.js";
 import { getMaxSlots, getSlotsInUse } from "./queue/slots.js";
 
 const app = new Hono();
@@ -35,7 +34,6 @@ app.route("/api/agents", agentsRoute);
 app.route("/api/prompts", promptsRoute);
 app.route("/api/settings", settingsSpacesRoute);
 app.route("/api/client-errors", clientErrorsRoute);
-app.get("/api/worldbook-schemas", (c) => c.json({ schemas: WORLDBOOK_FIELD_SCHEMAS }));
 app.get("/api/debug/slots", (c) => c.json({ used: getSlotsInUse(), max: getMaxSlots() }));
 
 const port = Number(process.env.PORT ?? 4113);

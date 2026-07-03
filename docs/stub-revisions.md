@@ -19,14 +19,21 @@ second roadmap.
   compressed lines, so a post like "I deck him" produced a compressed summary the tag
   index could never match against "Rook." `COMPRESS_SYSTEM_PROMPT` now explicitly asks for
   pronoun resolution, and the compress call is given a character-name roster pulled from
-  the worldbook (`listWorldbookEntries` filtered to `entryType: "character"`) plus the
-  existing one-post prior-summary context to resolve who's meant. Verified live: given
+  the worldbook (originally `listWorldbookEntries` filtered to `entryType: "character"`)
+  plus the existing one-post prior-summary context to resolve who's meant. Verified live: given
   prior context "Rook corners Vale by the punch bowl..." and post "I deck him", the
   compressed summary correctly came back "Rook is punched by Vale" — both the PC's "I" and
   the pronoun "him" grounded to real names. This is a different fix from the declined
   "pronoun declarations per tag" idea below — that was about matching tags *on* pronouns;
   this is about the Author/compress pipeline never emitting an unresolvable pronoun into
   text the tag system reads in the first place.
+  **Known gap opened 2026-07-03:** the worldbook refactor (see this file's superseded
+  extraction entry above) dropped the `character` entry type — there's no structured "NPC
+  name" field to pull a roster from anymore. Compress context now uses `listContentEntries`
+  (CONTENT-type entries — setting/premise material, which usually includes the PC's name)
+  instead, which doesn't cover NPC names living in ROSTER entries. Flagged, not yet fixed —
+  revisit by also passing tag-triggered ROSTER/MEMORY entries into compress context if
+  pronoun-resolution quality regresses in real use.
 - **Compress prompt now gets one post of prior context** (2026-07-01) — threads the
   immediately-preceding post's compressed line (via the immutable `prevPageId` link) into
   the compress call so it can frame this post causally instead of in a vacuum. Verified
@@ -44,40 +51,33 @@ second roadmap.
   prompt exists now as a hardcoded constant (unlike Agent model/param settings, which are
   already DB-backed via `agent_configs` + the Agents UI). No DB column, no route, no UI
   field yet to let a user override it per-story or globally.
-- **Editor setup is now a volley, not one model doing everything** (2026-07-01,
-  `src/services/setup.ts` + `executeSetupJob`). DeepSeek stays purely conversational
-  (streamed, no tools) — a separate extraction pass on the Worker's model
-  (`runWorldbookExtraction`) reads each exchange afterward and records facts via a *looped,
-  forced, single-entry-per-call* tool call, never auto-mode with multiple simultaneous
-  calls. Built after live testing found auto-mode + parallel calls produced garbled/missing
-  `function.name` fields on DeepSeek-V4-Pro, and confirmed the array-of-entries schema
-  tried first was itself measurably less reliable than one-flat-object-per-call — neither
-  is which-model-specific: Hermes-4-14B (Qwen3-family, on Featherless's own documented
-  "natively supported" list) failed the array schema too. Being on that list tracked
-  nothing reliable in testing; schema complexity did.
-  **Known remaining gap:** the mechanism (forced single calls, real retries, graceful
-  degradation, no corruption risk) is now solid, but extraction *completeness* is
-  inconsistent — the same test exchange establishing Setting+PC+Register sometimes
-  recorded all three, sometimes only one, sometimes none, across identical retries. This
-  reads as a genuine judgment/capability ceiling on an 8B model doing repeated
-  multi-step extraction, not a mechanical bug — prompt tweaks (explicitly telling it to
-  keep checking for more before signaling done) helped somewhat but didn't fully resolve
-  it. Mitigated the same way the old "Editor claims without calling the tool" risk always
-  was: the live worldbook preview panel lets a human see what actually landed and
-  hand-fix gaps via the Lore UI. Worth revisiting with a stronger extraction model if this
-  proves annoying in real use — don't re-try Hermes-4-14B without new evidence, it did
-  worse, not better, in direct comparison.
-  **If this keeps being annoying:** the alternative isn't a stronger model, it's relaxing
-  tool-use entirely — SillyTavern-style freeform-text extraction with lenient parsing,
-  accepting imperfect adherence rather than fighting for schema compliance. Evidence from
-  today doesn't clearly favor this (compress/archive's single-string tool schema is
-  already about as "yolo into a string" as tool-calling gets, and it's been 100% reliable
-  — the problem was schema complexity, not structure per se), so don't switch on a hunch.
-  But it's the concrete unlock condition for loremaster.md's deferred Horde/generic-endpoint
-  support (Future Phases appendix) — many of those backends don't implement the
-  `tools`/`tool_calls` surface at all, at any schema complexity, so relaxing tool-use is a
-  structural prerequisite for that work whenever it's prioritized, independent of whether
-  today's reliability tuning is judged sufficient.
+- **Superseded (2026-07-03): the forced-tool-calling worldbook extraction pipeline
+  described below was deleted.** It was built 2026-07-01 as "Editor setup is a volley, not
+  one model doing everything" — DeepSeek stayed conversational while a separate Worker-model
+  pass (`runWorldbookExtraction`, `src/services/setup.ts`) recorded facts via looped, forced,
+  single-entry-per-call tool calls. Its own noted gap proved decisive rather than tunable:
+  extraction *completeness* was inconsistent across identical retries (same exchange
+  establishing Setting+PC+Register sometimes recorded all three, sometimes one, sometimes
+  none) — a capability ceiling, not a mechanical bug, and prompt tweaks only partially
+  helped. This confirmed the doc's own "if this keeps being annoying" prediction: the fix
+  was relaxing tool-use entirely, not a stronger model. Replaced with the bracket-regex
+  approach now documented in loremaster.md's Structured Schema section — the Editor writes
+  plain `[CONTENT]`/`[ROSTER]`/`[MEMORY]`-tagged prose, and the back end detects blocks via
+  regex (`src/services/worldbook-extraction.ts`), verbatim, no model-side tool call, no
+  structured fields. `src/services/setup.ts` was deleted entirely; worldbook entries dropped
+  from six typed schemas to three freeform types; tags lost their manual `worldbookPageId`
+  pointer and are now pure grep against post *and* worldbook content.
+  **New open question, not yet resolved:** extraction reliability now depends on the model
+  consistently emitting well-formed bracket pairs rather than on tool-calling fidelity — a
+  malformed or unclosed tag simply produces zero entries silently (by design: "no match, no
+  entry" per the regex's own backreference-matched-pair requirement), with no retry or
+  validation loop backing it up the way forced tool-calling had. Verified live for a handful
+  of real turns (one setup turn producing 1 CONTENT + 2 ROSTER + 1 MEMORY correctly, an
+  update-session turn correctly finding zero), but not stress-tested across many turns or
+  models yet — revisit if malformed/missing brackets turn out to be common in real use.
+  This *is* the structural prerequisite loremaster.md's deferred Horde/generic-endpoint
+  support (Future Phases appendix) needed — worldbook authoring no longer depends on the
+  `tools`/`tool_calls` surface at all, only compression/archiving still do.
 
 ## UI
 

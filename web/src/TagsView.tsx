@@ -1,22 +1,20 @@
 import { useEffect, useState } from "react";
-import { createTag, fetchTags, fetchWorldbook, updateTag, type Tag, type WorldbookEntry } from "./api";
+import { createTag, fetchTags, updateTag, type Tag } from "./api";
 import type { PanelProps } from "./panel-types";
 import "./TagsView.css";
 
-/** Polls on a short interval — entries/tags can change in the background during Setup's live worldbook extraction, with no local action to hook a one-off refresh onto. */
+/** Polls on a short interval — tags can change in the background during Setup's live worldbook extraction, with no local action to hook a one-off refresh onto. */
 const POLL_MS = 3000;
 
 export default function TagsView({ story }: PanelProps) {
   const storyId = story?.id;
   const [tags, setTags] = useState<Tag[]>([]);
-  const [entries, setEntries] = useState<WorldbookEntry[]>([]);
   const [newTagName, setNewTagName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function reload(opts?: { background?: boolean }) {
     if (!storyId) return;
     setTags(await fetchTags(storyId, opts));
-    setEntries(await fetchWorldbook(storyId, opts));
   }
 
   useEffect(() => {
@@ -55,38 +53,24 @@ export default function TagsView({ story }: PanelProps) {
     await reload();
   }
 
-  async function attachTag(tag: Tag, worldbookPageId: string | null) {
-    if (!storyId) return;
-    await updateTag(storyId, tag.id, { worldbookPageId });
-    await reload();
-  }
-
   if (!storyId) return <div className="tags-view">No active story.</div>;
 
   return (
     <div className="tags-view">
       <h2>Tags</h2>
       <p className="tags-note">
-        A tag whose name matches a worldbook entry's name auto-attaches to it — the dropdown below is
-        for the exceptions (no match, or you want it pointed somewhere else), not the normal path.
+        Tags aren't attached to anything — they're purely grepped against post and worldbook
+        content, live. A tag matches whatever mentions it (letters only, at least 3 characters).
       </p>
       {error && <div className="error-banner">{error}</div>}
       <form onSubmit={submitNewTag} className="tag-new-form">
-        <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="new-tag" />
+        <input value={newTagName} onChange={(e) => setNewTagName(e.target.value)} placeholder="newtag" />
         <button type="submit">Add</button>
       </form>
       <ul className="tag-list">
         {tags.map((tag) => (
           <li key={tag.id} className={tag.hidden ? "tag-hidden" : ""}>
             <input className="tag-name-input" defaultValue={tag.name} onBlur={(e) => renameTag(tag, e.target.value.trim())} />
-            <select value={tag.worldbookPageId ?? ""} onChange={(e) => attachTag(tag, e.target.value || null)}>
-              <option value="">(no entry)</option>
-              {entries.map((entry) => (
-                <option key={entry.pageId} value={entry.pageId}>
-                  {entry.name}
-                </option>
-              ))}
-            </select>
             <button type="button" onClick={() => toggleTagHidden(tag)}>
               {tag.hidden ? "unhide" : "hide"}
             </button>

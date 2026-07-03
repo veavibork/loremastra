@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   continuePost,
   editPost,
+  fetchActiveJobs,
   fetchLog,
   fetchPosition,
   forkStory,
@@ -10,6 +11,7 @@ import {
   postSetupMessage,
   redoPosition,
   retryPost,
+  startOocSession,
   streamJob,
   undoPosition,
   type LogEntry,
@@ -95,9 +97,17 @@ export default function StoryView({
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [position, setPosition] = useState<Position | null>(null);
   const [draft, setDraft] = useState("");
-  const [pendingReply, setPendingReply] = useState<{ pageId: string; text: string; progress?: string } | null>(null);
+  // Keyed by agent pageId so multiple sends can be in flight at once — queued messages each get
+  // their own page (and their own streamJob subscription) rather than sharing one slot.
+  // startedAt backs the "Thinking… (Ns)" placeholder shown before the first token/progress event
+  // arrives — Featherless gives no earlier signal than that, so elapsed wall-clock time is the
+  // best available substitute for "..." sitting dead.
+  const [pendingReplies, setPendingReplies] = useState<Record<string, { text: string; progress?: string; startedAt: number }>>({});
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Only guards the brief request round-trip for actions that must stay serialized (kickoff,
+  // continue, retry) — not held for the whole generation. See the `busy` derivation below for
+  // what actually disables those buttons for the full duration.
+  const [starting, setStarting] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editDrafts, setEditDrafts] = useState<Record<string, string>>({});
   const [forkMode, setForkMode] = useState(false);
@@ -107,46 +117,117 @@ export default function StoryView({
   // text selection, leaving Cut as the only native option — this does a real delete instead).
   const activeEditRef = useRef<{ pageId: string; el: HTMLTextAreaElement } | null>(null);
 
-  async function refresh() {
-    setEntries(await fetchLog(storyId));
+  async function refresh(): Promise<LogEntry[]> {
+    const freshEntries = await fetchLog(storyId);
+    setEntries(freshEntries);
     setPosition(await fetchPosition(storyId));
+    return freshEntries;
+  }
+
+  /**
+   * Finds log entries still mid-generation (agent pages with no content yet) and reattaches to
+   * whatever job is producing them. Needed because pendingReplies is plain component state —
+   * closing the story tab and reopening it remounts StoryView with an empty pendingReplies, and
+   * without this the post would just sit rendered as "…" with no live updates until the job
+   * finishes and some unrelated action happens to call refresh(). Deliberately only run once on
+   * mount/story-switch (below), not from every refresh() — the in-session action handlers
+   * (handleSubmit etc.) already call watchJob themselves for jobs they just created, and
+   * pendingReplies state wouldn't reflect that yet here (same-render closure), so calling this
+   * from a general refresh() would double-subscribe those jobs.
+   */
+  async function resumeActiveJobs(freshEntries: LogEntry[]) {
+    const unresolved = freshEntries.filter((e) => e.role === "agent" && e.content === null && e.textId);
+    if (unresolved.length === 0) return;
+    try {
+      const jobs = await fetchActiveJobs(storyId);
+      for (const entry of unresolved) {
+        const job = jobs.find((j) => j.targetTextId === entry.textId);
+        if (job) watchJob(job.id, entry.pageId, undefined, new Date(job.createdAt).getTime());
+      }
+    } catch (err) {
+      console.error("failed to resume active jobs", err);
+    }
   }
 
   useEffect(() => {
-    void refresh();
+    void (async () => {
+      const freshEntries = await refresh();
+      await resumeActiveJobs(freshEntries);
+    })();
   }, [storyId]);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries, pendingReply]);
+  }, [entries, pendingReplies]);
 
-  function watchJob(jobId: string, pageId: string, onDone?: () => void) {
-    setPendingReply({ pageId, text: "" });
+  // Featherless gives no signal between "request sent" and "first token" — no queue position,
+  // no phase label — so the best we can show during that gap is elapsed time. This ticks a
+  // render once a second only while something is actually in that dead zone (no text, no
+  // progress label yet), rather than running an interval unconditionally.
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const waiting = Object.values(pendingReplies).some((p) => !p.text && !p.progress);
+    if (!waiting) return;
+    const id = setInterval(() => forceTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [pendingReplies]);
+
+  // True while anything is generating, from any source (a queued send, kickoff, continue, or
+  // retry) — gates the actions that need a stable, fully-resolved history to act on unambiguously
+  // (Undo/Redo/Retry/Continue/Fork/Kickoff/Edit). The composer is deliberately NOT gated by this —
+  // see the form below — so new messages can keep queuing up while earlier ones (including their
+  // worldbook checks) are still resolving.
+  const busy = starting || Object.keys(pendingReplies).length > 0;
+
+  function watchJob(jobId: string, pageId: string, onDone?: () => void, startedAt?: number) {
+    setPendingReplies((prev) => ({ ...prev, [pageId]: { text: "", startedAt: startedAt ?? Date.now() } }));
     streamJob(storyId, jobId, (event) => {
       if (event.type === "token") {
-        setPendingReply((prev) => (prev ? { ...prev, text: prev.text + event.text } : prev));
+        setPendingReplies((prev) => {
+          const cur = prev[pageId];
+          return cur ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text } } : prev;
+        });
       } else if (event.type === "progress") {
-        setPendingReply((prev) => (prev ? { ...prev, progress: event.label } : prev));
+        setPendingReplies((prev) => {
+          const cur = prev[pageId];
+          return cur ? { ...prev, [pageId]: { ...cur, progress: event.label } } : prev;
+        });
+      } else if (event.type === "sync") {
+        // Replay of whatever the job had already produced before this connection opened —
+        // sets rather than appends, since it's a full snapshot, not an incremental token.
+        setPendingReplies((prev) => {
+          const cur = prev[pageId];
+          return cur ? { ...prev, [pageId]: { ...cur, text: event.text, progress: event.progress ?? cur.progress } } : prev;
+        });
       } else if (event.type === "done") {
-        setPendingReply(null);
+        setPendingReplies((prev) => {
+          const { [pageId]: _done, ...rest } = prev;
+          return rest;
+        });
         void refresh();
-        setBusy(false);
+        setStarting(false);
+        // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring
+        // message may have been queued as a direct consequence of this one finishing. Chain a
+        // watch onto it so it streams in and gets highlighted live, instead of a generic poll.
+        if (event.followUp) watchJob(event.followUp.jobId, event.followUp.pageId);
         onDone?.();
       } else if (event.type === "error") {
-        setPendingReply(null);
+        setPendingReplies((prev) => {
+          const { [pageId]: _failed, ...rest } = prev;
+          return rest;
+        });
         setError(event.message);
-        setBusy(false);
+        setStarting(false);
       }
     });
   }
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
-    if (!draft.trim() || busy || editMode) return;
+    if (!draft.trim() || editMode) return;
 
     const content = draft.trim();
     setDraft("");
-    setBusy(true);
     setError(null);
 
     try {
@@ -156,12 +237,11 @@ export default function StoryView({
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
     }
   }
 
   async function handleKickoff() {
-    setBusy(true);
+    setStarting(true);
     setError(null);
     try {
       const { jobId, agentPageId } = await kickoff(storyId);
@@ -173,12 +253,12 @@ export default function StoryView({
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
+      setStarting(false);
     }
   }
 
   async function handleContinue(guidance?: string) {
-    setBusy(true);
+    setStarting(true);
     setError(null);
     try {
       const { jobId, agentPageId } = await continuePost(storyId, guidance);
@@ -187,12 +267,12 @@ export default function StoryView({
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
+      setStarting(false);
     }
   }
 
   async function handleRetry(pageId: string, guidance?: string) {
-    setBusy(true);
+    setStarting(true);
     setError(null);
     try {
       const { jobId } = await retryPost(storyId, pageId, guidance);
@@ -200,7 +280,7 @@ export default function StoryView({
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
+      setStarting(false);
     }
   }
 
@@ -291,6 +371,27 @@ export default function StoryView({
     }
   }
 
+  /**
+   * Every Play→OOC switch post-kickoff needs a real backend call now — it drops a canned
+   * EDITOR_UPDATE_OPENING opener and marks a fresh session boundary so the Editor's context
+   * resets instead of replaying every OOC turn the story has ever had. Pre-kickoff setup is
+   * already in guide mode by default (from the initial useState above), so this only fires
+   * once the story has actually reached story phase.
+   */
+  async function handleEnterOoc() {
+    if (phase !== "setup") {
+      try {
+        await startOocSession(storyId);
+        await refresh();
+      } catch (err) {
+        console.error(err);
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+    }
+    setMode("guide");
+  }
+
   async function handleFork(pageId: string) {
     setForkMode(false);
     try {
@@ -303,14 +404,22 @@ export default function StoryView({
     }
   }
 
-  // Guide/OOC shows the pre-kickoff conversation even after finalizeSetup hides it from Play/the
-  // Author's context — Play/IC keeps the normal !hidden filter.
-  const visible = entries.filter((e) => (mode === "play" ? !e.hidden : true) && e.pageId !== pendingReply?.pageId);
+  const pendingIds = new Set(Object.keys(pendingReplies));
+  // Every OOC/setup page is hidden the moment it's created, whether that's the original
+  // pre-kickoff conversation or a later resumed one — and no IC page ever is (see
+  // POST /:id/setup/messages). So Play/IC and Guide/OOC are exact mirror-opposite filters on the
+  // same flag: this is what keeps a resumed OOC chat from also showing the interleaved IC story
+  // it now shares a page chain with, and vice versa.
+  const visible = entries.filter((e) => (mode === "play" ? !e.hidden : e.hidden) && !pendingIds.has(e.pageId));
   const currentIdx = position?.currentPageId ? visible.findIndex((e) => e.pageId === position.currentPageId) : -1;
   // Rewound past this point? Don't render what comes after — Redo is the only way forward.
   const shown = currentIdx >= 0 ? visible.slice(0, currentIdx + 1) : visible;
   const lastEntry = shown[shown.length - 1];
   const canRetry = !!lastEntry && lastEntry.role === "agent";
+  // Queued sends whose agent page already exists (created synchronously) but hasn't resolved yet —
+  // rendered after `shown` in the same relative order they were created, live-updated by whichever
+  // are actually streaming right now via pendingReplies.
+  const pendingEntries = entries.filter((e) => pendingIds.has(e.pageId) && (mode === "play" ? !e.hidden : e.hidden));
 
   return (
     <div className="story-view">
@@ -327,7 +436,7 @@ export default function StoryView({
               />
             ) : (
               <>
-                <EntryContent content={entry.content ?? "…"} />
+                <EntryContent content={entry.content ?? "…"} highlightBlocks={mode === "guide"} />
                 {forkMode && (
                   <button type="button" className="fork-point-btn" onClick={() => void handleFork(entry.pageId)}>
                     ⑂ fork from here
@@ -337,13 +446,20 @@ export default function StoryView({
             )}
           </div>
         ))}
-        {pendingReply && (
-          <div className="entry entry-agent entry-pending">
-            <RoleLabel role="agent" mode={mode} />
-            {pendingReply.text ? <EntryContent content={pendingReply.text} /> : <p>…</p>}
-            {pendingReply.progress && <p className="pending-progress">{pendingReply.progress}</p>}
-          </div>
-        )}
+        {pendingEntries.map((entry) => {
+          const pending = pendingReplies[entry.pageId];
+          const elapsed = pending ? Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000)) : 0;
+          return (
+            <div key={entry.pageId} className="entry entry-agent entry-pending">
+              <RoleLabel role="agent" mode={mode} />
+              {pending?.text ? (
+                <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
+              ) : (
+                <p className="pending-thinking">{pending?.progress ?? `Thinking… (${elapsed}s)`}</p>
+              )}
+            </div>
+          );
+        })}
         <div ref={logEndRef} />
       </div>
 
@@ -351,7 +467,7 @@ export default function StoryView({
 
       <div className="play-toolbar">
         <div className="mode-toggle">
-          <button type="button" className={mode === "guide" ? "active" : ""} onClick={() => setMode("guide")} disabled={busy || editMode}>
+          <button type="button" className={mode === "guide" ? "active" : ""} onClick={() => void handleEnterOoc()} disabled={busy || editMode}>
             OOC
           </button>
           <button type="button" className={mode === "play" ? "active" : ""} onClick={() => setMode("play")} disabled={busy || editMode}>
@@ -407,10 +523,12 @@ export default function StoryView({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              if (busy || editMode) return;
+              if (editMode) return;
               if (draft.trim()) {
                 void handleSubmit();
-              } else {
+              } else if (!busy) {
+                // Continue (unlike Send) isn't queueable — it acts on "whatever's current" once
+                // an existing reply resolves, so it stays serialized behind anything pending.
                 handleContinueClick();
               }
             }
@@ -420,10 +538,10 @@ export default function StoryView({
               ? "Tell the Editor about your story… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
               : "Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
           }
-          disabled={busy || editMode}
+          disabled={editMode}
         />
-        <button type="submit" disabled={busy || editMode || !draft.trim()}>
-          {busy ? "…" : "Send"}
+        <button type="submit" disabled={editMode || !draft.trim()}>
+          Send
         </button>
       </form>
     </div>
