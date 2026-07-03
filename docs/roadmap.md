@@ -375,7 +375,7 @@ half-built (prompt assembly) before opening new surface area (worldbook/Editor),
 naturally-independent chunks of the remaining Phase 1 scope. Reorder freely; nothing here blocks
 anything else except A blocking B (worldbook injection needs real prompt assembly to inject into).
 
-## Next: Horde as a second provider
+## Horde as a second provider — ✅ done, 2026-07-03
 
 Originally scoped in loremaster.md as one combined "Multi-User & Second Provider Milestone." Split
 apart 2026-07-03 — the doc itself frames these as two independent problems that only incidentally got
@@ -407,7 +407,7 @@ Featherless stays a single shared operator-owned account this phase and beyond, 
 `featherless_access` per-user boolean (default off, SSH-script-granted) belongs to the Phase 2 backlog,
 not this phase — meaningless without real distinct users.
 
-**H1. Horde REST client (standalone, unwired)**
+**H1. Horde REST client (standalone, unwired)** — ✅ done.
 - `src/inference/horde.ts` (mirrors `featherless.ts`'s shape): submit (`POST /v2/generate/text/async`),
   poll (`GET .../status/{id}`), cancel (`DELETE .../status/{id}`). Treats `is_possible: false`, `429`,
   and `faulted` as first-class outcomes, not exceptions to patch around later.
@@ -423,7 +423,7 @@ not this phase — meaningless without real distinct users.
 - Confirmable as: a script gets a real completion back via the anonymous key, and a second run gives a
   definitive yes/no on tool-calling.
 
-**H2. Provider field on model configs**
+**H2. Provider field on model configs** — ✅ done.
 - `model_configs` gets `provider TEXT NOT NULL DEFAULT 'featherless'` (via `ensureColumn`, same pattern
   as the existing `fallback_models` column); `AgentProfile` (`src/config.ts`) gets a matching `provider`
   field.
@@ -434,7 +434,7 @@ not this phase — meaningless without real distinct users.
 - Confirmable as: existing Featherless-backed configs keep working unchanged (default value); a
   manually-inserted `provider = 'horde'` row round-trips through the existing list/get functions.
 
-**H3. Horde queue/dispatch integration**
+**H3. Horde queue/dispatch integration** — ✅ done.
 - `pipeline-runner.ts`'s `scanStory` branches on `provider`: Featherless keeps its current
   synchronous-await path untouched. Horde jobs submit-then-return, storing the Horde-side request id on
   the job row (new nullable column on `jobs` in `story-schema.ts`, same `ensureColumn` pattern), polled
@@ -448,7 +448,7 @@ not this phase — meaningless without real distinct users.
 - Confirmable as: a Horde-routed prose job round-trips through the real queue end-to-end into the
   story, running alongside a Featherless-backed job without either blocking the other.
 
-**H4. Config UI wiring**
+**H4. Config UI wiring** — ✅ done.
 - Config > Agents' per-row model config gets a provider selector; Horde rows use the Horde's
   `models`/`workers` targeting fields instead of Featherless's model catalog.
 - If H1 found Horde tool-calling unreliable, add a guardrail against assigning Horde to the Worker role
@@ -456,10 +456,14 @@ not this phase — meaningless without real distinct users.
 - Confirmable as: a Horde-backed model config can be created from the UI, assigned to a role, and
   actually used.
 
-**H5. End-to-end validation**
+**H5. End-to-end validation** — ✅ done.
 - One full story turn generated via Horde start to finish through the real UI: no-streaming UX reads as
   intended (not a hang), Debug/Logs show Horde jobs sensibly, nothing in the existing Featherless path
   regresses.
+- Real-browser testing (2026-07-03) also caught and fixed four bugs outside the Horde work itself:
+  reorder skipping draft messages, Horde jobs mislabeled with the wrong model, no confirm on worldbook
+  entry delete, and `apiFetch` treating all `409`s as session-superseded instead of surfacing real
+  conflicts. See `88abe43`.
 
 ## Phase 2 backlog: Multi-User
 
