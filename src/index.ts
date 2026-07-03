@@ -7,6 +7,7 @@ import { promptsRoute } from "./routes/prompts.js";
 import { settingsSpacesRoute } from "./routes/settings-spaces.js";
 import { clientErrorsRoute } from "./routes/client-errors.js";
 import { sessionsRoute } from "./routes/sessions.js";
+import { accountRoute } from "./routes/account.js";
 import { sessionGuard, type AppVariables } from "./middleware/session-guard.js";
 import { startPipelineRunner, trackStoryDb } from "./queue/pipeline-runner.js";
 import { startConcurrencyFeed } from "./queue/concurrency-feed.js";
@@ -33,6 +34,7 @@ app.use("*", async (c, next) => {
 // including the two inline ones below, so nothing is exempt by omission.
 app.use("*", sessionGuard);
 app.route("/api/sessions", sessionsRoute);
+app.route("/api/account", accountRoute);
 app.route("/api/stories", storiesRoute);
 app.route("/api/layout", layoutRoute);
 app.route("/api/agents", agentsRoute);

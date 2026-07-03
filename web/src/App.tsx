@@ -66,7 +66,10 @@ export default function App() {
     <PlayTabProvider>
       <div className="story-app">
         <header className="app-header">
-          <h1>{story?.name ?? "Loremaster"}</h1>
+          <div className="app-header-title">
+            <h1>{story?.name ?? "Loremaster"}</h1>
+            {story?.id && <span className="app-header-story-id">{story.id}</span>}
+          </div>
         </header>
 
         <Nav

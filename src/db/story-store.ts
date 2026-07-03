@@ -3,6 +3,10 @@ import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 import { storyDbPath } from "./story-db.js";
 
+/** The un-renamed placeholder a story is born with -- also what the auto-naming worker checks
+ * for before it decides a story is still nameless (see pipeline-runner.ts's executeStoryNameJob). */
+export const DEFAULT_STORY_NAME = "Working Title";
+
 export interface StoryRow {
   id: string;
   ownerUserId: string;

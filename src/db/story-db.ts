@@ -83,6 +83,46 @@ function backfillSelectedForks(db: Database.Database): void {
   `);
 }
 
+/**
+ * jobs.job_type's CHECK constraint predates 'tag-gen'/'story-name' -- SQLite can't ALTER a
+ * CHECK constraint in place, so a story DB file created before this change would reject any
+ * job of either new type at the INSERT. Detected by sniffing the table's own stored CREATE
+ * statement (same technique as migrateWorldbookEntryShape above) rather than a version counter,
+ * consistent with this dev-only, no-migration-framework codebase. Unlike that migration, job
+ * rows are worth keeping (they're the Logs/Debug telemetry history), so this renames the old
+ * table aside and lets STORY_SCHEMA_SQL create a fresh one in its place below; the rows get
+ * copied back by finishJobTypeCheckMigration once the fresh table has caught up on the
+ * ensureColumn'd columns too.
+ */
+function migrateJobTypeCheck(db: Database.Database): void {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'`).get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'tag-gen'")) return;
+  db.exec(`ALTER TABLE jobs RENAME TO jobs_pre_tag_gen_migration`);
+  // The renamed table may itself predate one of these three (e.g. a story DB last opened
+  // before Horde support existed won't have horde_request_id yet) -- back-fill them here too,
+  // not just on the fresh table below, so finishJobTypeCheckMigration's copy has a matching
+  // column set on both sides regardless of how old this particular file is.
+  ensureColumn(db, "jobs_pre_tag_gen_migration", "model", "TEXT");
+  ensureColumn(db, "jobs_pre_tag_gen_migration", "token_estimate", "INTEGER");
+  ensureColumn(db, "jobs_pre_tag_gen_migration", "horde_request_id", "TEXT");
+}
+
+/** Second half of migrateJobTypeCheck -- see its doc comment. Must run after the ensureColumn
+ * calls for jobs' model/token_estimate/horde_request_id, since the copy needs both tables to
+ * have identical columns. */
+function finishJobTypeCheckMigration(db: Database.Database): void {
+  const exists = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs_pre_tag_gen_migration'`)
+    .get();
+  if (!exists) return;
+  db.exec(`
+    INSERT INTO jobs (id, created_at, target_text_id, target_archive_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id)
+    SELECT id, created_at, target_text_id, target_archive_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id
+    FROM jobs_pre_tag_gen_migration;
+    DROP TABLE jobs_pre_tag_gen_migration;
+  `);
+}
+
 export function closeStoryDb(storyId: string): void {
   const db = openStoryDbs.get(storyId);
   if (!db) return;
@@ -111,6 +151,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   migrateWorldbookEntryShape(db);
+  migrateJobTypeCheck(db);
   db.exec(STORY_SCHEMA_SQL);
   dropColumnIfExists(db, "tags", "worldbook_page_id");
   ensureColumn(db, "story_state", "current_page_id", "TEXT REFERENCES page(id)");
@@ -120,6 +161,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "jobs", "token_estimate", "INTEGER");
   ensureColumn(db, "jobs", "horde_request_id", "TEXT");
   ensureColumn(db, "text", "compress_metrics", "TEXT");
+  finishJobTypeCheckMigration(db);
   backfillSelectedForks(db);
   if (!options?.skipRecovery) recoverStaleJobs(db);
   openStoryDbs.set(storyId, db);

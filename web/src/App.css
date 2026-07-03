@@ -16,9 +16,22 @@
   margin-bottom: 0.75rem;
 }
 
+.app-header-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
 .app-header h1 {
   font-size: 1.2rem;
   margin: 0;
+}
+
+/* Story's own id, shown as a quiet reference next to the title — not interactive, not meant
+   to draw the eye the way the title itself does. */
+.app-header-story-id {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .log {
@@ -57,9 +70,6 @@
   flex-direction: column;
   gap: 0.15rem;
   text-align: left;
-  /* Anchors .entry-edit-actions' bottom-right overlay (StoryView.css) to this one post rather
-     than to .log or the page. */
-  position: relative;
   font-size: var(--entry-font-size, 15px);
   /* Unitless, not index.css's inherited `145%` (which computes to a fixed px value at the
      root's 18px and stays that size regardless of this element's own smaller font-size) —

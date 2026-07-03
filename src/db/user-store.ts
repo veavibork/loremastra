@@ -42,3 +42,23 @@ export function getUserById(db: Database.Database, id: string): UserAuthRow | nu
     passwordVerifier: row.password_verifier,
   };
 }
+
+export class DisplayNameTakenError extends Error {}
+
+/** Case-insensitive uniqueness check against every *other* user — display_name is what the profile picker shows and what /api/sessions/claim matches against. */
+export function updateDisplayName(db: Database.Database, id: string, displayName: string): UserRow {
+  const clash = db
+    .prepare(`SELECT id FROM users WHERE lower(display_name) = lower(?) AND id != ?`)
+    .get(displayName, id) as { id: string } | undefined;
+  if (clash) throw new DisplayNameTakenError(`display name "${displayName}" is already in use`);
+
+  const updatedAt = nowIso();
+  db.prepare(`UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?`).run(displayName, updatedAt, id);
+  const row = getUserById(db, id);
+  if (!row) throw new Error(`user ${id} not found after update`);
+  return { id: row.id, createdAt: row.createdAt, displayName: row.displayName };
+}
+
+export function updatePassword(db: Database.Database, id: string, passwordHash: string): void {
+  db.prepare(`UPDATE users SET password_verifier = ?, updated_at = ? WHERE id = ?`).run(passwordHash, nowIso(), id);
+}

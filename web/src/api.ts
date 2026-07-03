@@ -120,6 +120,37 @@ async function apiFetch(path: string, init: RequestInit = {}, opts?: { backgroun
   return res;
 }
 
+export interface AccountProfile {
+  id: string;
+  displayName: string;
+}
+
+export async function fetchAccount(): Promise<AccountProfile> {
+  const res = await apiFetch(`/api/account`);
+  return res.json();
+}
+
+export async function updateDisplayName(displayName: string): Promise<AccountProfile> {
+  const res = await apiFetch(`/api/account/display-name`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ displayName }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data;
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await apiFetch(`/api/account/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+}
+
 export interface StoryStats {
   chatRows: number;
   worldbookRows: number;

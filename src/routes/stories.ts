@@ -4,7 +4,7 @@ import { streamSSE } from "hono/streaming";
 import { getGlobalDb } from "../db/global-db.js";
 import { getStoryDb, closeStoryDb } from "../db/story-db.js";
 import type { AppVariables } from "../middleware/session-guard.js";
-import { createStory, listStories, getStory, renameStory, deleteStory } from "../db/story-store.js";
+import { createStory, listStories, getStory, renameStory, deleteStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
 import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../db/page-store.js";
@@ -66,7 +66,7 @@ function openTrackedStoryDb(storyId: string) {
 
 storiesRoute.post("/", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { name?: string };
-  const name = body.name?.trim() || "Untitled Story";
+  const name = body.name?.trim() || DEFAULT_STORY_NAME;
 
   const globalDb = getGlobalDb();
   const story = createStory(globalDb, { ownerUserId: c.get("userId"), name });

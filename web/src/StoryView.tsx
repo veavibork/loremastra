@@ -594,28 +594,10 @@ export default function StoryView({
                       el.setSelectionRange(pendingCaretRef.current, pendingCaretRef.current);
                       pendingCaretRef.current = null;
                     }
-                    // Scrolling here (once focused/settled) rather than at click time: at click
-                    // time the box is still its pre-edit read-mode height, so a scroll computed
-                    // then doesn't account for the edit box's extra bottom padding (reserved for
-                    // the Save/Cancel/Fork/Del row) or AutoGrowTextarea's own resize passes —
-                    // scrolling too early was landing with those controls still clipped below the
-                    // fold. Two rAFs matches AutoGrowTextarea's own layout-effect-then-rAF resize,
-                    // so this runs after the box has reached its final height.
-                    requestAnimationFrame(() => {
-                      requestAnimationFrame(() => {
-                        el.closest<HTMLElement>(".entry")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                      });
-                    });
                   }}
                   initialHeight={editInitialHeight}
                   autoFocus
                 />
-                <div className="entry-edit-actions">
-                  <button type="button" onClick={() => void saveEdit()}>Save</button>
-                  <button type="button" onClick={cancelEdit}>Cancel</button>
-                  <button type="button" onClick={() => void forkFromEdit()}>Fork</button>
-                  <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleDeleteKey}>Del</button>
-                </div>
               </>
             ) : (
               <EntryContent content={entry.content ?? "…"} highlightBlocks={mode === "guide"} />
@@ -677,22 +659,33 @@ export default function StoryView({
             IC
           </button>
         </div>
-        <button type="button" onClick={handleUndo} disabled={busy || !!editingPageId || !position?.canUndo}>
-          ↶ Undo
-        </button>
-        <button type="button" onClick={handleRedo} disabled={busy || !!editingPageId || !position?.canRedo}>
-          ↷ Redo
-        </button>
-        <button
-          type="button"
-          onClick={() => lastEntry && handleRetryClick(lastEntry.pageId)}
-          disabled={busy || !!editingPageId || !canRetry}
-        >
-          Retry
-        </button>
-        <button type="button" onClick={handleContinueClick} disabled={busy || !!editingPageId}>
-          Continue
-        </button>
+        {editingPageId ? (
+          <>
+            <button type="button" onClick={() => void saveEdit()}>Save</button>
+            <button type="button" onClick={cancelEdit}>Cancel</button>
+            <button type="button" onClick={() => void forkFromEdit()}>Fork</button>
+            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleDeleteKey}>Del</button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={handleUndo} disabled={busy || !position?.canUndo}>
+              ↶ Undo
+            </button>
+            <button type="button" onClick={handleRedo} disabled={busy || !position?.canRedo}>
+              ↷ Redo
+            </button>
+            <button
+              type="button"
+              onClick={() => lastEntry && handleRetryClick(lastEntry.pageId)}
+              disabled={busy || !canRetry}
+            >
+              Retry
+            </button>
+            <button type="button" onClick={handleContinueClick} disabled={busy}>
+              Continue
+            </button>
+          </>
+        )}
         {mode === "guide" && phase === "setup" && (
           <button type="button" onClick={() => void handleKickoff()} disabled={busy || !!editingPageId}>
             Kickoff →

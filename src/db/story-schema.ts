@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at TEXT NOT NULL,
   target_text_id TEXT REFERENCES text(id),
   target_archive_id TEXT REFERENCES archive(id),
-  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook')),
+  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook','tag-gen','story-name')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
   priority INTEGER NOT NULL DEFAULT 0,
   slot_cost INTEGER NOT NULL DEFAULT 1,

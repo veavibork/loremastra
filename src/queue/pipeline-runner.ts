@@ -14,11 +14,12 @@ import { fillTextExtract, fillTextGeneration, getText } from "../db/text-store.j
 import { getPage, listChronologicalPages, setPageHidden, type PageRow } from "../db/page-store.js";
 import { createPageWithText } from "../db/content-store.js";
 import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
-import { listContentEntries } from "../db/worldbook-store.js";
+import { listContentEntries, listWorldbookEntries, type WorldbookEntry } from "../db/worldbook-store.js";
+import { createTag, isValidTagName, listTags } from "../db/tag-store.js";
 import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { getGlobalDb } from "../db/global-db.js";
-import { getStory } from "../db/story-store.js";
+import { getStory, renameStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
 import { tryAcquireSlot, releaseSlot } from "./slots.js";
 import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
 import { publishToken, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
@@ -35,7 +36,7 @@ import { submitTextGeneration, pollTextGeneration } from "../inference/horde.js"
 import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
-import { indexTextAgainstAllTags } from "../services/tag-index.js";
+import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
 import { getAgentProfile } from "../services/agent-config.js";
 import { matchesRefusalPrefix } from "../services/refusal-detection.js";
 import {
@@ -44,12 +45,14 @@ import {
   EDITOR_UPDATE_PROMPT,
   COMPRESS_SYSTEM_PROMPT,
   ARCHIVE_SYSTEM_PROMPT,
+  TAG_GENERATION_PROMPT,
+  NAMING_PROMPT,
   guidedRegenerateNote,
   guidedContinueNote,
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const CLAIMABLE_JOB_TYPES: JobType[] = ["prose", "compress", "archive", "setup", "setup-worldbook"];
+const CLAIMABLE_JOB_TYPES: JobType[] = ["prose", "compress", "archive", "setup", "setup-worldbook", "tag-gen", "story-name"];
 
 /**
  * Guided retry's direction text is explicitly not stored as a post
@@ -79,6 +82,32 @@ function extractSummary(text: string): string | null {
 
 function withinWordLimit(text: string, maxWords: number): boolean {
   return !!text && text.split(/\s+/).length <= maxWords;
+}
+
+const TAG_GEN_MAX_ATTEMPTS = 2;
+const TAGS_PATTERN = /\[TAGS\]([\s\S]*?)\[\/TAGS\]/;
+
+/** Null means the tag markers themselves weren't found (malformed reply, worth retrying) --
+ * distinct from an empty array, which is [TAGS][/TAGS] with nothing inside, a normal "no new
+ * tags" outcome. */
+function extractTagCandidates(text: string): string[] | null {
+  const match = TAGS_PATTERN.exec(text);
+  if (!match) return null;
+  return match[1]
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+const STORY_NAME_MAX_ATTEMPTS = 2;
+const STORY_NAME_MAX_WORDS = 12; // generous ceiling for a 2-6 word title — catches "wrote a sentence instead" cases
+const NAME_PATTERN = /\[NAME\]([\s\S]*?)\[\/NAME\]/;
+
+function extractStoryName(text: string): string | null {
+  const match = NAME_PATTERN.exec(text);
+  const content = match?.[1]?.trim().replace(/^["'“‘]+|["'”’]+$/g, "");
+  if (!content || !withinWordLimit(content, STORY_NAME_MAX_WORDS)) return null;
+  return content;
 }
 
 const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2;
@@ -208,8 +237,8 @@ function scanOnce(): void {
         trackedDbs.delete(storyId);
         continue;
       }
-      scanStory(db, story.ownerUserId);
-      scanHordeJobs(db);
+      scanStory(db, story.ownerUserId, storyId);
+      scanHordeJobs(db, storyId, story.ownerUserId);
     } catch (err) {
       if (!db.open) trackedDbs.delete(storyId);
       console.error(`pipeline scan failed for story ${storyId}:`, err instanceof Error ? err.message : err);
@@ -217,7 +246,7 @@ function scanOnce(): void {
   }
 }
 
-function scanStory(db: Database.Database, userId: string): void {
+function scanStory(db: Database.Database, userId: string, storyId: string): void {
     const job = claimNextJob(db, CLAIMABLE_JOB_TYPES);
     if (!job) return;
 
@@ -248,7 +277,7 @@ function scanStory(db: Database.Database, userId: string): void {
     } else if (job.jobType === "prose" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
-      void executeProseJob(db, userId, job.id, job.targetTextId, controller.signal);
+      void executeProseJob(db, userId, job.id, job.targetTextId, controller.signal, storyId);
     } else if (job.jobType === "setup" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
@@ -257,6 +286,10 @@ function scanStory(db: Database.Database, userId: string): void {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
       void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal);
+    } else if (job.jobType === "tag-gen" && job.targetTextId) {
+      void executeTagGenJob(db, userId, job.id, job.targetTextId);
+    } else if (job.jobType === "story-name" && job.targetTextId) {
+      void executeStoryNameJob(db, userId, job.id, job.targetTextId, storyId);
     } else {
       finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
       releaseSlot(job.id);
@@ -310,7 +343,8 @@ async function executeProseJob(
   userId: string,
   jobId: string,
   targetTextId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  storyId: string
 ): Promise<void> {
   const startedAt = Date.now();
   try {
@@ -323,6 +357,7 @@ async function executeProseJob(
     const metrics = { elapsedMs: Date.now() - startedAt, tokenEstimate };
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify(metrics) });
     indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
+    maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
     finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
     publishDone(jobId, fullText);
   } catch (err) {
@@ -383,13 +418,13 @@ function hordeJobTerminal(jobId: string): void {
  * scanStory; each job's own poll is fire-and-forget so one slow/stuck poll can't block
  * checking on the others.
  */
-function scanHordeJobs(db: Database.Database): void {
+function scanHordeJobs(db: Database.Database, storyId: string, userId: string): void {
   for (const job of listRunningHordeJobs(db)) {
-    void resolveHordeJob(db, job);
+    void resolveHordeJob(db, job, storyId, userId);
   }
 }
 
-async function resolveHordeJob(db: Database.Database, job: JobRow): Promise<void> {
+async function resolveHordeJob(db: Database.Database, job: JobRow, storyId: string, userId: string): Promise<void> {
   if (!job.hordeRequestId || !job.targetTextId) return;
   const targetTextId = job.targetTextId;
 
@@ -417,7 +452,10 @@ async function resolveHordeJob(db: Database.Database, job: JobRow): Promise<void
     const tokenEstimate = Math.ceil(fullText.length / 4);
 
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify({ tokenEstimate }) });
-    if (targetPage) indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
+    if (targetPage) {
+      indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
+      maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
+    }
 
     hordeJobTerminal(job.id);
     // job.model was recorded at submit time (see executeHordeProseSubmit) — reading it back
@@ -553,7 +591,8 @@ async function executeSetupJob(
     if (isUpdateSession) {
       // Single-pass: EDITOR_UPDATE_PROMPT's own reply may itself contain bracket blocks.
       try {
-        applyExtractedWorldbookBlocks(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), reply);
+        const created = applyExtractedWorldbookBlocks(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), reply);
+        queueTagGenJob(db, userId, created);
       } catch (err) {
         console.error(`[setup ${jobId}] worldbook extraction failed, reply still stands:`, err);
       }
@@ -631,7 +670,8 @@ async function executeSetupWorldbookJob(
     fillTextGeneration(db, targetTextId, { genPackage: rawText, genMetrics: JSON.stringify({ tokenEstimate }) });
 
     try {
-      applyExtractedWorldbookBlocks(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), rawText);
+      const created = applyExtractedWorldbookBlocks(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), rawText);
+      queueTagGenJob(db, userId, created);
     } catch (err) {
       console.error(`[setup-worldbook ${jobId}] worldbook extraction failed, message still stands:`, err);
     }
@@ -727,6 +767,179 @@ async function executeCompressJob(
     const compressMetrics = JSON.stringify({ elapsedMs: Date.now() - startedAt, tokenEstimate });
     fillTextExtract(db, targetTextId, summary, compressMetrics);
     finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    finishJob(db, jobId, "failed", message);
+  } finally {
+    releaseSlot(jobId);
+  }
+}
+
+/**
+ * Fires once, right when the kickoff post's generation lands (OOC -> IC) -- checked by page
+ * identity against story_state.kickoffPageId, the same check buildProseHistory itself uses, so
+ * a later Retry/Guided Retry of that same post re-triggers this too (harmless: the story.name
+ * check right after this is what actually gates it to "only while still unnamed"). Called from
+ * both prose-completion paths (executeProseJob's Featherless/streamed success and
+ * resolveHordeJob's Horde-poll success), since kickoff can run through either provider.
+ */
+function maybeQueueStoryNameJob(db: Database.Database, userId: string, storyId: string, targetPage: PageRow, targetTextId: string): void {
+  const kickoffPageId = getStoryState(db).kickoffPageId;
+  if (targetPage.id !== kickoffPageId) return;
+
+  const story = getStory(getGlobalDb(), storyId);
+  if (!story || story.name !== DEFAULT_STORY_NAME) return;
+
+  createJob(db, {
+    targetTextId,
+    jobType: "story-name",
+    slotCost: getAgentProfile(userId, "worker").concurrencyCost,
+    priority: -1,
+  });
+}
+
+/** Queued right after applyExtractedWorldbookBlocks, from both its call sites -- a no-op when
+ * that pass created nothing (e.g. a reply with no bracket blocks at all). */
+function queueTagGenJob(db: Database.Database, userId: string, created: WorldbookEntry[]): void {
+  if (created.length === 0) return;
+  createJob(db, {
+    targetTextId: created[0].currentTextId,
+    jobType: "tag-gen",
+    slotCost: getAgentProfile(userId, "worker").concurrencyCost,
+    priority: -1,
+  });
+}
+
+/**
+ * Runs after every worldbook-generation event (both the pre-kickoff dual-pass and the
+ * post-kickoff single-pass update) -- queued right after whichever call created the entries,
+ * see the two applyExtractedWorldbookBlocks call sites below. Reads every current ROSTER/MEMORY
+ * entry (not just the ones that just got created), the PC's own CONTENT line, and the tags that
+ * already exist, since none of "never tag the PC" or "don't duplicate an existing tag" is
+ * enforceable from the newly-created entries alone. Best-effort: a failure here never touches
+ * the worldbook entries or job that triggered it -- auto-tagging is a convenience layered on
+ * top of already-complete work, not a dependency of it.
+ */
+async function executeTagGenJob(db: Database.Database, userId: string, jobId: string, targetTextId: string): Promise<void> {
+  try {
+    const targetText = getText(db, targetTextId);
+    if (!targetText) throw new Error("target text no longer exists");
+    const targetPage = getPage(db, targetText.pageId);
+    if (!targetPage) throw new Error("target page no longer exists");
+
+    const worldbookBookId = targetPage.bookId;
+    const tagScopeBookId = getTagScopeBookId(db, worldbookBookId);
+
+    const subjectEntries = listWorldbookEntries(db, worldbookBookId).filter(
+      (e) => e.entryType === "roster" || e.entryType === "memory"
+    );
+    if (subjectEntries.length === 0) {
+      finishJob(db, jobId, "done");
+      return;
+    }
+
+    const contentEntries = listContentEntries(db, worldbookBookId);
+    const existingTags = listTags(db, tagScopeBookId);
+
+    const tagGenMessages: ChatMessage[] = [{ role: "system", content: TAG_GENERATION_PROMPT }];
+    if (contentEntries.length) {
+      tagGenMessages.push({
+        role: "system",
+        content: `PC reference, for exclusion only -- never propose this as a tag:\n${contentEntries.map((e) => e.content).join("\n\n")}`,
+      });
+    }
+    tagGenMessages.push({
+      role: "system",
+      content: existingTags.length
+        ? `Tags that already exist -- do not propose any of these again:\n${existingTags.map((t) => t.name).join(", ")}`
+        : "No tags exist yet.",
+    });
+    tagGenMessages.push({
+      role: "user",
+      content: subjectEntries.map((e) => `[${e.entryType.toUpperCase()}]\n${e.content}`).join("\n\n"),
+    });
+
+    let candidates: string[] | null = null;
+    let usedModel = "";
+    let lastError = "unknown error";
+    for (let attempt = 1; attempt <= TAG_GEN_MAX_ATTEMPTS && candidates === null; attempt++) {
+      try {
+        const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
+          usedModel = profile.model;
+          return completeChat(profile, tagGenMessages);
+        });
+        candidates = extractTagCandidates(rawText);
+        if (candidates === null) lastError = `no [TAGS] block on attempt ${attempt}: "${rawText.slice(0, 80)}"`;
+      } catch (err) {
+        lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    if (candidates === null) throw new Error(`tag generation failed after ${TAG_GEN_MAX_ATTEMPTS} attempts — ${lastError}`);
+
+    const existingNames = new Set(existingTags.map((t) => t.name.toLowerCase()));
+    for (const name of candidates) {
+      if (!isValidTagName(name) || existingNames.has(name.toLowerCase())) continue;
+      existingNames.add(name.toLowerCase());
+      try {
+        const tag = createTag(db, { bookId: tagScopeBookId, name });
+        reindexTagAcrossBook(db, tag.id);
+      } catch (err) {
+        console.error(`[tag-gen ${jobId}] failed to create tag "${name}":`, err);
+      }
+    }
+
+    finishJob(db, jobId, "done", undefined, { model: usedModel });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    finishJob(db, jobId, "failed", message);
+  } finally {
+    releaseSlot(jobId);
+  }
+}
+
+/**
+ * Quietly renames a story off its "Working Title" placeholder once it's gone live — see
+ * maybeQueueStoryNameJob for the trigger. Re-checks story.name against DEFAULT_STORY_NAME again
+ * here (not just at queue time) since this runs some time later and the user could have renamed
+ * it by hand in the meantime; that manual rename must win, not get clobbered by a job queued
+ * before it happened. Same [NAME]-wrapped, Worker-tier shape as the tag-gen job above, and
+ * deliberately reusable — see NAMING_PROMPT's doc comment for scene names.
+ */
+async function executeStoryNameJob(db: Database.Database, userId: string, jobId: string, targetTextId: string, storyId: string): Promise<void> {
+  try {
+    const targetText = getText(db, targetTextId);
+    if (!targetText?.genPackage) throw new Error("nothing to name from");
+
+    const nameMessages: ChatMessage[] = [
+      { role: "system", content: NAMING_PROMPT },
+      { role: "user", content: targetText.genPackage },
+    ];
+
+    let name: string | null = null;
+    let usedModel = "";
+    let lastError = "unknown error";
+    for (let attempt = 1; attempt <= STORY_NAME_MAX_ATTEMPTS && !name; attempt++) {
+      try {
+        const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
+          usedModel = profile.model;
+          return completeChat(profile, nameMessages);
+        });
+        const candidate = extractStoryName(rawText);
+        if (candidate) name = candidate;
+        else lastError = `no usable [NAME] block on attempt ${attempt}: "${rawText.slice(0, 80)}"`;
+      } catch (err) {
+        lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+    if (!name) throw new Error(`naming failed after ${STORY_NAME_MAX_ATTEMPTS} attempts — ${lastError}`);
+
+    const globalDb = getGlobalDb();
+    const story = getStory(globalDb, storyId);
+    if (story && story.name === DEFAULT_STORY_NAME) {
+      renameStory(globalDb, storyId, name);
+    }
+
+    finishJob(db, jobId, "done", undefined, { model: usedModel });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);

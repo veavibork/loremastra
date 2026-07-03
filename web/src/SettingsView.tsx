@@ -8,6 +8,7 @@ import {
   type LayoutConfigData,
 } from "./api";
 import SettingsTreeEditor, { type JsonData, type SettingsSection } from "./SettingsTreeEditor";
+import AccountSettings from "./AccountSettings";
 import { applyGlobalCssSettings, GLOBAL_CSS_SPACE, type GlobalCssSettings } from "./globalCssSettings";
 import { DEFAULT_PLAY_TAB_SETTINGS, PLAY_TAB_SPACE, useSetPlayTabSettings, type PlayTabSettings } from "./playTabSettings";
 import "./SettingsView.css";
@@ -140,6 +141,7 @@ export default function SettingsView() {
   return (
     <div className="settings-view">
       <h2>Settings</h2>
+      <AccountSettings />
       <SettingsTreeEditor sections={sections} />
     </div>
   );
