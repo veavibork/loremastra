@@ -1,5 +1,6 @@
 export const API_BASE = "http://localhost:4114";
 const SESSION_STORAGE_KEY = "loremaster.sessionId";
+const USER_STORAGE_KEY = "loremaster.userId";
 
 export function getSessionId(): string | null {
   return localStorage.getItem(SESSION_STORAGE_KEY);
@@ -9,17 +10,38 @@ export function setSessionId(id: string): void {
   localStorage.setItem(SESSION_STORAGE_KEY, id);
 }
 
+export function getStoredUserId(): string | null {
+  return localStorage.getItem(USER_STORAGE_KEY);
+}
+
+export interface UserProfile {
+  id: string;
+  displayName: string;
+}
+
+/** Guard-exempt (GET only) — the picker needs this before any session exists. */
+export async function fetchUsers(): Promise<UserProfile[]> {
+  const res = await fetch(`${API_BASE}/api/users`);
+  return res.json();
+}
+
 /**
  * Deliberately raw fetch, not apiFetch — this route is guard-exempt server-side
  * (src/routes/sessions.ts), and attaching a soon-to-be-invalidated old session header
  * here would be pointless. Keeps the exemption visible in client code too, not just the
  * server's.
  */
-export async function claimSession(): Promise<{ sessionId: string; claimedAt: string }> {
-  const res = await fetch(`${API_BASE}/api/sessions/claim`, { method: "POST" });
-  const data = (await res.json()) as { sessionId: string; claimedAt: string };
+export async function claimSession(userId: string, password: string): Promise<{ sessionId: string; claimedAt: string }> {
+  const res = await fetch(`${API_BASE}/api/sessions/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, password }),
+  });
+  const data = (await res.json()) as { sessionId?: string; claimedAt?: string; error?: string };
+  if (!data.sessionId) throw new Error(data.error ?? "claim failed");
   setSessionId(data.sessionId);
-  return data;
+  localStorage.setItem(USER_STORAGE_KEY, userId);
+  return { sessionId: data.sessionId, claimedAt: data.claimedAt! };
 }
 
 export type SupersededReason = "unclaimed" | "superseded";

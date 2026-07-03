@@ -470,17 +470,17 @@ not this phase — meaningless without real distinct users.
 Deferred 2026-07-03 so Horde integration can prove out against the existing single-default-user model
 first. Not designed in detail yet; captured here so the earlier planning pass isn't lost.
 
-- **Real per-user login.** Netflix-style profile row (`GET /api/users` — id + display_name only),
-  password validation on claim (per-user claim + password check, extending the existing `sessions`
-  table/`session-store.ts` rather than replacing it — `createSession`/`getActiveSession` are already
-  scoped by `user_id`, just never driven by real distinct users yet). `session-guard.ts` needs to
-  resolve session → user rather than assuming the single default user. Password hashing: `bcryptjs`
-  recommended (pure JS, no native-build risk vs. Argon2id/native bcrypt; the existing
-  `password_kdf_salt` column doesn't fit bcrypt's baked-in-salt hash format and would be dropped in
-  favor of storing the full hash in `password_verifier`). Session/cookie handling: keep hand-rolling on
-  the existing `X-Loremaster-Session` header + `sessions` table rather than adopting `hono/cookie` — the
-  current CORS policy (`Access-Control-Allow-Origin: *`) is incompatible with cookie+credentials
-  requests anyway.
+- **Real per-user login — done 2026-07-03.** Netflix-style profile picker (`GET /api/users` — id +
+  display_name only) feeding a password-gated claim (`POST /api/sessions/claim` now takes
+  `{userId, password}`, verified via `bcryptjs.compareSync` against `password_verifier`).
+  `session-guard.ts` resolves session → real user rather than assuming a single default user;
+  `createSession`'s existing per-`user_id` eviction meant true simultaneous multi-user login needed no
+  new mechanism, just real distinct identities threaded through it. `DEV_BYPASS_SESSION_GUARD` is now
+  `false` by default. Admin-provisioned accounts only (`npm run user:create -- <name> <password>`), no
+  self-serve signup. Also closed a gap found during scoping: story-scoped routes had no ownership
+  check at all — added a shared `requireStoryOwnership` middleware (403 on mismatch) covering every
+  `/api/stories/:id...` route. Per-user file isolation, encrypted Horde key storage, and
+  `featherless_access` remain deferred below, as originally scoped.
 - **Per-user file-level data isolation.** `data/global.sqlite`'s `layout_configs`/`settings_spaces`/
   `preference_profiles`/`model_configs`/`stories` split into one file per user (new
   `src/db/user-db.ts`/`user-schema.ts`, mirroring `story-db.ts`'s pattern), leaving `global.sqlite` down

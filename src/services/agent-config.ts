@@ -1,6 +1,5 @@
 import type Database from "better-sqlite3";
 import { getGlobalDb } from "../db/global-db.js";
-import { getOrCreateDefaultUser } from "../db/user-store.js";
 import { getAgentConfigOverride, type AgentRole } from "../db/agent-config-store.js";
 import { listModelConfigs, createModelConfig, type ModelConfigRow } from "../db/model-config-store.js";
 import { DEFAULT_AUTHOR_PROFILE, DEFAULT_WORKER_PROFILE, DEFAULT_EDITOR_PROFILE, type AgentProfile } from "../config.js";
@@ -67,12 +66,11 @@ function roleFlag(row: ModelConfigRow, role: AgentRole): boolean {
  * empty for this role (e.g. every row for it got deactivated) — real day-to-day fallback
  * behavior comes entirely from the ordered row list now, not this constant.
  */
-export function getAgentProfile(role: AgentRole): AgentProfile {
+export function getAgentProfile(userId: string, role: AgentRole): AgentProfile {
   const db = getGlobalDb();
-  const user = getOrCreateDefaultUser(db);
-  ensureModelConfigsSeeded(db, user.id);
+  ensureModelConfigsSeeded(db, userId);
 
-  const rows = listModelConfigs(db, user.id).filter((r) => r.active && roleFlag(r, role));
+  const rows = listModelConfigs(db, userId).filter((r) => r.active && roleFlag(r, role));
   if (!rows.length) return DEFAULTS[role];
 
   const [primary, ...fallbacks] = rows;

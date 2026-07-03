@@ -1,5 +1,4 @@
 import { getGlobalDb } from "../db/global-db.js";
-import { getOrCreateDefaultUser } from "../db/user-store.js";
 import { getSettingsSpace } from "../db/settings-space-store.js";
 
 /**
@@ -41,10 +40,9 @@ export const DEFAULT_REFUSAL_PREFIXES = [
 export const BANNED_PHRASES_SPACE = "banned-phrases";
 
 /** Case-insensitive, leading-whitespace-tolerant prefix match against the live refusal catalog. */
-export function matchesRefusalPrefix(text: string): boolean {
+export function matchesRefusalPrefix(userId: string, text: string): boolean {
   const db = getGlobalDb();
-  const user = getOrCreateDefaultUser(db);
-  const prefixes = getSettingsSpace<string[]>(db, user.id, BANNED_PHRASES_SPACE, DEFAULT_REFUSAL_PREFIXES);
+  const prefixes = getSettingsSpace<string[]>(db, userId, BANNED_PHRASES_SPACE, DEFAULT_REFUSAL_PREFIXES);
   const trimmed = text.trimStart().toLowerCase();
   return prefixes.some((prefix) => trimmed.startsWith(prefix.toLowerCase()));
 }

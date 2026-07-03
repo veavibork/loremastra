@@ -1,9 +1,9 @@
 import { unlinkSync } from "node:fs";
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { streamSSE } from "hono/streaming";
 import { getGlobalDb } from "../db/global-db.js";
 import { getStoryDb, closeStoryDb } from "../db/story-db.js";
-import { getOrCreateDefaultUser } from "../db/user-store.js";
+import type { AppVariables } from "../middleware/session-guard.js";
 import { createStory, listStories, getStory, renameStory, deleteStory } from "../db/story-store.js";
 import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
@@ -34,7 +34,7 @@ import { assembleAuthorPrompt } from "../services/history.js";
 import { EDITOR_SETUP_OPENING } from "../prompts.js";
 import { getAgentProfile } from "../services/agent-config.js";
 
-export const storiesRoute = new Hono();
+export const storiesRoute = new Hono<{ Variables: AppVariables }>();
 
 storiesRoute.use("*", async (c, next) => {
   c.header("Access-Control-Allow-Origin", "*");
@@ -43,6 +43,20 @@ storiesRoute.use("*", async (c, next) => {
   if (c.req.method === "OPTIONS") return c.body(null, 204);
   await next();
 });
+
+/**
+ * Every route below the top-level POST/GET "/" operates on a specific story by id — this
+ * enforces that the requesting user actually owns it, once for all of them, rather than
+ * repeating the check in ~25 individual handlers.
+ */
+async function requireStoryOwnership(c: Context<{ Variables: AppVariables }>, next: Next): Promise<Response | void> {
+  const story = getStory(getGlobalDb(), c.req.param("id")!);
+  if (!story) return c.json({ error: "story not found" }, 404);
+  if (story.ownerUserId !== c.get("userId")) return c.json({ error: "forbidden" }, 403);
+  await next();
+}
+storiesRoute.use("/:id", requireStoryOwnership);
+storiesRoute.use("/:id/*", requireStoryOwnership);
 
 function openTrackedStoryDb(storyId: string) {
   const db = getStoryDb(storyId);
@@ -55,8 +69,7 @@ storiesRoute.post("/", async (c) => {
   const name = body.name?.trim() || "Untitled Story";
 
   const globalDb = getGlobalDb();
-  const user = getOrCreateDefaultUser(globalDb);
-  const story = createStory(globalDb, { ownerUserId: user.id, name });
+  const story = createStory(globalDb, { ownerUserId: c.get("userId"), name });
 
   const storyDb = openTrackedStoryDb(story.id);
   const gameBook = createBook(storyDb, { bookType: "game" });
@@ -77,8 +90,7 @@ storiesRoute.post("/", async (c) => {
 
 storiesRoute.get("/", (c) => {
   const globalDb = getGlobalDb();
-  const user = getOrCreateDefaultUser(globalDb);
-  const stories = listStories(globalDb, user.id).map((story) => ({
+  const stories = listStories(globalDb, c.get("userId")).map((story) => ({
     ...story,
     stats: getStoryStats(openTrackedStoryDb(story.id)),
   }));
@@ -157,7 +169,7 @@ storiesRoute.get("/:id/prompt-preview", (c) => {
   const tagsParam = c.req.query("tags");
   const overrideTagIds = tagsParam !== undefined ? tagsParam.split(",").filter(Boolean) : undefined;
 
-  const messages = assembleAuthorPrompt(storyDb, logbook.id, currentPageId, overrideTagIds);
+  const messages = assembleAuthorPrompt(storyDb, c.get("userId"), logbook.id, currentPageId, overrideTagIds);
   return c.json({ messages });
 });
 
@@ -202,11 +214,11 @@ storiesRoute.post("/:id/messages", async (c) => {
   const job = createJob(storyDb, {
     targetTextId: agentText.id,
     jobType: "prose",
-    slotCost: getAgentProfile("author").concurrencyCost,
+    slotCost: getAgentProfile(c.get("userId"), "author").concurrencyCost,
     priority: 10,
   });
-  enqueueEligibleCompressJobs(storyDb, logbook.id);
-  enqueueEligibleArchiveBlocks(storyDb, logbook.id);
+  enqueueEligibleCompressJobs(storyDb, c.get("userId"), logbook.id);
+  enqueueEligibleArchiveBlocks(storyDb, c.get("userId"), logbook.id);
 
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
 });
@@ -246,7 +258,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
   const job = createJob(storyDb, {
     targetTextId: newText.id,
     jobType: isSetupPage ? "setup" : "prose",
-    slotCost: getAgentProfile(isSetupPage ? "editor" : "author").concurrencyCost,
+    slotCost: getAgentProfile(c.get("userId"), isSetupPage ? "editor" : "author").concurrencyCost,
     priority: 10,
   });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "regenerate");
@@ -310,7 +322,7 @@ storiesRoute.post("/:id/continue", async (c) => {
   const job = createJob(storyDb, {
     targetTextId: text.id,
     jobType: isSetupContinuation ? "setup" : "prose",
-    slotCost: getAgentProfile(isSetupContinuation ? "editor" : "author").concurrencyCost,
+    slotCost: getAgentProfile(c.get("userId"), isSetupContinuation ? "editor" : "author").concurrencyCost,
     priority: 10,
   });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "continue");
@@ -388,13 +400,12 @@ storiesRoute.post("/:id/fork", async (c) => {
   }
 
   const globalDb = getGlobalDb();
-  const user = getOrCreateDefaultUser(globalDb);
   const sourceStory = getStory(globalDb, sourceStoryId);
   if (!sourceStory) return c.json({ error: "source story not found" }, 404);
 
   try {
     const newStory = forkStory(globalDb, storyDb, {
-      ownerUserId: user.id,
+      ownerUserId: c.get("userId"),
       sourceStoryId,
       sourceName: sourceStory.name,
       name: body.name,
@@ -447,7 +458,7 @@ storiesRoute.post("/:id/setup/messages", async (c) => {
   const job = createJob(storyDb, {
     targetTextId: agentText.id,
     jobType: "setup",
-    slotCost: getAgentProfile("editor").concurrencyCost,
+    slotCost: getAgentProfile(c.get("userId"), "editor").concurrencyCost,
     priority: 10,
   });
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
@@ -479,7 +490,7 @@ storiesRoute.post("/:id/kickoff", (c) => {
   const job = createJob(storyDb, {
     targetTextId: text.id,
     jobType: "prose",
-    slotCost: getAgentProfile("author").concurrencyCost,
+    slotCost: getAgentProfile(c.get("userId"), "author").concurrencyCost,
     priority: 10,
   });
   return c.json({ agentPageId: page.id, jobId: job.id });

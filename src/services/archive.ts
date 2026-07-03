@@ -21,7 +21,7 @@ const ARCHIVE_BLOCK_STEP = 5;
  * that start point yet. Handles rewrites/undos/branches correctly because it
  * checks the precondition rather than counting rows.
  */
-export function enqueueEligibleArchiveBlocks(db: Database.Database, logbookId: string): void {
+export function enqueueEligibleArchiveBlocks(db: Database.Database, userId: string, logbookId: string): void {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const existingStarts = new Set(listArchivesForBook(db, logbookId).map((a) => a.startPageId));
 
@@ -47,7 +47,7 @@ export function enqueueEligibleArchiveBlocks(db: Database.Database, logbookId: s
     createJob(db, {
       targetArchiveId: archive.id,
       jobType: "archive",
-      slotCost: getAgentProfile("editor").concurrencyCost,
+      slotCost: getAgentProfile(userId, "editor").concurrencyCost,
       priority: 5,
     });
   }

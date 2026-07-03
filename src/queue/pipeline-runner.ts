@@ -17,6 +17,8 @@ import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { listContentEntries } from "../db/worldbook-store.js";
 import { fillArchiveSummary, getArchive, listMemberTextIds } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
+import { getGlobalDb } from "../db/global-db.js";
+import { getStory } from "../db/story-store.js";
 import { tryAcquireSlot, releaseSlot } from "./slots.js";
 import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
 import { publishToken, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
@@ -194,13 +196,19 @@ export function stopPipelineRunner(): void {
 }
 
 function scanOnce(): void {
+  const globalDb = getGlobalDb();
   for (const [storyId, db] of trackedDbs) {
     // Belt-and-suspenders on top of untrackStoryDb: a closed connection (or any other
     // per-story fault) must never take down the shared setInterval loop that every other
     // tracked story depends on. An uncaught throw here is fatal to the whole process — this
     // is exactly what happened before untrackStoryDb existed (see stub-revisions.md).
     try {
-      scanStory(db);
+      const story = getStory(globalDb, storyId);
+      if (!story) {
+        trackedDbs.delete(storyId);
+        continue;
+      }
+      scanStory(db, story.ownerUserId);
       scanHordeJobs(db);
     } catch (err) {
       if (!db.open) trackedDbs.delete(storyId);
@@ -209,7 +217,7 @@ function scanOnce(): void {
   }
 }
 
-function scanStory(db: Database.Database): void {
+function scanStory(db: Database.Database, userId: string): void {
     const job = claimNextJob(db, CLAIMABLE_JOB_TYPES);
     if (!job) return;
 
@@ -219,12 +227,12 @@ function scanStory(db: Database.Database): void {
     // since a Horde generation can take minutes and this tick can't block on it. The job stays
     // 'running' with a horde_request_id recorded; scanHordeJobs (P5b) polls it to resolution
     // on later ticks.
-    if (job.jobType === "prose" && job.targetTextId && getAgentProfile("author").provider === "horde") {
+    if (job.jobType === "prose" && job.targetTextId && getAgentProfile(userId, "author").provider === "horde") {
       if (!tryAcquireHordeSlot(job.id)) {
         db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(job.id);
         return;
       }
-      void executeHordeProseSubmit(db, job.id, job.targetTextId);
+      void executeHordeProseSubmit(db, userId, job.id, job.targetTextId);
       return;
     }
 
@@ -234,21 +242,21 @@ function scanStory(db: Database.Database): void {
       return;
     }
     if (job.jobType === "compress" && job.targetTextId) {
-      void executeCompressJob(db, job.id, job.targetTextId);
+      void executeCompressJob(db, userId, job.id, job.targetTextId);
     } else if (job.jobType === "archive" && job.targetArchiveId) {
-      void executeArchiveJob(db, job.id, job.targetArchiveId);
+      void executeArchiveJob(db, userId, job.id, job.targetArchiveId);
     } else if (job.jobType === "prose" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
-      void executeProseJob(db, job.id, job.targetTextId, controller.signal);
+      void executeProseJob(db, userId, job.id, job.targetTextId, controller.signal);
     } else if (job.jobType === "setup" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
-      void executeSetupJob(db, job.id, job.targetTextId, controller.signal);
+      void executeSetupJob(db, userId, job.id, job.targetTextId, controller.signal);
     } else if (job.jobType === "setup-worldbook" && job.targetTextId) {
       const controller = new AbortController();
       runningControllers.set(job.id, controller);
-      void executeSetupWorldbookJob(db, job.id, job.targetTextId, controller.signal);
+      void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal);
     } else {
       finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
       releaseSlot(job.id);
@@ -259,7 +267,12 @@ function scanStory(db: Database.Database): void {
  * Shared by both the Featherless (streamed, synchronous-await) and Horde (submit-then-poll)
  * prose paths — the prompt assembly itself doesn't care how the reply eventually comes back.
  */
-function buildProseHistory(db: Database.Database, jobId: string, targetTextId: string): { history: ChatMessage[]; targetPage: PageRow } {
+function buildProseHistory(
+  db: Database.Database,
+  userId: string,
+  jobId: string,
+  targetTextId: string
+): { history: ChatMessage[]; targetPage: PageRow } {
   const targetText = getText(db, targetTextId);
   if (!targetText) throw new Error("target text no longer exists");
   const targetPage = getPage(db, targetText.pageId);
@@ -276,7 +289,7 @@ function buildProseHistory(db: Database.Database, jobId: string, targetTextId: s
     if (!worldbook) throw new Error("worldbook not found");
     history = assembleKickoffPrompt(db, worldbook.id);
   } else {
-    history = assembleAuthorPrompt(db, targetPage.bookId, targetPage.prevPageId);
+    history = assembleAuthorPrompt(db, userId, targetPage.bookId, targetPage.prevPageId);
   }
 
   const guidance = jobGuidance.get(jobId);
@@ -294,14 +307,15 @@ function buildProseHistory(db: Database.Database, jobId: string, targetTextId: s
 
 async function executeProseJob(
   db: Database.Database,
+  userId: string,
   jobId: string,
   targetTextId: string,
   signal: AbortSignal
 ): Promise<void> {
   const startedAt = Date.now();
   try {
-    const { history, targetPage } = buildProseHistory(db, jobId, targetTextId);
-    const { text: fullText, model } = await streamWithFallback(getAgentProfile("author"), history, jobId, signal);
+    const { history, targetPage } = buildProseHistory(db, userId, jobId, targetTextId);
+    const { text: fullText, model } = await streamWithFallback(getAgentProfile(userId, "author"), history, jobId, signal);
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —
     // not a real tokenizer, good enough for the Logs telemetry view's ballpark numbers.
@@ -335,10 +349,10 @@ async function executeProseJob(
  * here — the slot represents "still awaiting a result," which is true well past this
  * function's return.
  */
-async function executeHordeProseSubmit(db: Database.Database, jobId: string, targetTextId: string): Promise<void> {
+async function executeHordeProseSubmit(db: Database.Database, userId: string, jobId: string, targetTextId: string): Promise<void> {
   try {
-    const { history } = buildProseHistory(db, jobId, targetTextId);
-    const profile = getAgentProfile("author");
+    const { history } = buildProseHistory(db, userId, jobId, targetTextId);
+    const profile = getAgentProfile(userId, "author");
     const { id: requestId } = await submitTextGeneration(profile, history);
     setHordeRequestId(db, jobId, requestId);
     setJobModel(db, jobId, profile.model);
@@ -468,9 +482,9 @@ function buildSetupConversation(
  * (which would otherwise confuse the Editor's own OOC role alternation). Reuses
  * assembleAuthorPrompt's existing tiered history assembly rather than building a second one.
  */
-function buildIcContextBlock(db: Database.Database, logbookId: string): ChatMessage | null {
+function buildIcContextBlock(db: Database.Database, userId: string, logbookId: string): ChatMessage | null {
   const currentPageId = getStoryState(db).currentPageId;
-  const icMessages = assembleAuthorPrompt(db, logbookId, currentPageId).slice(1);
+  const icMessages = assembleAuthorPrompt(db, userId, logbookId, currentPageId).slice(1);
   if (!icMessages.length) return null;
   const icLines = icMessages.map((m) => `[${m.role}] ${m.content}`).join("\n\n");
   return {
@@ -490,6 +504,7 @@ function buildIcContextBlock(db: Database.Database, logbookId: string): ChatMess
  */
 async function executeSetupJob(
   db: Database.Database,
+  userId: string,
   jobId: string,
   targetTextId: string,
   signal: AbortSignal
@@ -510,7 +525,7 @@ async function executeSetupJob(
     const editorMessages: ChatMessage[] = [];
     if (isUpdateSession) {
       editorMessages.push({ role: "system", content: EDITOR_UPDATE_PROMPT });
-      const icContextBlock = buildIcContextBlock(db, targetPage.bookId);
+      const icContextBlock = buildIcContextBlock(db, userId, targetPage.bookId);
       if (icContextBlock) editorMessages.push(icContextBlock);
       conversation = buildSetupConversation(db, targetPage.bookId, targetPage.prevPageId, oocSessionStartPageId);
     } else {
@@ -529,7 +544,7 @@ async function executeSetupJob(
       editorMessages.push({ role: "system", content });
     }
 
-    const { text: reply, model } = await streamWithFallback(getAgentProfile("editor"), editorMessages, jobId, signal);
+    const { text: reply, model } = await streamWithFallback(getAgentProfile(userId, "editor"), editorMessages, jobId, signal);
 
     const tokenEstimate = Math.ceil(reply.length / 4);
     fillTextGeneration(db, targetTextId, { genPackage: reply, genMetrics: JSON.stringify({ tokenEstimate }) });
@@ -554,7 +569,7 @@ async function executeSetupJob(
         const worldbookJob = createJob(db, {
           targetTextId: worldbookText.id,
           jobType: "setup-worldbook",
-          slotCost: getAgentProfile("editor").concurrencyCost,
+          slotCost: getAgentProfile(userId, "editor").concurrencyCost,
           priority: 10,
         });
         followUp = { jobId: worldbookJob.id, pageId: worldbookPage.id };
@@ -589,6 +604,7 @@ async function executeSetupJob(
  */
 async function executeSetupWorldbookJob(
   db: Database.Database,
+  userId: string,
   jobId: string,
   targetTextId: string,
   signal: AbortSignal
@@ -609,7 +625,7 @@ async function executeSetupWorldbookJob(
     if (replyText?.genPackage) conversation.push({ role: "assistant", content: replyText.genPackage });
 
     const worldbookMessages: ChatMessage[] = [{ role: "system", content: EDITOR_SETUP_WORLDBOOK }, ...conversation];
-    const { text: rawText, model } = await streamWithFallback(getAgentProfile("editor"), worldbookMessages, jobId, signal);
+    const { text: rawText, model } = await streamWithFallback(getAgentProfile(userId, "editor"), worldbookMessages, jobId, signal);
 
     const tokenEstimate = Math.ceil(rawText.length / 4);
     fillTextGeneration(db, targetTextId, { genPackage: rawText, genMetrics: JSON.stringify({ tokenEstimate }) });
@@ -655,6 +671,7 @@ async function executeSetupWorldbookJob(
  */
 async function executeCompressJob(
   db: Database.Database,
+  userId: string,
   jobId: string,
   targetTextId: string
 ): Promise<void> {
@@ -687,12 +704,12 @@ async function executeCompressJob(
 
     for (let attempt = 1; attempt <= COMPRESS_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const rawText = await withModelFallback(getAgentProfile("worker"), (profile) => {
+        const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
           usedModel = profile.model;
           return completeChat(profile, compressMessages);
         });
         const candidate = extractSummary(rawText) ?? "";
-        if (matchesRefusalPrefix(candidate)) {
+        if (matchesRefusalPrefix(userId, candidate)) {
           lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
         } else if (withinWordLimit(candidate, COMPRESS_MAX_WORDS)) {
           summary = candidate;
@@ -726,6 +743,7 @@ async function executeCompressJob(
  */
 async function executeArchiveJob(
   db: Database.Database,
+  userId: string,
   jobId: string,
   targetArchiveId: string
 ): Promise<void> {
@@ -745,7 +763,7 @@ async function executeArchiveJob(
 
     for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const rawText = await withModelFallback(getAgentProfile("editor"), (profile) => {
+        const rawText = await withModelFallback(getAgentProfile(userId, "editor"), (profile) => {
           usedModel = profile.model;
           return completeChat(profile, [
             { role: "system", content: ARCHIVE_SYSTEM_PROMPT },
@@ -753,7 +771,7 @@ async function executeArchiveJob(
           ]);
         });
         const candidate = extractSummary(rawText) ?? "";
-        if (matchesRefusalPrefix(candidate)) {
+        if (matchesRefusalPrefix(userId, candidate)) {
           lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
         } else if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {
           summary = candidate;

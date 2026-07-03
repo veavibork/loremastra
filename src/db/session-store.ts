@@ -2,7 +2,6 @@ import type Database from "better-sqlite3";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 import { getGlobalDb } from "./global-db.js";
-import { getOrCreateDefaultUser } from "./user-store.js";
 
 export interface SessionRow {
   id: string;
@@ -74,12 +73,20 @@ export function invalidateActiveSession(db: Database.Database, userId: string): 
 }
 
 /**
+ * Revokes every currently-active claim, across every user — a direct-DB write (dev-server tools,
+ * ad hoc scripts) can't know which user's data it touched, so the safe behavior is to kick
+ * everyone back through claim rather than guess a single affected user.
+ */
+export function invalidateAllActiveSessions(db: Database.Database): void {
+  db.prepare(`UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL`).run(nowIso());
+}
+
+/**
  * Zero-argument convenience for the common case (dev-server tools, ad hoc scripts): open the
- * global DB, resolve the one default user, and invalidate whatever session is currently claimed.
- * Call this once after a direct-DB write is done, not per statement.
+ * global DB and invalidate every currently-claimed session. Call this once after a direct-DB
+ * write is done, not per statement.
  */
 export function notifyDirectMutation(): void {
   const db = getGlobalDb();
-  const user = getOrCreateDefaultUser(db);
-  invalidateActiveSession(db, user.id);
+  invalidateAllActiveSessions(db);
 }

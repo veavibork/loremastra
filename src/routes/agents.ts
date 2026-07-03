@@ -1,6 +1,6 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { getGlobalDb } from "../db/global-db.js";
-import { getOrCreateDefaultUser } from "../db/user-store.js";
+import type { AppVariables } from "../middleware/session-guard.js";
 import {
   listModelConfigs,
   createModelConfig,
@@ -13,7 +13,7 @@ import { getAgentProfile } from "../services/agent-config.js";
 import { listModels } from "../inference/featherless-models.js";
 import { listTextModels } from "../inference/horde.js";
 
-export const agentsRoute = new Hono();
+export const agentsRoute = new Hono<{ Variables: AppVariables }>();
 
 export interface CatalogModel {
   id: string;
@@ -78,34 +78,34 @@ function toPatch(body: Record<string, unknown>): Partial<ModelConfigInput> {
 
 // Ensures Config > Agents always reflects the current live state (including the one-time
 // migration from the old per-role table) before any read/write below touches the list.
-function ensureSeeded(): { db: ReturnType<typeof getGlobalDb>; userId: string } {
+function ensureSeeded(c: Context<{ Variables: AppVariables }>): { db: ReturnType<typeof getGlobalDb>; userId: string } {
   const db = getGlobalDb();
-  const user = getOrCreateDefaultUser(db);
-  getAgentProfile("author"); // triggers ensureModelConfigsSeeded as a side effect
-  return { db, userId: user.id };
+  const userId = c.get("userId");
+  getAgentProfile(userId, "author"); // triggers ensureModelConfigsSeeded as a side effect
+  return { db, userId };
 }
 
 agentsRoute.get("/", (c) => {
-  const { db, userId } = ensureSeeded();
+  const { db, userId } = ensureSeeded(c);
   return c.json({ configs: listModelConfigs(db, userId) });
 });
 
 agentsRoute.post("/", (c) => {
-  const { db, userId } = ensureSeeded();
+  const { db, userId } = ensureSeeded(c);
   const created = createModelConfig(db, userId, DEFAULT_NEW_MODEL);
   return c.json({ config: created });
 });
 
 agentsRoute.patch("/:id", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const { db } = ensureSeeded();
+  const { db } = ensureSeeded(c);
   const updated = updateModelConfig(db, c.req.param("id"), toPatch(body));
   if (!updated) return c.json({ error: "model config not found" }, 404);
   return c.json({ config: updated });
 });
 
 agentsRoute.delete("/:id", (c) => {
-  const { db } = ensureSeeded();
+  const { db } = ensureSeeded(c);
   deleteModelConfig(db, c.req.param("id"));
   return c.json({ ok: true });
 });
@@ -113,7 +113,7 @@ agentsRoute.delete("/:id", (c) => {
 agentsRoute.post("/reorder", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { orderedIds?: string[] };
   if (!Array.isArray(body.orderedIds)) return c.json({ error: "orderedIds is required" }, 400);
-  const { db, userId } = ensureSeeded();
+  const { db, userId } = ensureSeeded(c);
   reorderModelConfigs(db, userId, body.orderedIds);
   return c.json({ configs: listModelConfigs(db, userId) });
 });

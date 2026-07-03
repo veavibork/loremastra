@@ -16,9 +16,8 @@ import type Database from "better-sqlite3";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { getGlobalDb } from "../db/global-db.js";
-import { getOrCreateDefaultUser } from "../db/user-store.js";
 import { notifyDirectMutation } from "../db/session-store.js";
-import { listStories } from "../db/story-store.js";
+import { listAllStories } from "../db/story-store.js";
 import { getStoryDb, closeStoryDb } from "../db/story-db.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { getBookByType } from "../db/book-store.js";
@@ -67,8 +66,7 @@ server.registerTool(
   { description: "List all stories with their id, name, and current phase (setup/kickoff/story)." },
   async () => {
     const globalDb = getGlobalDb();
-    const user = getOrCreateDefaultUser(globalDb);
-    const stories = listStories(globalDb, user.id).map((s) => ({
+    const stories = listAllStories(globalDb).map((s) => ({
       id: s.id,
       name: s.name,
       parentStoryId: s.parentStoryId,

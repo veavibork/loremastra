@@ -59,6 +59,7 @@ function formatWorldbookEntry(entry: WorldbookEntry): string {
  */
 export function assembleAuthorPrompt(
   db: Database.Database,
+  userId: string,
   logbookId: string,
   fromPageId: string | null,
   overrideTagIds?: string[]
@@ -68,7 +69,7 @@ export function assembleAuthorPrompt(
   const historyPages: PageRow[] = cutoffIdx >= 0 ? pages.slice(0, cutoffIdx + 1) : pages;
   if (!historyPages.length) return [];
 
-  const authorProfile = getAgentProfile("author");
+  const authorProfile = getAgentProfile(userId, "author");
   let remaining = authorProfile.contextLimit - authorProfile.responseLimit;
 
   // "Tagged" = matches a tag found in the post that's triggering this generation —

@@ -7,16 +7,16 @@ import { promptsRoute } from "./routes/prompts.js";
 import { settingsSpacesRoute } from "./routes/settings-spaces.js";
 import { clientErrorsRoute } from "./routes/client-errors.js";
 import { sessionsRoute } from "./routes/sessions.js";
-import { sessionGuard } from "./middleware/session-guard.js";
+import { sessionGuard, type AppVariables } from "./middleware/session-guard.js";
 import { startPipelineRunner, trackStoryDb } from "./queue/pipeline-runner.js";
 import { startConcurrencyFeed } from "./queue/concurrency-feed.js";
 import { getQueueStatus } from "./queue/slots.js";
 import { getGlobalDb } from "./db/global-db.js";
-import { getOrCreateDefaultUser } from "./db/user-store.js";
-import { listStories } from "./db/story-store.js";
+import { listAllStories } from "./db/story-store.js";
 import { getStoryDb } from "./db/story-db.js";
+import { listUsers } from "./db/user-store.js";
 
-const app = new Hono();
+const app = new Hono<{ Variables: AppVariables }>();
 // The only middleware that actually answers a browser's CORS preflight: it short-circuits
 // OPTIONS before dispatch reaches any sub-route's own "*" middleware (app.route() delegates
 // to those only for non-preflight handling), so their per-route Allow-Methods headers are
@@ -40,6 +40,8 @@ app.route("/api/prompts", promptsRoute);
 app.route("/api/settings", settingsSpacesRoute);
 app.route("/api/client-errors", clientErrorsRoute);
 app.get("/api/debug/slots", (c) => c.json(getQueueStatus()));
+// Exempt from session-guard (GET only) — the profile picker needs this before any session exists.
+app.get("/api/users", (c) => c.json(listUsers(getGlobalDb())));
 
 const port = Number(process.env.PORT ?? 4113);
 
@@ -54,8 +56,7 @@ const port = Number(process.env.PORT ?? 4113);
  */
 function trackAllStoriesAtStartup(): void {
   const db = getGlobalDb();
-  const user = getOrCreateDefaultUser(db);
-  for (const story of listStories(db, user.id)) {
+  for (const story of listAllStories(db)) {
     try {
       trackStoryDb(story.id, getStoryDb(story.id));
     } catch (err) {

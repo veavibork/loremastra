@@ -63,6 +63,12 @@ export function listStories(db: Database.Database, ownerUserId: string): StoryRo
   return rows.map(mapStoryRow);
 }
 
+/** Unscoped by owner — for operator/global contexts only (startup tracking, dev tooling), never a per-request path. */
+export function listAllStories(db: Database.Database): StoryRow[] {
+  const rows = db.prepare(`SELECT * FROM stories WHERE hidden = 0 ORDER BY updated_at DESC`).all() as RawStoryRow[];
+  return rows.map(mapStoryRow);
+}
+
 export function renameStory(db: Database.Database, id: string, name: string): StoryRow {
   db.prepare(`UPDATE stories SET name = ?, updated_at = ? WHERE id = ?`).run(name, nowIso(), id);
   return getStory(db, id)!;

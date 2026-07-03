@@ -1,7 +1,8 @@
 import type { Context, Next } from "hono";
 import { getGlobalDb } from "../db/global-db.js";
-import { getOrCreateDefaultUser } from "../db/user-store.js";
 import { getActiveSession, getSession, touchSession } from "../db/session-store.js";
+
+export type AppVariables = { userId: string };
 
 try {
   process.loadEnvFile();
@@ -10,6 +11,7 @@ try {
 }
 
 const CLAIM_PATH = "/api/sessions/claim";
+const USERS_PATH = "/api/users";
 
 // Dev-only escape hatch (2026-07-03) — during a stretch of active development this guard's
 // "no bypass, covers all HTTP access" design (see below) means every curl/dev script needs a
@@ -34,35 +36,46 @@ if (BYPASS_SESSION_GUARD) {
  * accepted limitation. DEV_BYPASS_SESSION_GUARD (above) is the one deliberate, opt-in
  * exception to "no bypass," for active-development stretches only.
  */
-export async function sessionGuard(c: Context, next: Next): Promise<Response | void> {
-  if (BYPASS_SESSION_GUARD) return next();
+export async function sessionGuard(c: Context<{ Variables: AppVariables }>, next: Next): Promise<Response | void> {
   if (c.req.method === "OPTIONS") return next();
   if (c.req.method === "POST" && c.req.path === CLAIM_PATH) return next();
+  if (c.req.method === "GET" && c.req.path === USERS_PATH) return next();
 
   const db = getGlobalDb();
-  const user = getOrCreateDefaultUser(db);
-  const active = getActiveSession(db, user.id);
 
-  if (!active) {
-    return c.json({ error: "unclaimed" }, 409);
+  if (BYPASS_SESSION_GUARD) {
+    // Dev escape hatch still needs *some* userId downstream — fall back to whichever user
+    // happens to be oldest, same stand-in the old single-default-user model used.
+    const fallback = db.prepare(`SELECT id FROM users ORDER BY created_at ASC LIMIT 1`).get() as
+      | { id: string }
+      | undefined;
+    if (fallback) c.set("userId", fallback.id);
+    return next();
   }
 
   const sessionId = c.req.header("X-Loremaster-Session") ?? c.req.query("session");
 
-  if (!sessionId || sessionId !== active.id) {
-    const stale = sessionId ? getSession(db, sessionId) : null;
+  if (!sessionId) {
+    return c.json({ error: "unclaimed" }, 409);
+  }
+
+  const session = getSession(db, sessionId);
+
+  if (!session || session.revokedAt) {
+    const active = session ? getActiveSession(db, session.userId) : null;
     return c.json(
       {
         error: "superseded",
-        active: { lastSeenAt: active.lastSeenAt },
-        stale: stale ? { lastSeenAt: stale.lastSeenAt } : null,
+        active: active ? { lastSeenAt: active.lastSeenAt } : null,
+        stale: session ? { lastSeenAt: session.lastSeenAt } : null,
       },
       409
     );
   }
 
   if (c.req.header("X-Loremaster-Interaction") !== "background") {
-    touchSession(db, active.id);
+    touchSession(db, session.id);
   }
+  c.set("userId", session.userId);
   return next();
 }

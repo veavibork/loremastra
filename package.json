@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "db:init": "tsx scripts/init-db.ts",
+    "user:create": "tsx scripts/create-user.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "server:restart": "node scripts/dev-restart.mjs",
@@ -16,12 +17,14 @@
   "dependencies": {
     "@hono/node-server": "^2.0.6",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.3.0",
     "hono": "^4.6.3",
     "uuid": "^11.0.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.7.4",
     "tsx": "^4.19.1",

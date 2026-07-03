@@ -13,7 +13,7 @@ const COMPRESSION_LAG = 5;
  * Stops as soon as it finds a post that's already compressed — everything
  * further back was necessarily handled in an earlier pass.
  */
-export function enqueueEligibleCompressJobs(db: Database.Database, logbookId: string): void {
+export function enqueueEligibleCompressJobs(db: Database.Database, userId: string, logbookId: string): void {
   let currentId = findHeadPageId(db, logbookId);
   let position = 0;
 
@@ -26,7 +26,7 @@ export function enqueueEligibleCompressJobs(db: Database.Database, logbookId: st
       if (text?.genPackage) {
         if (text.genExtract !== null) break;
         if (!hasActiveJobForText(db, text.id, "compress")) {
-          createJob(db, { targetTextId: text.id, jobType: "compress", slotCost: getAgentProfile("worker").concurrencyCost });
+          createJob(db, { targetTextId: text.id, jobType: "compress", slotCost: getAgentProfile(userId, "worker").concurrencyCost });
         }
       }
     }
