@@ -47,6 +47,14 @@ const archiveDurations = db
   )
   .get() as { avgSec: number | null; maxSec: number | null };
 
+const compressPending = db
+  .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'compress' AND status = 'pending'`)
+  .get() as { n: number };
+
+const compressRunning = db
+  .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'compress' AND status = 'running'`)
+  .get() as { n: number };
+
 console.log(
   JSON.stringify(
     {
@@ -55,6 +63,8 @@ console.log(
       extractsTotal: extracts.n,
       extractsVisible: visibleExtracts.n,
       compressJobsDone: compressDone.n,
+      compressPending: compressPending.n,
+      compressRunning: compressRunning.n,
       compressDoneWithoutModel: compressNoModel.n,
       archiveAvgSec: archiveDurations.avgSec != null ? Math.round(archiveDurations.avgSec) : null,
       archiveMaxSec: archiveDurations.maxSec != null ? Math.round(archiveDurations.maxSec) : null,

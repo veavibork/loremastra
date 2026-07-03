@@ -48,6 +48,7 @@ import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
+import { enqueueEligibleCompressJobs } from "../services/compression.js";
 import { buildArchiveUserPrompt, finalizeArchiveSummary } from "../services/archive-worker.js";
 import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
 import { markCompressValid } from "../services/memory-invalidation.js";
@@ -901,6 +902,7 @@ async function executeCompressJob(
     if (targetPage) {
       markCompressValid(db, targetPage.id, targetTextId);
       indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
+      enqueueEligibleCompressJobs(db, userId, targetPage.bookId);
       enqueueEligibleArchiveBlocks(db, userId, targetPage.bookId);
     }
     finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate });

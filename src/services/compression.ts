@@ -9,9 +9,9 @@ import { postNeedsCompress } from "./content-stamp.js";
 const COMPRESSION_LAG = 5;
 
 /**
- * Walks back from the head of the logbook and queues compress jobs for posts past the grace
- * window or stale (stamp/extract mismatch). Only stops at a post whose compress is fully
- * valid — a deeper stale post is not skipped just because a nearer post is already compressed.
+ * Walks back from the head and queues compress jobs for posts past the grace window
+ * or stale (stamp/extract mismatch). Walks the full active chain — never stops early
+ * at a valid post, since parallel workers can leave gaps deeper in the log.
  */
 export function enqueueEligibleCompressJobs(db: Database.Database, userId: string, logbookId: string): void {
   let currentId = findHeadPageId(db, logbookId);
@@ -33,10 +33,6 @@ export function enqueueEligibleCompressJobs(db: Database.Database, userId: strin
           slotCost: getAgentProfile(userId, "worker").concurrencyCost,
         });
       }
-    }
-
-    if (text?.genPackage && text.genExtract !== null && !stale) {
-      break;
     }
 
     currentId = page.prevPageId;

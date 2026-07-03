@@ -107,4 +107,28 @@ const stamp1 = computeTextContentStamp(getText(db, edited.id)!);
 const stamp2 = computeTextContentStamp(getText(db, edited.id)!);
 assert(stamp1 === stamp2 && stamp1 !== null, "content stamp is deterministic");
 
+// Gap enqueue: compressed band near head must not block deeper stale posts.
+const gapDb = getStoryDb(`smoke-compress-gap-${newId()}`);
+const gapLog = createBook(gapDb, { bookType: "logbook" });
+let gapPrev: string | null = null;
+const gapPageIds: string[] = [];
+for (let i = 0; i < 12; i++) {
+  const { page, text } = createPageWithText(gapDb, {
+    bookId: gapLog.id,
+    prevPageId: gapPrev,
+    role: i % 2 === 0 ? "user" : "agent",
+    genPackage: `Gap post ${i}.`,
+  });
+  gapPrev = page.id;
+  gapPageIds.push(page.id);
+  if (i >= 5) {
+    fillTextExtract(gapDb, text.id, `Summary ${i}.`);
+    markCompressValid(gapDb, page.id, text.id);
+  }
+}
+gapDb.prepare(`DELETE FROM jobs WHERE job_type = 'compress'`).run();
+enqueueEligibleCompressJobs(gapDb, USER_ID, gapLog.id);
+const gapQueued = listPendingJobs(gapDb).filter((j) => j.jobType === "compress");
+assert(gapQueued.length >= 5, "enqueue reaches stale posts past a valid compress band near head");
+
 console.log("\nAll memory-invalidation smoke checks passed.");
