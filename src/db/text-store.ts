@@ -17,6 +17,7 @@ export interface TextRow {
   genPackage: string | null;
   genMetrics: string | null;
   genExtract: string | null;
+  compressMetrics: string | null;
 }
 
 interface RawTextRow {
@@ -32,6 +33,7 @@ interface RawTextRow {
   gen_package: string | null;
   gen_metrics: string | null;
   gen_extract: string | null;
+  compress_metrics: string | null;
 }
 
 function mapTextRow(row: RawTextRow): TextRow {
@@ -48,6 +50,7 @@ function mapTextRow(row: RawTextRow): TextRow {
     genPackage: row.gen_package,
     genMetrics: row.gen_metrics,
     genExtract: row.gen_extract,
+    compressMetrics: row.compress_metrics,
   };
 }
 
@@ -97,10 +100,15 @@ export function fillTextGeneration(
 }
 
 /** Fills in the worker-generated compressed summary. No-op if already filled — gen_extract is write-once. */
-export function fillTextExtract(db: Database.Database, id: string, genExtract: string): boolean {
+export function fillTextExtract(
+  db: Database.Database,
+  id: string,
+  genExtract: string,
+  compressMetrics?: string | null
+): boolean {
   const result = db
-    .prepare(`UPDATE text SET gen_extract = ? WHERE id = ? AND gen_extract IS NULL`)
-    .run(genExtract, id);
+    .prepare(`UPDATE text SET gen_extract = ?, compress_metrics = ? WHERE id = ? AND gen_extract IS NULL`)
+    .run(genExtract, compressMetrics ?? null, id);
   return result.changes > 0;
 }
 

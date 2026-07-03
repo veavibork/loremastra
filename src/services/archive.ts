@@ -9,6 +9,7 @@ import {
   type ArchiveRow,
 } from "../db/archive-store.js";
 import { createJob } from "../db/job-store.js";
+import { getAgentProfile } from "./agent-config.js";
 
 // Doc + lorepebble-proven design: overlapping 10-post windows, 50% overlap.
 const ARCHIVE_BLOCK_SIZE = 10;
@@ -38,14 +39,17 @@ export function enqueueEligibleArchiveBlocks(db: Database.Database, logbookId: s
     for (const text of windowTexts) {
       if (text) addArchiveMember(db, archive.id, text.id, false); // ownership computed separately, across all overlapping blocks
     }
-    // slotCost 4, not 1: the editor uses the same large model as the author
-    // (deepseek-ai/DeepSeek-V4-Pro), which costs 4 concurrency units on the
-    // real Featherless account — confirmed the hard way (a 429) when this
-    // was hardcoded to 1 and two archive jobs were allowed to run "concurrently"
-    // by our own slot tracker while the real account only allows 4 units total.
-    // Still hardcoded rather than read from the model catalog — see the TODO
-    // in docs/featherless-notes.md.
-    createJob(db, { targetArchiveId: archive.id, jobType: "archive", slotCost: 4, priority: 5 });
+    // Editor uses the same large model as the author, which historically cost 4 concurrency
+    // units on the real Featherless account — confirmed the hard way (a 429) when this was
+    // hardcoded to 1 and two archive jobs were allowed to run "concurrently" by our own slot
+    // tracker while the real account only allows 4 units total. Now sourced from the editor's
+    // resolved model config instead of a hardcoded literal (see model_configs.concurrency_cost).
+    createJob(db, {
+      targetArchiveId: archive.id,
+      jobType: "archive",
+      slotCost: getAgentProfile("editor").concurrencyCost,
+      priority: 5,
+    });
   }
 
   recomputeArchiveOwnership(db, logbookId, pages);

@@ -32,6 +32,7 @@ import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../
 import { buildLogView } from "../services/log-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
 import { EDITOR_SETUP_OPENING } from "../prompts.js";
+import { getAgentProfile } from "../services/agent-config.js";
 
 export const storiesRoute = new Hono();
 
@@ -198,7 +199,12 @@ storiesRoute.post("/:id/messages", async (c) => {
   setCurrentPageId(storyDb, null);
   recordHistoryEvent(storyDb, { kind: "page", pageId: agentPage.id, fromValue: attachAt, toValue: agentPage.id });
 
-  const job = createJob(storyDb, { targetTextId: agentText.id, jobType: "prose", slotCost: 4, priority: 10 });
+  const job = createJob(storyDb, {
+    targetTextId: agentText.id,
+    jobType: "prose",
+    slotCost: getAgentProfile("author").concurrencyCost,
+    priority: 10,
+  });
   enqueueEligibleCompressJobs(storyDb, logbook.id);
   enqueueEligibleArchiveBlocks(storyDb, logbook.id);
 
@@ -240,7 +246,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
   const job = createJob(storyDb, {
     targetTextId: newText.id,
     jobType: isSetupPage ? "setup" : "prose",
-    slotCost: 4,
+    slotCost: getAgentProfile(isSetupPage ? "editor" : "author").concurrencyCost,
     priority: 10,
   });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "regenerate");
@@ -304,7 +310,7 @@ storiesRoute.post("/:id/continue", async (c) => {
   const job = createJob(storyDb, {
     targetTextId: text.id,
     jobType: isSetupContinuation ? "setup" : "prose",
-    slotCost: 4,
+    slotCost: getAgentProfile(isSetupContinuation ? "editor" : "author").concurrencyCost,
     priority: 10,
   });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "continue");
@@ -438,7 +444,12 @@ storiesRoute.post("/:id/setup/messages", async (c) => {
   setCurrentPageId(storyDb, null);
   recordHistoryEvent(storyDb, { kind: "page", pageId: agentPage.id, fromValue: attachAt, toValue: agentPage.id });
 
-  const job = createJob(storyDb, { targetTextId: agentText.id, jobType: "setup", slotCost: 4, priority: 10 });
+  const job = createJob(storyDb, {
+    targetTextId: agentText.id,
+    jobType: "setup",
+    slotCost: getAgentProfile("editor").concurrencyCost,
+    priority: 10,
+  });
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
 });
 
@@ -465,7 +476,12 @@ storiesRoute.post("/:id/kickoff", (c) => {
   setCurrentPageId(storyDb, null);
   recordHistoryEvent(storyDb, { kind: "page", pageId: page.id, fromValue: attachAt, toValue: page.id });
 
-  const job = createJob(storyDb, { targetTextId: text.id, jobType: "prose", slotCost: 4, priority: 10 });
+  const job = createJob(storyDb, {
+    targetTextId: text.id,
+    jobType: "prose",
+    slotCost: getAgentProfile("author").concurrencyCost,
+    priority: 10,
+  });
   return c.json({ agentPageId: page.id, jobId: job.id });
 });
 

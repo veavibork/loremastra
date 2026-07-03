@@ -68,6 +68,7 @@ function toPatch(body: Record<string, unknown>): Partial<ModelConfigInput> {
   if (typeof body.topP === "number" || body.topP === null) patch.topP = body.topP;
   if (typeof body.topK === "number" || body.topK === null) patch.topK = body.topK;
   if (typeof body.minP === "number" || body.minP === null) patch.minP = body.minP;
+  if (typeof body.concurrencyCost === "number" || body.concurrencyCost === null) patch.concurrencyCost = body.concurrencyCost;
   if (typeof body.useAuthor === "boolean") patch.useAuthor = body.useAuthor;
   if (typeof body.useEditor === "boolean") patch.useEditor = body.useEditor;
   if (typeof body.useWorker === "boolean") patch.useWorker = body.useWorker;

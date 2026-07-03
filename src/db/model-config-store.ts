@@ -20,6 +20,8 @@ export interface ModelConfigRow {
   topP: number | null;
   topK: number | null;
   minP: number | null;
+  /** Featherless-reported per-call concurrency cost against the account's slot limit (src/queue/slots.ts) — a property of the model, not the job type that happens to use it. Null means "unknown," and callers fall back to a per-role default (see agent-config.ts). */
+  concurrencyCost: number | null;
   useAuthor: boolean;
   useEditor: boolean;
   useWorker: boolean;
@@ -47,6 +49,7 @@ interface RawRow {
   top_p: number | null;
   top_k: number | null;
   min_p: number | null;
+  concurrency_cost: number | null;
   use_author: number;
   use_editor: number;
   use_worker: number;
@@ -75,6 +78,7 @@ function mapRow(row: RawRow): ModelConfigRow {
     topP: row.top_p,
     topK: row.top_k,
     minP: row.min_p,
+    concurrencyCost: row.concurrency_cost,
     useAuthor: !!row.use_author,
     useEditor: !!row.use_editor,
     useWorker: !!row.use_worker,
@@ -113,6 +117,7 @@ export interface ModelConfigInput {
   topP?: number | null;
   topK?: number | null;
   minP?: number | null;
+  concurrencyCost?: number | null;
   useAuthor: boolean;
   useEditor: boolean;
   useWorker: boolean;
@@ -130,10 +135,10 @@ export function createModelConfig(db: Database.Database, userId: string, input: 
   db.prepare(
     `INSERT INTO model_configs (
        id, user_id, provider, model, temperature, response_limit, context_limit,
-       presence_penalty, frequency_penalty, repetition_penalty, top_p, top_k, min_p,
+       presence_penalty, frequency_penalty, repetition_penalty, top_p, top_k, min_p, concurrency_cost,
        use_author, use_editor, use_worker, active, sort_order,
        success_count, fail_count, input_tokens, output_tokens, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)`
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, ?, ?)`
   ).run(
     id,
     userId,
@@ -148,6 +153,7 @@ export function createModelConfig(db: Database.Database, userId: string, input: 
     input.topP ?? null,
     input.topK ?? null,
     input.minP ?? null,
+    input.concurrencyCost ?? null,
     input.useAuthor ? 1 : 0,
     input.useEditor ? 1 : 0,
     input.useWorker ? 1 : 0,
@@ -175,6 +181,7 @@ export function updateModelConfig(db: Database.Database, id: string, patch: Part
     topP: patch.topP !== undefined ? patch.topP : current.topP,
     topK: patch.topK !== undefined ? patch.topK : current.topK,
     minP: patch.minP !== undefined ? patch.minP : current.minP,
+    concurrencyCost: patch.concurrencyCost !== undefined ? patch.concurrencyCost : current.concurrencyCost,
     useAuthor: patch.useAuthor ?? current.useAuthor,
     useEditor: patch.useEditor ?? current.useEditor,
     useWorker: patch.useWorker ?? current.useWorker,
@@ -184,7 +191,7 @@ export function updateModelConfig(db: Database.Database, id: string, patch: Part
   db.prepare(
     `UPDATE model_configs SET
        provider = ?, model = ?, temperature = ?, response_limit = ?, context_limit = ?,
-       presence_penalty = ?, frequency_penalty = ?, repetition_penalty = ?, top_p = ?, top_k = ?, min_p = ?,
+       presence_penalty = ?, frequency_penalty = ?, repetition_penalty = ?, top_p = ?, top_k = ?, min_p = ?, concurrency_cost = ?,
        use_author = ?, use_editor = ?, use_worker = ?, active = ?, updated_at = ?
      WHERE id = ?`
   ).run(
@@ -199,6 +206,7 @@ export function updateModelConfig(db: Database.Database, id: string, patch: Part
     next.topP ?? null,
     next.topK ?? null,
     next.minP ?? null,
+    next.concurrencyCost ?? null,
     next.useAuthor ? 1 : 0,
     next.useEditor ? 1 : 0,
     next.useWorker ? 1 : 0,

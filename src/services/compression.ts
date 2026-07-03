@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { findHeadPageId, getPage } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
 import { createJob, hasActiveJobForText } from "../db/job-store.js";
+import { getAgentProfile } from "./agent-config.js";
 
 /** Doc + lorepebble-proven rule: a post is eligible for compression once it's 5+ positions behind current. */
 const COMPRESSION_LAG = 5;
@@ -25,7 +26,7 @@ export function enqueueEligibleCompressJobs(db: Database.Database, logbookId: st
       if (text?.genPackage) {
         if (text.genExtract !== null) break;
         if (!hasActiveJobForText(db, text.id, "compress")) {
-          createJob(db, { targetTextId: text.id, jobType: "compress", slotCost: 1 });
+          createJob(db, { targetTextId: text.id, jobType: "compress", slotCost: getAgentProfile("worker").concurrencyCost });
         }
       }
     }

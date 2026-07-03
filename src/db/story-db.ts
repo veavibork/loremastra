@@ -119,6 +119,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "jobs", "model", "TEXT");
   ensureColumn(db, "jobs", "token_estimate", "INTEGER");
   ensureColumn(db, "jobs", "horde_request_id", "TEXT");
+  ensureColumn(db, "text", "compress_metrics", "TEXT");
   backfillSelectedForks(db);
   if (!options?.skipRecovery) recoverStaleJobs(db);
   openStoryDbs.set(storyId, db);

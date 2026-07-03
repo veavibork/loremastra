@@ -551,7 +551,12 @@ async function executeSetupJob(
           role: "agent",
         });
         setPageHidden(db, worldbookPage.id, true);
-        const worldbookJob = createJob(db, { targetTextId: worldbookText.id, jobType: "setup-worldbook", slotCost: 4, priority: 10 });
+        const worldbookJob = createJob(db, {
+          targetTextId: worldbookText.id,
+          jobType: "setup-worldbook",
+          slotCost: getAgentProfile("editor").concurrencyCost,
+          priority: 10,
+        });
         followUp = { jobId: worldbookJob.id, pageId: worldbookPage.id };
       } catch (err) {
         console.error(`[setup ${jobId}] failed to queue worldbook-authoring pass, reply still stands:`, err);
@@ -653,6 +658,7 @@ async function executeCompressJob(
   jobId: string,
   targetTextId: string
 ): Promise<void> {
+  const startedAt = Date.now();
   try {
     const targetText = getText(db, targetTextId);
     if (!targetText?.genPackage) throw new Error("nothing to compress");
@@ -700,8 +706,10 @@ async function executeCompressJob(
 
     if (!summary) throw new Error(`compression failed after ${COMPRESS_MAX_ATTEMPTS} attempts — ${lastError}`);
 
-    fillTextExtract(db, targetTextId, summary);
-    finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate: Math.ceil(summary.length / 4) });
+    const tokenEstimate = Math.ceil(summary.length / 4);
+    const compressMetrics = JSON.stringify({ elapsedMs: Date.now() - startedAt, tokenEstimate });
+    fillTextExtract(db, targetTextId, summary, compressMetrics);
+    finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);

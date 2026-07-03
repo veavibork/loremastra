@@ -11,6 +11,7 @@ export interface LogEntry {
   createdAt: string | null;
   genMetrics: string | null;
   genExtract: string | null;
+  compressMetrics: string | null;
 }
 
 /** findHeadPageId is fork-aware (Milestone D); walking backward via prev_page_id from its result is always the correct active-path history regardless of forks, since prev_page_id is single/unambiguous going backward. */
@@ -31,6 +32,7 @@ export function buildLogView(db: Database.Database, logbookId: string): LogEntry
       createdAt: text?.createdAt ?? null,
       genMetrics: text?.genMetrics ?? null,
       genExtract: text?.genExtract ?? null,
+      compressMetrics: text?.compressMetrics ?? null,
     });
     currentId = page.prevPageId;
   }

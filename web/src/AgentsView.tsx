@@ -151,6 +151,19 @@ export default function AgentsView() {
     });
   }
 
+  // Looks up the just-selected model in whichever catalog is loaded for the row's provider, and
+  // if Featherless reported a real concurrency cost for it, carries that into the same draft —
+  // the point of this whole column is that cost is a property of the model, not something to
+  // leave at whatever the row happened to default to.
+  function applyModel(id: string, provider: ModelConfig["provider"], model: string) {
+    const catalog = provider === "horde" ? hordeCatalog : featherlessCatalog;
+    const match = catalog?.find((m) => m.id === model);
+    setDraft(id, {
+      model,
+      ...(match?.concurrencyCost != null ? { concurrencyCost: match.concurrencyCost } : {}),
+    });
+  }
+
   async function handleFetchFeatherlessModels() {
     try {
       setFeatherlessCatalog(await fetchModelCatalog("featherless"));
@@ -231,6 +244,9 @@ export default function AgentsView() {
               <th>TopP</th>
               <th>TopK</th>
               <th>MinP</th>
+              <th title="Concurrency units this model consumes against the account's slot limit — auto-filled from Fetch models, editable, blank falls back to a per-role default.">
+                Cost
+              </th>
               <th>A</th>
               <th>E</th>
               <th>W</th>
@@ -279,7 +295,7 @@ export default function AgentsView() {
                     list={getVal(cfg, "provider") === "horde" ? "horde-model-catalog" : "featherless-model-catalog"}
                     value={getVal(cfg, "model")}
                     placeholder="provider/Model-Name"
-                    onChange={(e) => setDraft(cfg.id, { model: e.target.value })}
+                    onChange={(e) => applyModel(cfg.id, getVal(cfg, "provider"), e.target.value)}
                   />
                 </td>
                 <td>
@@ -358,6 +374,16 @@ export default function AgentsView() {
                     className="num-input narrow"
                     value={getVal(cfg, "minP") ?? ""}
                     onChange={(e) => setDraft(cfg.id, { minP: numOrUndefined(e.target.value) ?? null })}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    step="1"
+                    className="num-input narrow"
+                    value={getVal(cfg, "concurrencyCost") ?? ""}
+                    placeholder="auto"
+                    onChange={(e) => setDraft(cfg.id, { concurrencyCost: numOrUndefined(e.target.value) ?? null })}
                   />
                 </td>
                 <td className="checkbox-cell">

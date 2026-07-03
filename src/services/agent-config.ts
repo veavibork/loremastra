@@ -88,6 +88,7 @@ export function getAgentProfile(role: AgentRole): AgentProfile {
     topP: primary.topP ?? undefined,
     topK: primary.topK ?? undefined,
     minP: primary.minP ?? undefined,
+    concurrencyCost: primary.concurrencyCost ?? DEFAULTS[role].concurrencyCost,
     fallbackModels: fallbacks.map((f) => f.model),
     configId: primary.id,
     fallbackConfigIds: fallbacks.map((f) => f.id),

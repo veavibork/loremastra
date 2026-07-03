@@ -27,10 +27,10 @@ export default function LogsView({ story }: PanelProps) {
     });
   }
 
-  function metrics(entry: LogEntry): { elapsedMs?: number; tokenEstimate?: number } {
-    if (!entry.genMetrics) return {};
+  function parseMetrics(raw: string | null): { elapsedMs?: number; tokenEstimate?: number } {
+    if (!raw) return {};
     try {
-      return JSON.parse(entry.genMetrics);
+      return JSON.parse(raw);
     } catch {
       return {};
     }
@@ -51,12 +51,14 @@ export default function LogsView({ story }: PanelProps) {
             <th>Role</th>
             <th>Tokens (est.)</th>
             <th>Turnaround</th>
+            <th>Compress</th>
             <th>Hidden</th>
           </tr>
         </thead>
         <tbody>
           {mostRecentFirst.map((entry) => {
-            const m = metrics(entry);
+            const m = parseMetrics(entry.genMetrics);
+            const cm = parseMetrics(entry.compressMetrics);
             const content = entry.content ?? "";
             const isExpanded = expanded.has(entry.pageId);
             return (
@@ -66,10 +68,15 @@ export default function LogsView({ story }: PanelProps) {
                   <td>{entry.role}</td>
                   <td>{m.tokenEstimate ?? "—"}</td>
                   <td>{m.elapsedMs != null ? `${(m.elapsedMs / 1000).toFixed(1)}s` : "—"}</td>
+                  <td>
+                    {cm.elapsedMs != null
+                      ? `${(cm.elapsedMs / 1000).toFixed(1)}s / ${cm.tokenEstimate ?? "—"}t`
+                      : "—"}
+                  </td>
                   <td>{entry.hidden ? "yes" : ""}</td>
                 </tr>
                 <tr className={entry.hidden ? "logs-row-hidden" : ""}>
-                  <td colSpan={5} className="logs-content-cell">
+                  <td colSpan={6} className="logs-content-cell">
                     <button
                       type="button"
                       className={`logs-content-toggle ${isExpanded ? "logs-content-expanded" : "logs-content-collapsed"}`}

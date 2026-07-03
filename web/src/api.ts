@@ -241,6 +241,7 @@ export interface ModelConfig {
   topP: number | null;
   topK: number | null;
   minP: number | null;
+  concurrencyCost: number | null;
   useAuthor: boolean;
   useEditor: boolean;
   useWorker: boolean;
@@ -330,6 +331,7 @@ export interface LogEntry {
   createdAt: string | null;
   genMetrics: string | null;
   genExtract: string | null;
+  compressMetrics: string | null;
 }
 
 export type StoryPhase = "setup" | "kickoff" | "story";
