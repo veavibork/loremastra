@@ -348,8 +348,11 @@ export interface PromptMessage {
   content: string;
 }
 
-export async function fetchPromptPreview(storyId: string): Promise<PromptMessage[]> {
-  const res = await apiFetch(`/api/stories/${storyId}/prompt-preview`);
+export async function fetchPromptPreview(
+  storyId: string,
+  opts?: { background?: boolean }
+): Promise<PromptMessage[]> {
+  const res = await apiFetch(`/api/stories/${storyId}/prompt-preview`, {}, opts);
   const data = (await res.json()) as { messages: PromptMessage[] };
   return data.messages;
 }
