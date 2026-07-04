@@ -532,8 +532,8 @@ export async function fetchLog(storyId: string, opts?: { background?: boolean })
 }
 
 export interface ArchiveEntry {
-  id: string;
-  createdAt: string;
+  id: string | null;
+  createdAt: string | null;
   summary: string | null;
   name: string | null;
   hidden: boolean;
@@ -543,6 +543,10 @@ export interface ArchiveEntry {
   endIndex: number;
   startPageId: string;
   endPageId: string;
+  status: "ready" | "pending" | "broken" | "missing";
+  queueEligible: boolean;
+  archiveJobActive: boolean;
+  nameJobActive: boolean;
 }
 
 export interface ArchivePage {
@@ -551,6 +555,7 @@ export interface ArchivePage {
   withSummary: number;
   pending: number;
   broken: number;
+  missingRows: number;
 }
 
 export async function fetchArchives(
@@ -562,6 +567,46 @@ export async function fetchArchives(
   const qs = params.toString();
   const res = await apiFetch(`/api/stories/${storyId}/archives${qs ? `?${qs}` : ""}`, {}, { background: options.background });
   return res.json() as Promise<ArchivePage>;
+}
+
+export async function backfillArchiveNames(storyId: string): Promise<ArchivePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/archives/backfill-names`, { method: "POST" });
+  const data = (await res.json()) as { view: ArchivePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
+}
+
+export async function queueArchiveDecad(storyId: string, startIndex: number): Promise<ArchivePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/archives/queue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ startIndex }),
+  });
+  const data = (await res.json()) as { view: ArchivePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
+}
+
+export async function updateArchive(
+  storyId: string,
+  archiveId: string,
+  patch: { summary?: string; name?: string }
+): Promise<ArchivePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/archives/${archiveId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = (await res.json()) as { view: ArchivePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
+}
+
+export async function requeueArchive(storyId: string, archiveId: string): Promise<ArchivePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/archives/${archiveId}/requeue`, { method: "POST" });
+  const data = (await res.json()) as { view: ArchivePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
 }
 
 export async function postMessage(

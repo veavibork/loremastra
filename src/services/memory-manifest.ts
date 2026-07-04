@@ -4,7 +4,7 @@ import { getText } from "../db/text-store.js";
 import { setMemoryContentStamp } from "../db/page-store.js";
 import { listArchivesForBook, listMemberTextIds, getOwnerArchiveForText } from "../db/archive-store.js";
 import { computeTextContentStamp, postNeedsCompress } from "./content-stamp.js";
-import { enqueueEligibleArchiveBlocks, enqueuePendingArchiveJobs } from "./archive.js";
+import { enqueueEligibleArchiveBlocks, enqueuePendingArchiveJobs, enqueuePendingArchiveNameJobs } from "./archive.js";
 import { listPendingJobs } from "../db/job-store.js";
 
 /** Adopt content stamps for all canonical posts (idempotent). */
@@ -33,7 +33,8 @@ export function backfillContentStamps(db: Database.Database): { stamped: number;
 export function enqueueMemoryPipeline(db: Database.Database, userId: string, logbookId: string): number {
   enqueueEligibleArchiveBlocks(db, userId, logbookId);
   enqueuePendingArchiveJobs(db, userId, logbookId);
-  return listPendingJobs(db).filter((j) => j.jobType === "archive").length;
+  enqueuePendingArchiveNameJobs(db, userId, logbookId);
+  return listPendingJobs(db).filter((j) => j.jobType === "archive" || j.jobType === "archive-name").length;
 }
 
 export interface MemorySummary {

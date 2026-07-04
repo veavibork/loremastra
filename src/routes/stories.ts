@@ -7,8 +7,14 @@ import type { AppVariables } from "../middleware/session-guard.js";
 import { createStory, listStories, getStory, renameStory, deleteStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
 import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType } from "../db/book-store.js";
+import { setArchiveSummary, setArchiveName, getArchive } from "../db/archive-store.js";
 import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../db/page-store.js";
-import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
+import {
+  enqueueEligibleArchiveBlocks,
+  enqueuePendingArchiveNameJobs,
+  queueArchiveDecad,
+  requeueArchiveBlock,
+} from "../services/archive.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
 import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from "../db/job-store.js";
 import { getPage, setPageHidden } from "../db/page-store.js";
@@ -178,6 +184,54 @@ storiesRoute.get("/:id/archives", (c) => {
 
   const includeHidden = c.req.query("includeHidden") === "true";
   return c.json(buildArchiveView(storyDb, logbook.id, { includeHidden }));
+});
+
+storiesRoute.post("/:id/archives/backfill-names", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  const enqueued = enqueuePendingArchiveNameJobs(storyDb, c.get("userId"), logbook.id);
+  return c.json({ enqueued, view: buildArchiveView(storyDb, logbook.id) });
+});
+
+storiesRoute.post("/:id/archives/queue", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { startIndex?: number };
+  if (typeof body.startIndex !== "number") return c.json({ error: "startIndex is required" }, 400);
+
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+
+  try {
+    const result = queueArchiveDecad(storyDb, c.get("userId"), logbook.id, body.startIndex);
+    return c.json({ ...result, view: buildArchiveView(storyDb, logbook.id) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+storiesRoute.patch("/:id/archives/:archiveId", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { summary?: string; name?: string };
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const archive = getArchive(storyDb, c.req.param("archiveId"));
+  if (!archive) return c.json({ error: "archive not found" }, 404);
+  if (body.summary !== undefined) setArchiveSummary(storyDb, archive.id, body.summary);
+  if (body.name !== undefined) setArchiveName(storyDb, archive.id, body.name);
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  return c.json({ ok: true, view: buildArchiveView(storyDb, logbook.id) });
+});
+
+storiesRoute.post("/:id/archives/:archiveId/requeue", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  try {
+    requeueArchiveBlock(storyDb, c.get("userId"), c.req.param("archiveId"));
+    return c.json({ ok: true, view: buildArchiveView(storyDb, logbook.id) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
 });
 
 /** Compact memory health — stale compress counts, archive gaps, no per-post dump. */

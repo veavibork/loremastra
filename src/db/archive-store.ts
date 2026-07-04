@@ -72,6 +72,21 @@ export function fillArchiveSummary(db: Database.Database, id: string, summary: s
   return result.changes > 0;
 }
 
+/** Manual edit from Archives UI — overwrites summary in place. */
+export function setArchiveSummary(db: Database.Database, id: string, summary: string): void {
+  db.prepare(`UPDATE archive SET summary = ? WHERE id = ?`).run(summary.trim(), id);
+}
+
+/** Manual rename from Archives UI. */
+export function setArchiveName(db: Database.Database, id: string, name: string): void {
+  db.prepare(`UPDATE archive SET name = ? WHERE id = ?`).run(name.trim(), id);
+}
+
+/** Clear generated fields so an archive job can run again. */
+export function resetArchiveForRegen(db: Database.Database, id: string): void {
+  db.prepare(`UPDATE archive SET summary = NULL, name = NULL, broken = 0 WHERE id = ?`).run(id);
+}
+
 export function setArchiveHidden(db: Database.Database, id: string, hidden: boolean): void {
   db.prepare(`UPDATE archive SET hidden = ? WHERE id = ?`).run(hidden ? 1 : 0, id);
 }

@@ -81,8 +81,54 @@
   flex-shrink: 0;
 }
 
-.archive-status-pending {
+.archive-status-pending,
+.archive-status-missing {
   opacity: 0.55;
+}
+
+.archive-status-missing {
+  font-style: italic;
+  text-transform: none;
+}
+
+.archive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.archive-actions button {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.archive-hint {
+  font-size: 0.68rem;
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.archive-error {
+  color: #ffb4b4;
+  font-size: 0.75rem;
+  margin: 0 0 0.5rem;
+}
+
+.archive-edit {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin-top: 0.25rem;
+}
+
+.archive-edit-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
 }
 
 .archive-status-broken {
