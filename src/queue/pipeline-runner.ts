@@ -30,7 +30,7 @@ import {
 } from "./worker-lanes.js";
 import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
 import { ensureConcurrencyFeedForUser } from "./concurrency-feed.js";
-import { publishToken, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
+import { publishToken, publishThinking, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
 import {
   streamInference,
   completeChat,
@@ -38,6 +38,7 @@ import {
   FeatherlessError,
   JobCancelledError,
   isReasoningModel,
+  streamIdleTimeoutMs,
   type ChatMessage,
 } from "../inference/featherless.js";
 import { submitTextGeneration, pollTextGeneration } from "../inference/horde.js";
@@ -246,6 +247,7 @@ async function streamWithFallback(
 
     for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
       reply = "";
+      let sawReasoning = false;
       try {
         await new Promise<void>((resolve, reject) => {
           void streamInference(
@@ -257,19 +259,38 @@ async function streamWithFallback(
                 reply += text;
                 publishToken(jobId, text);
               },
+              onReasoningToken: (text) => {
+                sawReasoning = true;
+                publishThinking(jobId, text);
+              },
               onDone: () => {
                 if (reply.trim()) resolve();
-                else reject(new FeatherlessError(503, `${candidate.model} returned an empty completion`));
+                else if (sawReasoning) {
+                  reject(
+                    new FeatherlessError(
+                      503,
+                      `${candidate.model} returned reasoning but no answer content`
+                    )
+                  );
+                } else {
+                  reject(new FeatherlessError(503, `${candidate.model} returned an empty completion`));
+                }
               },
               onError: reject,
             },
-            { signal, chatTemplateKwargs }
+            {
+              signal,
+              chatTemplateKwargs,
+              idleTimeoutMs: streamIdleTimeoutMs(candidate.model, chatTemplateKwargs),
+            }
           );
         });
         return;
       } catch (err) {
         if (err instanceof JobCancelledError) throw err;
-        const isEmptyCompletion = err instanceof FeatherlessError && err.message.includes("empty completion");
+        const isEmptyCompletion =
+          err instanceof FeatherlessError &&
+          (err.message.includes("empty completion") || err.message.includes("no answer content"));
         if (!isEmptyCompletion || attempt === EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE) throw err;
       }
     }

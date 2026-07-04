@@ -52,6 +52,27 @@
   font-style: italic;
 }
 
+.pending-reasoning {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.pending-reasoning summary {
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.pending-reasoning-body {
+  margin: 0.35rem 0 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: inherit;
+  opacity: 0.65;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
 .pending-stop-btn {
   align-self: flex-start;
   margin-top: 0.2rem;

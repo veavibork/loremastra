@@ -747,7 +747,7 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
 
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribeJob(jobId, (event) => {
-        if (event.type === "token" || event.type === "progress") {
+        if (event.type === "token" || event.type === "thinking" || event.type === "progress") {
           void sse.writeSSE({ data: JSON.stringify(event) });
           return;
         }
@@ -778,8 +778,15 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
       // race above: no await happened between subscribeJob and this read, so nothing else could
       // have run on Node's single thread to add tokens the buffer read would miss.
       const buffered = getJobBuffer(jobId);
-      if (buffered && (buffered.text || buffered.progress)) {
-        void sse.writeSSE({ data: JSON.stringify({ type: "sync", text: buffered.text, progress: buffered.progress }) });
+      if (buffered && (buffered.text || buffered.thinking || buffered.progress)) {
+        void sse.writeSSE({
+          data: JSON.stringify({
+            type: "sync",
+            text: buffered.text,
+            thinking: buffered.thinking,
+            progress: buffered.progress,
+          }),
+        });
       }
     });
   });

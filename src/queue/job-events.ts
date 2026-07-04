@@ -17,6 +17,7 @@ emitter.setMaxListeners(0);
  */
 interface JobBuffer {
   text: string;
+  thinking?: string;
   progress?: string;
 }
 const buffers = new Map<string, JobBuffer>();
@@ -26,6 +27,13 @@ export function publishToken(jobId: string, text: string): void {
   buf.text += text;
   buffers.set(jobId, buf);
   emitter.emit(jobId, { type: "token", text });
+}
+
+export function publishThinking(jobId: string, text: string): void {
+  const buf = buffers.get(jobId) ?? { text: "" };
+  buf.thinking = (buf.thinking ?? "") + text;
+  buffers.set(jobId, buf);
+  emitter.emit(jobId, { type: "thinking", text });
 }
 
 /** For non-streaming jobs (e.g. the Editor's tool-calling setup turn) that have no tokens to emit but do have real intermediate steps worth narrating instead of a dead "…". */
@@ -65,8 +73,9 @@ export function publishCancelled(jobId: string): void {
 
 export type JobEvent =
   | { type: "token"; text: string }
+  | { type: "thinking"; text: string }
   | { type: "progress"; label: string }
-  | { type: "sync"; text: string; progress?: string }
+  | { type: "sync"; text: string; thinking?: string; progress?: string }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string }
   | { type: "cancelled" };

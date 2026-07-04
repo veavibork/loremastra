@@ -837,8 +837,9 @@ export async function updateWorldbookEntry(
 
 export type JobStreamEvent =
   | { type: "token"; text: string }
+  | { type: "thinking"; text: string }
   | { type: "progress"; label: string }
-  | { type: "sync"; text: string; progress?: string }
+  | { type: "sync"; text: string; thinking?: string; progress?: string }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string }
   | { type: "cancelled" };
@@ -881,7 +882,7 @@ export function streamJob(
   let closed = false;
   let source: EventSource;
 
-  async function reconcile() {
+  async function reconcile(attempt = 0) {
     if (closed) return;
     try {
       const res = await apiFetch(`/api/stories/${storyId}/jobs/${jobId}`);
@@ -903,7 +904,14 @@ export function streamJob(
         onEvent({ type: "error", message: data.job.error ?? "job failed" });
       }
     } catch (err) {
-      if (!closed) onEvent({ type: "error", message: err instanceof Error ? err.message : String(err) });
+      if (closed) return;
+      const message = err instanceof Error ? err.message : String(err);
+      const isNetwork = /Failed to fetch|NetworkError|network error|ERR_/i.test(message);
+      if (isNetwork && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        return reconcile(attempt + 1);
+      }
+      onEvent({ type: "error", message });
     }
   }
 

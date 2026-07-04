@@ -163,6 +163,8 @@ export interface ChatMessage {
 
 export interface StreamHandlers {
   onToken: (text: string) => void;
+  /** Reasoning/thinking tokens (e.g. DeepSeek `reasoning_content` delta) — not part of the final reply. */
+  onReasoningToken?: (text: string) => void;
   onDone: () => void;
   onError: (err: Error) => void;
 }
@@ -174,7 +176,17 @@ export interface StreamOptions {
   chatTemplateKwargs?: Record<string, unknown>;
 }
 
-const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
+const DEFAULT_IDLE_TIMEOUT_MS = 90_000;
+/** Reasoning models may sit in a thinking phase with sparse or reasoning-only chunks. */
+export const REASONING_IDLE_TIMEOUT_MS = 300_000;
+
+export function usesThinkingMode(model: string, chatTemplateKwargs?: Record<string, unknown>): boolean {
+  return isReasoningModel(model) || chatTemplateKwargs?.enable_thinking === true;
+}
+
+export function streamIdleTimeoutMs(model: string, chatTemplateKwargs?: Record<string, unknown>): number {
+  return usesThinkingMode(model, chatTemplateKwargs) ? REASONING_IDLE_TIMEOUT_MS : DEFAULT_IDLE_TIMEOUT_MS;
+}
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000;
 
 /**
@@ -221,9 +233,10 @@ export async function streamInference(
 
   const inputTokens = estimateMessageTokens(messages);
   let outputChars = 0;
+  const idleTimeoutMs = options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
 
   logOutboundRequest({ call: "streamInference", model: profile.model, messages });
-  const timeout = armTimeout(options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS, options?.signal);
+  const timeout = armTimeout(idleTimeoutMs, options?.signal);
 
   let response: Response;
   try {
@@ -284,12 +297,18 @@ export async function streamInference(
         }
         try {
           const parsed = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: string } }>;
+            choices?: Array<{ delta?: { content?: string | null; reasoning_content?: string | null } }>;
           };
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            outputChars += delta.length;
-            handlers.onToken(delta);
+          const delta = parsed.choices?.[0]?.delta;
+          const reasoning = delta?.reasoning_content;
+          if (reasoning) {
+            outputChars += reasoning.length;
+            handlers.onReasoningToken?.(reasoning);
+          }
+          const content = delta?.content;
+          if (content) {
+            outputChars += content.length;
+            handlers.onToken(content);
           }
         } catch {
           // ignore malformed SSE chunk
@@ -300,7 +319,11 @@ export async function streamInference(
     handlers.onDone();
   } catch (err) {
     recordOutcome(profile, { success: false, inputTokens, outputTokens: tokensFromChars(outputChars) });
-    handlers.onError(err instanceof Error ? err : new Error(String(err)));
+    if (err instanceof Error && err.name === "AbortError") {
+      handlers.onError(new Error(`stream idle timeout (${idleTimeoutMs}ms without provider data)`));
+    } else {
+      handlers.onError(err instanceof Error ? err : new Error(String(err)));
+    }
   } finally {
     timeout.cleanup();
   }

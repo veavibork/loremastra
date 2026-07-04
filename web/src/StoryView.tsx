@@ -28,27 +28,31 @@ import { useStoryToggles } from "./storyToggles";
 import type { LayoutRegion } from "./api";
 import "./StoryView.css";
 
-const ARCHIVE_JOB_TYPES = new Set(["archive", "archive-name"]);
+const MEMORY_JOB_TYPES = new Set(["story-to-date"]);
 
 interface PendingReply {
   text: string;
+  thinking?: string;
   progress?: string;
   startedAt: number;
   jobId: string;
   /** Tracks queue wait vs active generation for elapsed-time labels. */
-  waitPhase?: "archive" | "thinking";
+  waitPhase?: "memory" | "reasoning" | "thinking";
   lastProseStatus?: string;
 }
 
-function isArchiveJobRunning(jobs: Awaited<ReturnType<typeof fetchActiveJobs>>): boolean {
-  return jobs.some((j) => ARCHIVE_JOB_TYPES.has(j.jobType) && j.status === "running");
+function isMemoryJobRunning(jobs: Awaited<ReturnType<typeof fetchActiveJobs>>): boolean {
+  return jobs.some((j) => MEMORY_JOB_TYPES.has(j.jobType) && j.status === "running");
 }
 
 function pendingStatusLabel(pending: PendingReply): string {
   if (pending.progress) return pending.progress;
   const elapsed = Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000));
-  if (pending.waitPhase === "archive") {
-    return `Archive in progress... (${elapsed}s)`;
+  if (pending.thinking?.trim() && !pending.text.trim()) {
+    return `Reasoning… (${elapsed}s)`;
+  }
+  if (pending.waitPhase === "memory") {
+    return `Memory update in progress… (${elapsed}s)`;
   }
   return `Thinking… (${elapsed}s)`;
 }
@@ -57,31 +61,32 @@ function syncPendingWaitPhases(
   prev: Record<string, PendingReply>,
   jobs: Awaited<ReturnType<typeof fetchActiveJobs>>
 ): Record<string, PendingReply> {
-  const archiveBlocking = isArchiveJobRunning(jobs);
+  const memoryBlocking = isMemoryJobRunning(jobs);
   let changed = false;
   const next = { ...prev };
 
   for (const [pageId, pending] of Object.entries(prev)) {
     if (pending.text || pending.progress) continue;
+    // Still sync wait-phase labels when only reasoning tokens have arrived.
     const proseJob = jobs.find((j) => j.id === pending.jobId);
     if (!proseJob) continue;
 
-    if (proseJob.status === "pending" && archiveBlocking) {
-      if (pending.waitPhase !== "archive") {
-        next[pageId] = { ...pending, waitPhase: "archive", startedAt: Date.now(), lastProseStatus: proseJob.status };
+    if (proseJob.status === "pending" && memoryBlocking) {
+      if (pending.waitPhase !== "memory") {
+        next[pageId] = { ...pending, waitPhase: "memory", startedAt: Date.now(), lastProseStatus: proseJob.status };
         changed = true;
       }
       continue;
     }
 
-    if (pending.waitPhase === "archive") {
+    if (pending.waitPhase === "memory") {
       next[pageId] = { ...pending, waitPhase: "thinking", startedAt: Date.now(), lastProseStatus: proseJob.status };
       changed = true;
       continue;
     }
 
     if (proseJob.status === "running" && pending.lastProseStatus !== "running") {
-      next[pageId] = { ...pending, waitPhase: "thinking", startedAt: Date.now(), lastProseStatus: "running" };
+      next[pageId] = { ...pending, waitPhase: pending.thinking?.trim() ? "reasoning" : "thinking", startedAt: Date.now(), lastProseStatus: "running" };
       changed = true;
       continue;
     }
@@ -388,7 +393,21 @@ export default function StoryView({
       if (event.type === "token") {
         setPendingReplies((prev) => {
           const cur = prev[pageId];
-          return cur ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text } } : prev;
+          return cur ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text, waitPhase: "thinking" } } : prev;
+        });
+      } else if (event.type === "thinking") {
+        setPendingReplies((prev) => {
+          const cur = prev[pageId];
+          return cur
+            ? {
+                ...prev,
+                [pageId]: {
+                  ...cur,
+                  thinking: (cur.thinking ?? "") + event.text,
+                  waitPhase: "reasoning",
+                },
+              }
+            : prev;
         });
       } else if (event.type === "progress") {
         setPendingReplies((prev) => {
@@ -400,7 +419,18 @@ export default function StoryView({
         // sets rather than appends, since it's a full snapshot, not an incremental token.
         setPendingReplies((prev) => {
           const cur = prev[pageId];
-          return cur ? { ...prev, [pageId]: { ...cur, text: event.text, progress: event.progress ?? cur.progress } } : prev;
+          return cur
+            ? {
+                ...prev,
+                [pageId]: {
+                  ...cur,
+                  text: event.text,
+                  thinking: event.thinking ?? cur.thinking,
+                  progress: event.progress ?? cur.progress,
+                  waitPhase: event.thinking?.trim() && !event.text.trim() ? "reasoning" : cur.waitPhase,
+                },
+              }
+            : prev;
         });
       } else if (event.type === "done") {
         setPendingReplies((prev) => {
@@ -714,6 +744,14 @@ export default function StoryView({
               <RoleLabel role="agent" mode={mode} />
               {pending?.text ? (
                 <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
+              ) : pending?.thinking?.trim() ? (
+                <>
+                  <p className="pending-thinking">{pendingStatusLabel(pending)}</p>
+                  <details className="pending-reasoning">
+                    <summary>Reasoning trace</summary>
+                    <pre className="pending-reasoning-body">{pending.thinking}</pre>
+                  </details>
+                </>
               ) : (
                 <p className="pending-thinking">{pending ? pendingStatusLabel(pending) : "Thinking…"}</p>
               )}
