@@ -1,7 +1,8 @@
 /**
- * Splits a streamed completion into reasoning vs answer text. DeepSeek-style models on
- * Featherless usually emit thinking inside `<think>` in `delta.content` (not
- * `reasoning_content`), especially when the assistant turn is prefilled with an open block.
+ * Splits a streamed completion into reasoning vs answer text when the model emits explicit
+ * thinking markers in `delta.content`. Do NOT assume thinking from assistant prefill alone —
+ * on Featherless, DeepSeek-V4-Pro streams IC prose directly in `content` with no
+ * `reasoning_content` and no close tag (see scripts/probe-deepseek-stream.ts, 2026-07-04).
  */
 
 const OPEN_TAGS = ["<think>"];
@@ -32,7 +33,7 @@ function partialTagHold(text: string, tags: readonly string[]): number {
 }
 
 export interface ReasoningStreamSplitterOptions {
-  /** Request prefilled `<think>\\n` — first streamed tokens are reasoning. */
+  /** Only set true if the stream has already opened a thinking block — never infer from request prefill. */
   startsInThinking?: boolean;
 }
 

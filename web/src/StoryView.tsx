@@ -89,6 +89,9 @@ function pendingStatusLabel(pending: PendingReply): string {
     const remaining = Math.max(0, est - runningElapsed);
     return remaining > 0 ? `Prefilling… (~${remaining}s)` : "Prefilling…";
   }
+  if (pending.waitPhase === "generating" && !pending.text.trim()) {
+    return `Generating… (${elapsed}s${queueHint})`;
+  }
   if (pending.thinking?.trim() && !pending.text.trim()) {
     return `Reasoning… (${elapsed}s${queueHint})`;
   }
@@ -129,7 +132,7 @@ function syncPendingWaitPhases(
       continue;
     }
 
-    if (proseJob.status === "running" && !pending.thinking?.trim()) {
+    if (proseJob.status === "running" && !pending.thinking?.trim() && !pending.text.trim()) {
       const waitPhase = "prefill";
       if (
         pending.waitPhase !== waitPhase ||
@@ -140,6 +143,12 @@ function syncPendingWaitPhases(
         next[pageId] = { ...pending, ...meta, waitPhase, startedAt, lastProseStatus: proseJob.status };
         changed = true;
       }
+      continue;
+    }
+
+    if (proseJob.status === "running" && pending.text.trim() && pending.waitPhase !== "generating") {
+      next[pageId] = { ...pending, ...meta, waitPhase: "generating", startedAt, lastProseStatus: proseJob.status };
+      changed = true;
       continue;
     }
 

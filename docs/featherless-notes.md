@@ -187,20 +187,33 @@ stored lore. Deliberately *not* applied to Author prose or the Editor's setup re
 stay untouched and visible to the user via the existing manual Stop/Retry controls — watching a
 refusal play out there is itself useful signal for judging a model's prudishness.
 
-## DeepSeek-style reasoning on `/v1/chat/completions` — two stream shapes
+## DeepSeek V4-Pro stream shape on Featherless (empirical, 2026-07-04)
 
-**Confirmed 2026-07-04 on `deepseek-ai/DeepSeek-V4-Pro` via Featherless.** Reasoning text may arrive
-in either (or both) forms:
+**Do not trust OpenAI-compat field names without probing.** `scripts/probe-deepseek-raw.ts` logs every
+SSE line and full JSON payload to `data/experiments/deepseek-raw/*.jsonl`. Summarize with
+`scripts/summarize-raw-stream.ts`.
 
-1. **`delta.reasoning_content`** — OpenAI/DeepSeek API convention; parsed and forwarded as SSE
-   `thinking` events when present.
-2. **`delta.content` inside a `redacted_thinking` block** — common when the request prefills an open
-   `redacted_thinking` assistant turn (see `streamWithFallback` in `pipeline-runner.ts`). Without a
-   client-side splitter, these tokens look like ordinary prose and the reasoning trace never appears.
+**With production prefill** (`assistant: "<think>\\n"`), one live run showed:
 
-`src/inference/reasoning-stream.ts` handles (2) incrementally; answer text after the close tag is
-what gets stored in `genPackage`. Idle timeout for DeepSeek ids remains **300s** (`REASONING_IDLE_TIMEOUT_MS`
-in `featherless.ts`) because prefill + thinking can sit silent for minutes before the first chunk.
+| Phase | Wall time | What arrived |
+|---|---|---|
+| HTTP 200 | +1961ms | headers |
+| SSE comment | +1963ms | `: FEATHERLESS PROCESSING` |
+| First data | +2221ms | `choices[0].delta.role` + **`delta.reasoning`** (not `reasoning_content`) |
+| Reasoning stream | +2221ms → ~+10078ms | ~124 tokens in **`delta.reasoning`** chunks only |
+| IC prose | +10078ms onward | **`delta.content`** chunks only |
+| Stop | +20238ms | `delta.reasoning: null`, then `usage.completion_tokens_details.reasoning_tokens: 124` |
+
+No `redacted_thinking` XML tags appear in streamed text. Reasoning and answer use **separate delta
+fields**, not tag-wrapped `content`.
+
+**Without prefill** (same script, earlier runs): model sometimes skips the reasoning phase entirely and
+streams IC prose only in `delta.content` from the first chunk — behavior is not deterministic at
+temperature 1.
+
+Client parser must handle **`delta.reasoning`** and **`delta.reasoning_content`** (and ignore
+`reasoning: null` on the stop chunk). `src/inference/reasoning-stream.ts` remains for tag-wrapped
+`content` if a model ever emits that shape — not observed on Featherless V4-Pro to date.
 
 ## `chat_template_kwargs`
 

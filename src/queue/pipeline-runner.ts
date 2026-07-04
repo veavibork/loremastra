@@ -247,7 +247,7 @@ async function streamWithFallback(
     const candidateMessages = isReasoningModel(candidate.model)
       ? [...messages, { role: "assistant" as const, content: "<think>\n" }]
       : messages;
-    const splitter = new ReasoningStreamSplitter({ startsInThinking: isReasoningModel(candidate.model) });
+    const splitter = new ReasoningStreamSplitter({ startsInThinking: false });
 
     for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
       reply = "";

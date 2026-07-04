@@ -4,7 +4,9 @@ A lightweight, private roleplaying platform for a small group of trusted users, 
 
 **Memory model (2026-07-04):** rolling `[STORY TO DATE]` Editor recaps + verbose recent posts — not per-post compression or decad archive blocks. See [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md).
 
-**Author streaming UX (2026-07-04):** prefill countdown, live reasoning trace, server-anchored elapsed timers — see [docs/development.md](docs/development.md) and [docs/featherless-notes.md](docs/featherless-notes.md).
+**Author streaming UX (2026-07-04):** prefill countdown, live reasoning trace (`delta.reasoning` on
+Featherless V4-Pro), server-anchored elapsed timers — see [docs/featherless-notes.md](docs/featherless-notes.md)
+(raw probe: `scripts/probe-deepseek-raw.ts`).
 
 ## Stack
 

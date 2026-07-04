@@ -163,7 +163,7 @@ export interface ChatMessage {
 
 export interface StreamHandlers {
   onToken: (text: string) => void;
-  /** Reasoning/thinking tokens (e.g. DeepSeek `reasoning_content` delta) — not part of the final reply. */
+  /** Reasoning/thinking tokens — Featherless DeepSeek uses `delta.reasoning`; others may use `reasoning_content`. */
   onReasoningToken?: (text: string) => void;
   onDone: () => void;
   onError: (err: Error) => void;
@@ -297,10 +297,12 @@ export async function streamInference(
         }
         try {
           const parsed = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: string | null; reasoning_content?: string | null } }>;
+            choices?: Array<{ delta?: { content?: string | null; reasoning_content?: string | null; reasoning?: string | null } }>;
           };
           const delta = parsed.choices?.[0]?.delta;
-          const reasoning = delta?.reasoning_content;
+          const reasoning =
+            delta?.reasoning_content ??
+            (typeof delta?.reasoning === "string" ? delta.reasoning : null);
           if (reasoning) {
             outputChars += reasoning.length;
             handlers.onReasoningToken?.(reasoning);
