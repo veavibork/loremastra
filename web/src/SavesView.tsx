@@ -114,8 +114,8 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
                   )}
                   {s.stats && (
                     <span className="saves-row-stats">
-                      {s.stats.chatRows} chat rows &middot; {s.stats.worldbookRows} worldbook entries &middot;{" "}
-                      {formatLastPlayed(s.stats.lastPlayedAt)}
+                      {s.stats.icPosts ?? "—"} IC posts &middot; {s.stats.chatRows} text versions &middot;{" "}
+                      {s.stats.worldbookRows} worldbook entries &middot; {formatLastPlayed(s.stats.lastPlayedAt)}
                     </span>
                   )}
                 </div>

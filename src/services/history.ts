@@ -8,7 +8,7 @@ import { listStoryToDateSegments } from "../db/story-to-date-store.js";
 import type { ChatMessage } from "../inference/featherless.js";
 import { getAgentProfile } from "./agent-config.js";
 import { AUTHOR_SYSTEM_PROMPT, AUTHOR_KICKOFF_PROMPT } from "../prompts.js";
-import { mergeStoryToDate } from "./story-to-date-corpus.js";
+import { mergeStoryToDate, MIN_VERBOSE_IC_POSTS, resolvePageOrderForIcPost, countIcPosts } from "./story-to-date-corpus.js";
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 function estimateTokens(text: string): number {
@@ -65,6 +65,18 @@ export function assembleAuthorPrompt(
   const kickoffOrder = state.kickoffPageId
     ? historyPages.findIndex((p) => p.id === state.kickoffPageId)
     : -1;
+
+  // Always keep a verbatim tail even when archives cover nearly the whole log.
+  if (kickoffOrder >= 0 && lastSegment?.coverageThroughIcPost != null) {
+    const headIcPosts = countIcPosts(db, logbookId);
+    if (headIcPosts > MIN_VERBOSE_IC_POSTS) {
+      const tailStartIc = headIcPosts - MIN_VERBOSE_IC_POSTS + 1;
+      const tailOrder = resolvePageOrderForIcPost(historyPages, kickoffOrder, db, tailStartIc - 1);
+      if (tailOrder >= kickoffOrder && (afterOrder < 0 || tailOrder < afterOrder)) {
+        afterOrder = tailOrder;
+      }
+    }
+  }
 
   interface HistoryEntry {
     order: number;

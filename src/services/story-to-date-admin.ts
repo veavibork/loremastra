@@ -1,0 +1,58 @@
+import type Database from "better-sqlite3";
+import { cancelPendingJobsForStoryToDate } from "../db/job-store.js";
+import {
+  deleteStoryToDateSegment,
+  deleteStoryToDateSegmentsFromSeq,
+  getStoryToDateSegment,
+  listStoryToDateSegments,
+  setStoryToDateSegmentCoverage,
+} from "../db/story-to-date-store.js";
+import { resolvePageIdForIcPost } from "./story-to-date-corpus.js";
+import {
+  enqueueEligibleStoryToDateJob,
+  enqueuePendingStoryToDateJobs,
+} from "./story-to-date.js";
+
+export function removeStoryToDateSegment(
+  db: Database.Database,
+  userId: string,
+  logbookId: string,
+  storyId: string,
+  segmentId: string,
+  options: { deleteLaterSegments?: boolean } = {}
+): void {
+  const segment = getStoryToDateSegment(db, segmentId);
+  if (!segment || segment.bookId !== logbookId) throw new Error("segment not found");
+
+  if (options.deleteLaterSegments) {
+    for (const seg of listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true })) {
+      if (seg.seq >= segment.seq) cancelPendingJobsForStoryToDate(db, seg.id);
+    }
+    deleteStoryToDateSegmentsFromSeq(db, logbookId, segment.seq);
+  } else {
+    cancelPendingJobsForStoryToDate(db, segmentId);
+    deleteStoryToDateSegment(db, segmentId);
+  }
+
+  enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
+  enqueuePendingStoryToDateJobs(db, userId, logbookId);
+}
+
+export function updateStoryToDateCoverageThroughPost(
+  db: Database.Database,
+  segmentId: string,
+  logbookId: string,
+  coverageThroughIcPost: number
+): void {
+  if (!Number.isFinite(coverageThroughIcPost) || coverageThroughIcPost <= 0) {
+    throw new Error("coverageThroughIcPost must be a positive number");
+  }
+  const segment = getStoryToDateSegment(db, segmentId);
+  if (!segment || segment.bookId !== logbookId) throw new Error("segment not found");
+  const pageId = resolvePageIdForIcPost(db, logbookId, coverageThroughIcPost);
+  if (!pageId) throw new Error(`no page for IC post ${coverageThroughIcPost}`);
+  setStoryToDateSegmentCoverage(db, segmentId, {
+    coverageThroughIcPost,
+    coveragePageId: pageId,
+  });
+}

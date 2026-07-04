@@ -16,6 +16,82 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN_ESTIMATE);
 }
 
+/** Minimum IC posts kept verbatim in Author prompt even when archives cover them. */
+export const MIN_VERBOSE_IC_POSTS = 16;
+
+/** Count in-character posts (from kickoff) with content on the active log chain. */
+export function countIcPosts(db: Database.Database, logbookId: string, includeHidden = false): number {
+  const pages = listChronologicalPages(db, logbookId).filter((p) => includeHidden || !p.hidden);
+  const kickoffPageId = getStoryState(db).kickoffPageId;
+  if (!kickoffPageId) return 0;
+  const kickoffOrder = pages.findIndex((p) => p.id === kickoffPageId);
+  if (kickoffOrder < 0) return 0;
+  let n = 0;
+  for (let order = kickoffOrder; order < pages.length; order++) {
+    const page = pages[order]!;
+    if (!page.selectedTextId) continue;
+    const text = getText(db, page.selectedTextId);
+    if (!text?.genPackage?.trim()) continue;
+    n++;
+  }
+  return n;
+}
+
+/** 1-based IC post number for a page on the active chain, or null if before kickoff / no content. */
+export function resolveIcPostNumber(db: Database.Database, logbookId: string, pageId: string): number | null {
+  const pages = listChronologicalPages(db, logbookId);
+  const kickoffPageId = getStoryState(db).kickoffPageId;
+  if (!kickoffPageId) return null;
+  const kickoffOrder = pages.findIndex((p) => p.id === kickoffPageId);
+  if (kickoffOrder < 0) return null;
+  let ic = 0;
+  for (let order = 0; order < pages.length; order++) {
+    if (order < kickoffOrder) continue;
+    const page = pages[order]!;
+    if (!page.selectedTextId) continue;
+    const text = getText(db, page.selectedTextId);
+    if (!text?.genPackage?.trim()) continue;
+    ic++;
+    if (page.id === pageId) return ic;
+  }
+  return null;
+}
+
+/** Page list index (historyPages order) of the last IC post at or before `icPostNumber`. */
+export function resolvePageOrderForIcPost(
+  pages: PageRow[],
+  kickoffOrder: number,
+  db: Database.Database,
+  icPostNumber: number
+): number {
+  if (icPostNumber <= 0) return kickoffOrder - 1;
+  let ic = 0;
+  for (let order = 0; order < pages.length; order++) {
+    if (order < kickoffOrder) continue;
+    const page = pages[order]!;
+    if (!page.selectedTextId) continue;
+    const text = getText(db, page.selectedTextId);
+    if (!text?.genPackage?.trim()) continue;
+    ic++;
+    if (ic >= icPostNumber) return order;
+  }
+  return pages.length - 1;
+}
+
+export function resolvePageIdForIcPost(
+  db: Database.Database,
+  logbookId: string,
+  icPostNumber: number
+): string | null {
+  const pages = listChronologicalPages(db, logbookId);
+  const kickoffPageId = getStoryState(db).kickoffPageId;
+  if (!kickoffPageId) return null;
+  const kickoffOrder = pages.findIndex((p) => p.id === kickoffPageId);
+  if (kickoffOrder < 0) return null;
+  const order = resolvePageOrderForIcPost(pages, kickoffOrder, db, icPostNumber);
+  return pages[order]?.id ?? null;
+}
+
 function formatWorldbookEntry(entry: WorldbookEntry): string {
   return `[${entry.entryType.toUpperCase()}]\n${entry.content}`;
 }

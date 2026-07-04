@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { hasActiveJobForStoryToDate } from "../db/job-store.js";
 import { listStoryToDateSegments } from "../db/story-to-date-store.js";
-import { estimateTokens } from "./story-to-date-corpus.js";
+import { estimateTokens, countIcPosts } from "./story-to-date-corpus.js";
 
 export type StoryToDateViewStatus = "ready" | "pending" | "broken";
 
@@ -25,6 +25,7 @@ export interface StoryToDateViewEntry {
 export interface StoryToDateView {
   segments: StoryToDateViewEntry[];
   mergedCoverageThroughPost: number | null;
+  icPostCount: number;
   total: number;
   withContent: number;
   pending: number;
@@ -65,6 +66,7 @@ export function buildStoryToDateView(db: Database.Database, logbookId: string): 
   return {
     segments,
     mergedCoverageThroughPost: last?.coverageThroughIcPost ?? null,
+    icPostCount: countIcPosts(db, logbookId),
     total: segments.length,
     withContent: segments.filter((s) => s.status === "ready").length,
     pending: segments.filter((s) => s.status === "pending").length,

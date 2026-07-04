@@ -1,7 +1,12 @@
 import type Database from "better-sqlite3";
+import { getBookByType } from "../db/book-store.js";
+import { countIcPosts } from "./story-to-date-corpus.js";
 
 export interface StoryStats {
+  /** Every text row in game+logbook books (includes superseded retry/edit versions). */
   chatRows: number;
+  /** In-character posts on the active chain from kickoff onward (one per page). */
+  icPosts: number;
   worldbookRows: number;
   lastPlayedAt: string | null;
 }
@@ -20,5 +25,8 @@ export function getStoryStats(db: Database.Database): StoryStats {
 
   const worldbook = db.prepare(`SELECT COUNT(*) AS n FROM worldbook_entry`).get() as { n: number };
 
-  return { chatRows: chat.n, worldbookRows: worldbook.n, lastPlayedAt: chat.last };
+  const logbook = getBookByType(db, "logbook");
+  const icPosts = logbook ? countIcPosts(db, logbook.id) : 0;
+
+  return { chatRows: chat.n, icPosts, worldbookRows: worldbook.n, lastPlayedAt: chat.last };
 }

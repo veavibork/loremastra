@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   backfillStoryToDateNames,
+  deleteStoryToDateSegment,
   enqueueStoryToDate,
   fetchStoryToDate,
   requeueStoryToDateSegment,
@@ -21,6 +22,7 @@ function applyPage(
   setSegments(page.segments);
   setStats({
     mergedCoverageThroughPost: page.mergedCoverageThroughPost,
+    icPostCount: page.icPostCount ?? 0,
     total: page.total,
     withContent: page.withContent,
     pending: page.pending,
@@ -44,6 +46,7 @@ export default function ArchivesView({ story }: PanelProps) {
   const [segments, setSegments] = useState<StoryToDateSegment[]>([]);
   const [stats, setStats] = useState({
     mergedCoverageThroughPost: null as number | null,
+    icPostCount: 0,
     total: 0,
     withContent: 0,
     pending: 0,
@@ -53,6 +56,8 @@ export default function ArchivesView({ story }: PanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [coverageDraft, setCoverageDraft] = useState<string>("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,12 +109,23 @@ export default function ArchivesView({ story }: PanelProps) {
   function startEdit(seg: StoryToDateSegment) {
     setEditingId(seg.id);
     setEditDraft(seg.content ?? "");
+    setCoverageDraft(seg.coverageThroughIcPost != null ? String(seg.coverageThroughIcPost) : "");
     setExpanded((prev) => new Set(prev).add(seg.id));
   }
 
   async function saveEdit(segmentId: string) {
     if (!story) return;
-    await runAction(segmentId, () => updateStoryToDateSegment(story.id, segmentId, { content: editDraft }));
+    const coverageThroughIcPost = coverageDraft.trim() ? Number(coverageDraft.trim()) : undefined;
+    if (coverageThroughIcPost !== undefined && (!Number.isFinite(coverageThroughIcPost) || coverageThroughIcPost <= 0)) {
+      setError("Coverage must be a positive post number");
+      return;
+    }
+    await runAction(segmentId, () =>
+      updateStoryToDateSegment(story.id, segmentId, {
+        content: editDraft,
+        ...(coverageThroughIcPost !== undefined ? { coverageThroughIcPost } : {}),
+      })
+    );
     setEditingId(null);
   }
 
@@ -149,8 +165,8 @@ export default function ArchivesView({ story }: PanelProps) {
           {stats.withContent} of {stats.total} segments ready
           {stats.pending > 0 && ` — ${stats.pending} pending`}
           {stats.broken > 0 && ` — ${stats.broken} broken`}
-          {stats.mergedCoverageThroughPost != null && ` · coverage through post ${stats.mergedCoverageThroughPost}`}
-          {!includeHidden && " · in-character only"}
+          {stats.mergedCoverageThroughPost != null && ` · archive through post ${stats.mergedCoverageThroughPost}`}
+          {stats.icPostCount > 0 && ` · ${stats.icPostCount} IC posts on chain`}
         </p>
       )}
 
@@ -204,12 +220,63 @@ export default function ArchivesView({ story }: PanelProps) {
                     Edit
                   </button>
                 )}
+                {seg.status === "ready" && (
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={busyKey === seg.id}
+                    onClick={() => setConfirmDeleteId(seg.id)}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
+
+              {confirmDeleteId === seg.id && (
+                <div className="archive-delete-confirm">
+                  <span>Remove this archive segment? Verbose posts it covered return to the Author prompt.</span>
+                  <button
+                    type="button"
+                    className="danger"
+                    disabled={busyKey === seg.id}
+                    onClick={() =>
+                      void runAction(`del-${seg.id}`, () => deleteStoryToDateSegment(story.id, seg.id)).then(() =>
+                        setConfirmDeleteId(null)
+                      )
+                    }
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyKey === seg.id}
+                    onClick={() =>
+                      void runAction(`del-${seg.id}`, () =>
+                        deleteStoryToDateSegment(story.id, seg.id, { deleteLater: true })
+                      ).then(() => setConfirmDeleteId(null))
+                    }
+                  >
+                    Delete + later segments
+                  </button>
+                  <button type="button" onClick={() => setConfirmDeleteId(null)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
 
               {isExpanded && (
                 <div className="archive-body">
                   {editingId === seg.id ? (
                     <>
+                      <label className="archive-coverage-edit">
+                        Coverage through IC post{" "}
+                        <input
+                          type="number"
+                          min={1}
+                          value={coverageDraft}
+                          onChange={(e) => setCoverageDraft(e.target.value)}
+                        />
+                      </label>
                       <textarea
                         className="archive-edit"
                         value={editDraft}

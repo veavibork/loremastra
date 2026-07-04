@@ -39,6 +39,10 @@ import { trackStoryDb, untrackStoryDb, setJobGuidance, setJobGenerationOptions, 
 import type { GenerationOptions } from "../services/settings-space-registry.js";
 import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
+import {
+  removeStoryToDateSegment,
+  updateStoryToDateCoverageThroughPost,
+} from "../services/story-to-date-admin.js";
 import { buildStoryToDateView } from "../services/story-to-date-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
 import {
@@ -220,14 +224,48 @@ storiesRoute.post("/:id/story-to-date/backfill-names", (c) => {
 });
 
 storiesRoute.patch("/:id/story-to-date/:segmentId", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { content?: string; name?: string };
+  const body = (await c.req.json().catch(() => ({}))) as {
+    content?: string;
+    name?: string;
+    coverageThroughIcPost?: number;
+  };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const segment = getStoryToDateSegment(storyDb, c.req.param("segmentId"));
   if (!segment) return c.json({ error: "segment not found" }, 404);
-  if (typeof body.content === "string") setStoryToDateSegmentContent(storyDb, segment.id, body.content);
-  if (typeof body.name === "string") setStoryToDateSegmentName(storyDb, segment.id, body.name);
   const logbook = getBookByType(storyDb, "logbook")!;
-  return c.json({ view: buildStoryToDateView(storyDb, logbook.id) });
+  try {
+    if (typeof body.content === "string") setStoryToDateSegmentContent(storyDb, segment.id, body.content);
+    if (typeof body.name === "string") setStoryToDateSegmentName(storyDb, segment.id, body.name);
+    if (body.coverageThroughIcPost !== undefined) {
+      updateStoryToDateCoverageThroughPost(
+        storyDb,
+        segment.id,
+        logbook.id,
+        body.coverageThroughIcPost
+      );
+    }
+    return c.json({ view: buildStoryToDateView(storyDb, logbook.id) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+storiesRoute.delete("/:id/story-to-date/:segmentId", async (c) => {
+  const storyId = c.req.param("id");
+  const storyDb = openTrackedStoryDb(storyId);
+  const segment = getStoryToDateSegment(storyDb, c.req.param("segmentId"));
+  if (!segment) return c.json({ error: "segment not found" }, 404);
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  const deleteLater = c.req.query("deleteLater") === "true";
+  try {
+    removeStoryToDateSegment(storyDb, c.get("userId"), logbook.id, storyId, segment.id, {
+      deleteLaterSegments: deleteLater,
+    });
+    return c.json({ ok: true, view: buildStoryToDateView(storyDb, logbook.id) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
 });
 
 /** Compact memory health — story-to-date coverage, no per-post dump. */

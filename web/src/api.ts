@@ -195,6 +195,7 @@ export async function clearHordeKey(): Promise<KeyFields> {
 
 export interface StoryStats {
   chatRows: number;
+  icPosts: number;
   worldbookRows: number;
   lastPlayedAt: string | null;
 }
@@ -554,6 +555,7 @@ export interface StoryToDateSegment {
 export interface StoryToDatePage {
   segments: StoryToDateSegment[];
   mergedCoverageThroughPost: number | null;
+  icPostCount: number;
   total: number;
   withContent: number;
   pending: number;
@@ -578,13 +580,25 @@ export async function backfillStoryToDateNames(storyId: string): Promise<StoryTo
 export async function updateStoryToDateSegment(
   storyId: string,
   segmentId: string,
-  patch: { content?: string; name?: string }
+  patch: { content?: string; name?: string; coverageThroughIcPost?: number }
 ): Promise<StoryToDatePage> {
   const res = await apiFetch(`/api/stories/${storyId}/story-to-date/${segmentId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
+  const data = (await res.json()) as { view: StoryToDatePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
+}
+
+export async function deleteStoryToDateSegment(
+  storyId: string,
+  segmentId: string,
+  options: { deleteLater?: boolean } = {}
+): Promise<StoryToDatePage> {
+  const q = options.deleteLater ? "?deleteLater=true" : "";
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date/${segmentId}${q}`, { method: "DELETE" });
   const data = (await res.json()) as { view: StoryToDatePage; error?: string };
   if (data.error) throw new Error(data.error);
   return data.view;

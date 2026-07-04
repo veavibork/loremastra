@@ -134,6 +134,19 @@ export function setStoryToDateSegmentContent(db: Database.Database, id: string, 
   db.prepare(`UPDATE story_to_date_segment SET content = ? WHERE id = ?`).run(content.trim(), id);
 }
 
+export function setStoryToDateSegmentCoverage(
+  db: Database.Database,
+  id: string,
+  input: { coverageThroughIcPost: number; coveragePageId: string }
+): void {
+  db.prepare(
+    `UPDATE story_to_date_segment SET
+       coverage_through_ic_post = ?,
+       coverage_page_id = ?
+     WHERE id = ?`
+  ).run(input.coverageThroughIcPost, input.coveragePageId, id);
+}
+
 export function markStoryToDateSegmentBroken(db: Database.Database, id: string): void {
   db.prepare(`UPDATE story_to_date_segment SET broken = 1 WHERE id = ?`).run(id);
 }
