@@ -6,6 +6,7 @@ A lightweight, private roleplaying platform for a small group of trusted users, 
 
 **Author streaming UX (2026-07-04):** prefill countdown, live reasoning trace (`delta.reasoning` on
 Featherless V4-Pro), server-anchored elapsed timers — see [docs/featherless-notes.md](docs/featherless-notes.md)
+and [docs/reasoning-stream-research.md](docs/reasoning-stream-research.md) (thinking/Effort probe matrix, 2026-07-04).
 (raw probe: `scripts/probe-deepseek-raw.ts`).
 
 ## Stack
@@ -77,4 +78,5 @@ See [loremaster.md](loremaster.md) (MCP Server section) for the full MCP tool li
 - `scripts/` — one-off/dev scripts (DB init, user creation, dev server management)
 - `docs/roadmap.md` — high-level backlog (open items only)
 - `docs/development.md` — detailed milestone history and implementation notes
+- `docs/reasoning-stream-research.md` — thinking/reasoning stream probes, Effort matrix, future per-model confirmation workflow
 - `loremaster.md` — project mission, architecture, and terminology reference

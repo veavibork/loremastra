@@ -219,9 +219,15 @@ Client parser must handle **`delta.reasoning`** and **`delta.reasoning_content`*
 
 Per-model template overrides for reasoning/"thinking" models (`enable_thinking`, `thinking_budget`,
 etc.) — wired to the Author **Effort** toggle (`src/services/toggle-presets.ts` →
-`jobGenerationOptions` → `streamInference`). DeepSeek ids get reasoning-model handling (prefill,
-extended idle timeout) even when Effort is off; `enable_thinking: true` may lengthen the visible
-reasoning phase when the provider honors it.
+`jobGenerationOptions` → `streamInference`).
+
+**Effort Off** (`enable_thinking: false`): confirmed 2026-07-04 — prefill + false routes the full IC
+answer through **`delta.reasoning` only**, triggering false retries. Production now **skips prefill**
+and routes any stray `delta.reasoning` to the prose stream (`proseStreamUsesReasoningTrace` in
+`featherless.ts`). See [reasoning-stream-research.md](reasoning-stream-research.md).
+
+**Effort On** (`enable_thinking: true`): prefill + reasoning trace; meta planning in `delta.reasoning`,
+IC in `delta.content` when the model cooperates (non-deterministic at temp 1).
 
 ## Deferred idea: cross-reference HuggingFace's own API for real per-model tags
 

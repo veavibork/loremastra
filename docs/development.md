@@ -371,6 +371,15 @@ no XML thinking tags in the stream. Parser in `featherless.ts` forwards both `de
 An early tag-splitter mistake (`startsInThinking` from prefill alone) briefly misrouted prose into the
 trace; fixed in `reasoning-stream.ts` the same day.
 
+**Additional, post-Phase-1: Effort-aware thinking stream + false-retry fix** — ✅ done, 2026-07-04.
+Probe matrix and production results: [docs/reasoning-stream-research.md](reasoning-stream-research.md).
+`enable_thinking: false` with assistant prefill caused Featherless to emit IC prose only on
+`delta.reasoning`, which tripped “reasoning but no answer content” retries and stacked drafts in the
+trace (trace reset shipped in `21d33d7`; root cause fixed same day). `proseStreamUsesReasoningTrace` /
+`shouldPrefillReasoning` gate prefill, trace UI, idle timeout, and reasoning→prose routing on Effort
+Off vs On. Horde prose path unchanged (no reasoning-channel handling). Horde smoke test re-run after
+changes: OK.
+
 **Additional, post-Phase-1: silent OOC session boundary + Story tab mode persistence** — ✅ done,
 2026-07-03. The post-kickoff OOC "update session" boundary (`ooc_session_start_page_id`) used to be
 set by dropping a canned `EDITOR_UPDATE_OPENING` "Welcome back" message as a real hidden page every

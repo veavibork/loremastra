@@ -111,6 +111,28 @@ export function isReasoningModel(model: string): boolean {
   return /deepseek/i.test(model);
 }
 
+/** Assistant-turn prefill that prevents empty first-token stops on reasoning-family models. */
+export const REASONING_ASSISTANT_PREFILL = "<think>\n";
+
+/**
+ * Whether a prose stream should open a thinking block and surface `delta.reasoning` in the UI.
+ * Effort Off (`enable_thinking: false`) disables both prefill and the reasoning trace — confirmed
+ * live: prefill + enable_thinking false routes IC prose through delta.reasoning only, which
+ * triggered false "reasoning but no answer content" retries.
+ */
+export function proseStreamUsesReasoningTrace(
+  model: string,
+  chatTemplateKwargs?: Record<string, unknown>
+): boolean {
+  if (!isReasoningModel(model)) return false;
+  if (chatTemplateKwargs?.enable_thinking === false) return false;
+  return true;
+}
+
+export function shouldPrefillReasoning(model: string, chatTemplateKwargs?: Record<string, unknown>): boolean {
+  return proseStreamUsesReasoningTrace(model, chatTemplateKwargs);
+}
+
 /**
  * Ranked-choice model fallback (loremaster.md's Provider Abstraction section): tries
  * profile.model first, then each of profile.fallbackModels in order, but only when the
@@ -181,7 +203,8 @@ const DEFAULT_IDLE_TIMEOUT_MS = 90_000;
 export const REASONING_IDLE_TIMEOUT_MS = 300_000;
 
 export function usesThinkingMode(model: string, chatTemplateKwargs?: Record<string, unknown>): boolean {
-  return isReasoningModel(model) || chatTemplateKwargs?.enable_thinking === true;
+  if (chatTemplateKwargs?.enable_thinking === true) return true;
+  return proseStreamUsesReasoningTrace(model, chatTemplateKwargs);
 }
 
 export function streamIdleTimeoutMs(model: string, chatTemplateKwargs?: Record<string, unknown>): number {

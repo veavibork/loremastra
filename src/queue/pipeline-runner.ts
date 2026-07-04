@@ -38,7 +38,9 @@ import {
   withModelFallback,
   FeatherlessError,
   JobCancelledError,
-  isReasoningModel,
+  shouldPrefillReasoning,
+  proseStreamUsesReasoningTrace,
+  REASONING_ASSISTANT_PREFILL,
   streamIdleTimeoutMs,
   estimateMessageTokens,
   type ChatMessage,
@@ -222,14 +224,15 @@ const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2;
  * error) — without this, that failure mode would silently bypass withModelFallback
  * entirely, since the emptiness was only ever checked after it had already returned.
  *
- * For a reasoning model specifically (see isReasoningModel), the same empty-completion
- * failure has a known, reproducible cause: its chat template lets the model decide, per turn,
- * whether/how to open its own `<think>` block, and under temperature the very first sampled
- * token can land on an immediate close-and-stop instead — confirmed live by replaying an
- * identical failing request repeatedly. Prefilling the assistant turn with an already-open
- * `<think>\n` removes that coin-flip (same technique SillyTavern's reasoning-model presets
- * use). EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE is a belt-and-suspenders retry on top of that
- * for whatever variance the prefill doesn't catch, before handing off to the next fallback
+ * For a reasoning model specifically, the same empty-completion failure has a known,
+ * reproducible cause: its chat template lets the model decide, per turn, whether/how to open
+ * its own `<think>` block, and under temperature the very first sampled token can
+ * land on an immediate close-and-stop instead — confirmed live by replaying an identical
+ * failing request repeatedly. Prefilling the assistant turn with an already-open block (see
+ * REASONING_ASSISTANT_PREFILL) removes that coin-flip — but only when thinking is enabled
+ * (Effort On or default). Effort Off sets enable_thinking: false and skips prefill entirely;
+ * delta.reasoning tokens are routed to the prose stream instead of the trace.
+ * EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE retries before handing off to the next fallback
  * candidate (if any).
  */
 async function streamWithFallback(
@@ -245,8 +248,9 @@ async function streamWithFallback(
   let isFirstStream = true;
   await withModelFallback(profile, async (candidate) => {
     usedModel = candidate.model;
-    const candidateMessages = isReasoningModel(candidate.model)
-      ? [...messages, { role: "assistant" as const, content: "<think>\n" }]
+    const useReasoningTrace = proseStreamUsesReasoningTrace(candidate.model, chatTemplateKwargs);
+    const candidateMessages = shouldPrefillReasoning(candidate.model, chatTemplateKwargs)
+      ? [...messages, { role: "assistant" as const, content: REASONING_ASSISTANT_PREFILL }]
       : messages;
 
     for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
@@ -266,6 +270,11 @@ async function streamWithFallback(
         reply += text;
         publishToken(jobId, text);
       };
+      /** Effort Off: Featherless may still emit delta.reasoning — treat it as IC prose, not trace. */
+      const emitReasoningDelta = (text: string) => {
+        if (useReasoningTrace) emitThinking(text);
+        else emitAnswer(text);
+      };
       try {
         await new Promise<void>((resolve, reject) => {
           void streamInference(
@@ -274,13 +283,13 @@ async function streamWithFallback(
             candidateMessages,
             {
               onToken: (text) => {
-                splitter.push(text, emitThinking, emitAnswer);
+                splitter.push(text, emitReasoningDelta, emitAnswer);
               },
-              onReasoningToken: emitThinking,
+              onReasoningToken: emitReasoningDelta,
               onDone: () => {
-                splitter.flush(emitThinking, emitAnswer);
+                splitter.flush(emitReasoningDelta, emitAnswer);
                 if (reply.trim()) resolve();
-                else if (sawReasoning) {
+                else if (sawReasoning && useReasoningTrace) {
                   reject(
                     new FeatherlessError(
                       503,
@@ -579,8 +588,8 @@ async function executeProseJob(
     if (moodFragment) {
       finalHistory = [...history, { role: "system", content: moodFragment }];
     }
-    const inferenceMessages = isReasoningModel(profile.model)
-      ? [...finalHistory, { role: "assistant" as const, content: "<think>\n" }]
+    const inferenceMessages = shouldPrefillReasoning(profile.model, chatTemplateKwargs)
+      ? [...finalHistory, { role: "assistant" as const, content: REASONING_ASSISTANT_PREFILL }]
       : finalHistory;
     setJobInputTokenEstimate(db, jobId, estimateMessageTokens(inferenceMessages));
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
