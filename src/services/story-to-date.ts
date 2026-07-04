@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { createJob, hasActiveJobForStoryToDate } from "../db/job-store.js";
 import { getStoryState } from "../db/story-state-store.js";
+import { resolveIcStartPageId } from "./kickoff.js";
 import {
   createStoryToDateSegment,
   getStoryToDateSegment,
@@ -79,7 +80,7 @@ export function enqueueEligibleStoryToDateJob(
   fromPageId: string | null = null
 ): string | null {
   const state = getStoryState(db);
-  if (state.phase !== "story" || !state.kickoffPageId) return null;
+  if (state.phase !== "story" || !resolveIcStartPageId(db, logbookId)) return null;
   if (!wouldTriggerStoryToDateJob(db, userId, logbookId, fromPageId)) return null;
   if (hasPendingStoryToDateJob(db)) return null;
 

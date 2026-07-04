@@ -31,7 +31,8 @@ import {
   setWorldbookEntryHidden,
   type WorldbookEntryType,
 } from "../db/worldbook-store.js";
-import { getStoryState, setStoryPhase, setKickoffPageId, setCurrentPageId, setOocSessionStartPageId } from "../db/story-state-store.js";
+import { getStoryState, setStoryPhase, setCurrentPageId, setOocSessionStartPageId } from "../db/story-state-store.js";
+import { resolveIcStartPageId } from "../services/kickoff.js";
 import { recordHistoryEvent, undoHistory, redoHistory, canUndoHistory, canRedoHistory } from "../db/history-store.js";
 import { finalizeSetup } from "../services/kickoff.js";
 import { forkStory } from "../services/fork.js";
@@ -317,7 +318,12 @@ storiesRoute.post("/:id/memory/enqueue", (c) => {
 
 storiesRoute.get("/:id/phase", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
-  return c.json(getStoryState(storyDb));
+  const state = getStoryState(storyDb);
+  const logbook = getBookByType(storyDb, "logbook");
+  return c.json({
+    ...state,
+    kickoffPageId: logbook ? resolveIcStartPageId(storyDb, logbook.id) : null,
+  });
 });
 
 storiesRoute.post("/:id/messages", async (c) => {
@@ -633,7 +639,6 @@ storiesRoute.post("/:id/kickoff", (c) => {
   const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
   const { page, text } = createPageWithText(storyDb, { bookId: logbook.id, prevPageId: attachAt, role: "agent" });
 
-  setKickoffPageId(storyDb, page.id);
   finalizeSetup(storyDb, logbook.id, page.id);
   setStoryPhase(storyDb, "story");
   setCurrentPageId(storyDb, null);

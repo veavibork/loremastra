@@ -49,6 +49,7 @@ import { ReasoningStreamSplitter } from "../inference/reasoning-stream.js";
 import { submitTextGeneration, pollTextGeneration } from "../inference/horde.js";
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-store.js";
 import type { AgentProfile } from "../config.js";
+import { isOpeningPostPage, resolveIcStartPageId } from "../services/kickoff.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
 import { enqueueEligibleStoryToDateJob, enqueueStoryToDateNameJob } from "../services/story-to-date.js";
@@ -537,9 +538,9 @@ function buildProseHistory(
   // worldbook alone, never the setup conversation's chat log — checked by page identity,
   // not current phase, since phase moves on to "story" immediately after kickoff fires but
   // the opening post can still be regenerated any time after that.
-  const kickoffPageId = getStoryState(db).kickoffPageId;
+  const icStartPageId = resolveIcStartPageId(db, targetPage.bookId);
   let history: ChatMessage[];
-  if (targetPage.id === kickoffPageId) {
+  if (icStartPageId && targetPage.id === icStartPageId) {
     const worldbook = getBookByType(db, "worldbook");
     if (!worldbook) throw new Error("worldbook not found");
     history = assembleKickoffPrompt(db, worldbook.id);
@@ -805,8 +806,8 @@ async function executeSetupJob(
     const worldbook = getBookByType(db, "worldbook");
     if (!worldbook) throw new Error("worldbook not found");
 
-    const { kickoffPageId, oocSessionStartPageId } = getStoryState(db);
-    const isUpdateSession = !!kickoffPageId;
+    const { oocSessionStartPageId } = getStoryState(db);
+    const isUpdateSession = !!resolveIcStartPageId(db, targetPage.bookId);
 
     let conversation: ChatMessage[];
     const editorMessages: ChatMessage[] = [];
@@ -1073,8 +1074,7 @@ async function executeCompressJob(
  * resolveHordeJob's Horde-poll success), since kickoff can run through either provider.
  */
 function maybeQueueStoryNameJob(db: Database.Database, userId: string, storyId: string, targetPage: PageRow, targetTextId: string): void {
-  const kickoffPageId = getStoryState(db).kickoffPageId;
-  if (targetPage.id !== kickoffPageId) return;
+  if (!isOpeningPostPage(db, targetPage.bookId, targetPage.id)) return;
 
   const story = getStory(getGlobalDb(), storyId);
   if (!story || story.name !== DEFAULT_STORY_NAME) return;

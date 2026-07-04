@@ -6,7 +6,7 @@ import { listChronologicalPages, type PageRow } from "../db/page-store.js";
 import { getText, type TextRole, type TextRow } from "../db/text-store.js";
 import { getBookByType } from "../db/book-store.js";
 import { listWorldbookEntries, type WorldbookEntry } from "../db/worldbook-store.js";
-import { getStoryState } from "../db/story-state-store.js";
+import { resolveIcStartPageId } from "./kickoff.js";
 import { AUTHOR_SYSTEM_PROMPT } from "../prompts.js";
 import type { ChatMessage } from "../inference/featherless.js";
 import {
@@ -15,6 +15,7 @@ import {
   resolveChainPostNumber,
   resolvePageIdForChainPost,
   resolvePageOrderForChainPost,
+  resolveIcStartOrder,
 } from "./post-index.js";
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
@@ -32,6 +33,7 @@ export {
   resolveChainPostNumber,
   resolvePageIdForChainPost,
   resolvePageOrderForChainPost,
+  resolveIcStartOrder,
   type ChainPostEntry,
 } from "./post-index.js";
 
@@ -80,6 +82,9 @@ export interface StoryCorpus {
   /** Highest icPostNumber supplied in this Editor input (token ceiling). */
   inputCeilingPost: number | null;
   inputCeilingPageId: string | null;
+  /** First visible IC page — post numbering anchor. */
+  icStartPageId: string;
+  /** @deprecated Use icStartPageId */
   kickoffPageId: string;
 }
 
@@ -115,12 +120,9 @@ export function buildStoryCorpus(
     if (fromPost != null) maxPostNumber = fromPost;
   }
 
-  const kickoffPageId = getStoryState(db).kickoffPageId;
-  if (!kickoffPageId) {
-    throw new Error("story has no kickoff page — STORY BEGINS requires in-character log");
-  }
-  if (!chain.some((e) => e.pageId === kickoffPageId)) {
-    throw new Error("kickoff page not found on active chain");
+  const icStartPageId = resolveIcStartPageId(db, logbookId);
+  if (!icStartPageId) {
+    throw new Error("story has no visible IC posts — STORY BEGINS requires in-character log");
   }
 
   const worldbookLines: string[] = [];
@@ -202,7 +204,8 @@ export function buildStoryCorpus(
     includedPromptTokens: worldbookTokens + priorStoryTokens + includedHistoryTokens,
     inputCeilingPost,
     inputCeilingPageId,
-    kickoffPageId,
+    icStartPageId,
+    kickoffPageId: icStartPageId,
   };
 }
 

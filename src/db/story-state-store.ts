@@ -5,6 +5,7 @@ export type StoryPhase = "setup" | "kickoff" | "story";
 export interface StoryState {
   phase: StoryPhase;
   kickoffPageId: string | null;
+  /** @deprecated Derived at read time — see resolveIcStartPageId. DB column retained for legacy rows. */
   /** Raw stored value — NULL means "at the head," resolved by the caller (page-store has no notion of story_state). Use getCurrentPageId in routes/services instead of reading this directly. */
   currentPageId: string | null;
   /** The most recent hidden page that existed when the current post-kickoff OOC "update session" started — null before any such session has started. Scopes buildSetupConversation to just this session's turns, without adding a visible marker page of its own. */

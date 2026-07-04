@@ -14,7 +14,7 @@ import { getPage, findHeadPageId } from "../src/db/page-store.js";
 import { getText } from "../src/db/text-store.js";
 import { createWorldbookEntry } from "../src/db/worldbook-store.js";
 import { createStoryToDateSegment, fillStoryToDateSegment, listStoryToDateSegments } from "../src/db/story-to-date-store.js";
-import { setStoryPhase, setKickoffPageId } from "../src/db/story-state-store.js";
+import { setStoryPhase } from "../src/db/story-state-store.js";
 import { recordHistoryEvent, undoHistory } from "../src/db/history-store.js";
 import { enqueueEligibleStoryToDateJob } from "../src/services/story-to-date.js";
 import { onCanonicalTextChanged, postNeedsCompress } from "../src/services/memory-invalidation.js";
@@ -73,8 +73,6 @@ function runInProcessSmoke(): void {
     pageIds.push(page.id);
   }
 
-  const kickoffPageId = pageIds[0]!;
-  setKickoffPageId(db, kickoffPageId);
   setStoryPhase(db, "story");
 
   const seg = createStoryToDateSegment(db, { bookId: logbook.id, kind: "begins", seq: 0 });

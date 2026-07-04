@@ -8,7 +8,7 @@ import { listStoryToDateSegments } from "../db/story-to-date-store.js";
 import type { ChatMessage } from "../inference/featherless.js";
 import { getAgentProfile } from "./agent-config.js";
 import { AUTHOR_SYSTEM_PROMPT, AUTHOR_KICKOFF_PROMPT } from "../prompts.js";
-import { mergeStoryToDate, MIN_VERBOSE_IC_POSTS, resolvePageOrderForChainPost, countChainPosts } from "./story-to-date-corpus.js";
+import { mergeStoryToDate, MIN_VERBOSE_IC_POSTS, resolvePageOrderForChainPost, resolveIcStartOrder, countChainPosts } from "./story-to-date-corpus.js";
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 function estimateTokens(text: string): number {
@@ -61,18 +61,15 @@ export function assembleAuthorPrompt(
     if (idx >= 0) afterOrder = idx;
   }
 
-  const state = getStoryState(db);
-  const kickoffOrder = state.kickoffPageId
-    ? allPages.findIndex((p) => p.id === state.kickoffPageId)
-    : -1;
+  const icStartOrder = resolveIcStartOrder(allPages);
 
   // Always keep a verbatim tail even when archives cover nearly the whole log.
-  if (kickoffOrder >= 0 && lastSegment?.coverageThroughIcPost != null) {
+  if (icStartOrder >= 0 && lastSegment?.coverageThroughIcPost != null) {
     const headPosts = countChainPosts(db, logbookId);
     if (headPosts > MIN_VERBOSE_IC_POSTS) {
       const tailStartPost = headPosts - MIN_VERBOSE_IC_POSTS + 1;
-      const tailOrder = resolvePageOrderForChainPost(allPages, kickoffOrder, db, tailStartPost - 1);
-      if (tailOrder >= kickoffOrder && (afterOrder < 0 || tailOrder < afterOrder)) {
+      const tailOrder = resolvePageOrderForChainPost(allPages, icStartOrder, db, tailStartPost - 1);
+      if (tailOrder >= icStartOrder && (afterOrder < 0 || tailOrder < afterOrder)) {
         afterOrder = tailOrder;
       }
     }
@@ -85,7 +82,7 @@ export function assembleAuthorPrompt(
   const entries: HistoryEntry[] = [];
   for (let order = 0; order <= cutoffOrder; order++) {
     const page = allPages[order]!;
-    if (kickoffOrder >= 0 && order < kickoffOrder) continue;
+    if (icStartOrder >= 0 && order < icStartOrder) continue;
     if (order <= afterOrder) continue;
     if (page.hidden) continue;
     if (!page.selectedTextId) continue;
