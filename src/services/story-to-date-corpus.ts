@@ -9,6 +9,13 @@ import { listWorldbookEntries, type WorldbookEntry } from "../db/worldbook-store
 import { getStoryState } from "../db/story-state-store.js";
 import { AUTHOR_SYSTEM_PROMPT } from "../prompts.js";
 import type { ChatMessage } from "../inference/featherless.js";
+import {
+  buildChainPostIndex,
+  countChainPosts,
+  resolveChainPostNumber,
+  resolvePageIdForChainPost,
+  resolvePageOrderForChainPost,
+} from "./post-index.js";
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
 
@@ -19,78 +26,19 @@ export function estimateTokens(text: string): number {
 /** Minimum IC posts kept verbatim in Author prompt even when archives cover them. */
 export const MIN_VERBOSE_IC_POSTS = 16;
 
-/** Count in-character posts (from kickoff) with content on the active log chain. */
-export function countIcPosts(db: Database.Database, logbookId: string, includeHidden = false): number {
-  const pages = listChronologicalPages(db, logbookId).filter((p) => includeHidden || !p.hidden);
-  const kickoffPageId = getStoryState(db).kickoffPageId;
-  if (!kickoffPageId) return 0;
-  const kickoffOrder = pages.findIndex((p) => p.id === kickoffPageId);
-  if (kickoffOrder < 0) return 0;
-  let n = 0;
-  for (let order = kickoffOrder; order < pages.length; order++) {
-    const page = pages[order]!;
-    if (!page.selectedTextId) continue;
-    const text = getText(db, page.selectedTextId);
-    if (!text?.genPackage?.trim()) continue;
-    n++;
-  }
-  return n;
-}
+export {
+  buildChainPostIndex,
+  countChainPosts,
+  resolveChainPostNumber,
+  resolvePageIdForChainPost,
+  resolvePageOrderForChainPost,
+  type ChainPostEntry,
+} from "./post-index.js";
 
-/** 1-based IC post number for a page on the active chain, or null if before kickoff / no content. */
-export function resolveIcPostNumber(db: Database.Database, logbookId: string, pageId: string): number | null {
-  const pages = listChronologicalPages(db, logbookId);
-  const kickoffPageId = getStoryState(db).kickoffPageId;
-  if (!kickoffPageId) return null;
-  const kickoffOrder = pages.findIndex((p) => p.id === kickoffPageId);
-  if (kickoffOrder < 0) return null;
-  let ic = 0;
-  for (let order = 0; order < pages.length; order++) {
-    if (order < kickoffOrder) continue;
-    const page = pages[order]!;
-    if (!page.selectedTextId) continue;
-    const text = getText(db, page.selectedTextId);
-    if (!text?.genPackage?.trim()) continue;
-    ic++;
-    if (page.id === pageId) return ic;
-  }
-  return null;
-}
-
-/** Page list index (historyPages order) of the last IC post at or before `icPostNumber`. */
-export function resolvePageOrderForIcPost(
-  pages: PageRow[],
-  kickoffOrder: number,
-  db: Database.Database,
-  icPostNumber: number
-): number {
-  if (icPostNumber <= 0) return kickoffOrder - 1;
-  let ic = 0;
-  for (let order = 0; order < pages.length; order++) {
-    if (order < kickoffOrder) continue;
-    const page = pages[order]!;
-    if (!page.selectedTextId) continue;
-    const text = getText(db, page.selectedTextId);
-    if (!text?.genPackage?.trim()) continue;
-    ic++;
-    if (ic >= icPostNumber) return order;
-  }
-  return pages.length - 1;
-}
-
-export function resolvePageIdForIcPost(
-  db: Database.Database,
-  logbookId: string,
-  icPostNumber: number
-): string | null {
-  const pages = listChronologicalPages(db, logbookId);
-  const kickoffPageId = getStoryState(db).kickoffPageId;
-  if (!kickoffPageId) return null;
-  const kickoffOrder = pages.findIndex((p) => p.id === kickoffPageId);
-  if (kickoffOrder < 0) return null;
-  const order = resolvePageOrderForIcPost(pages, kickoffOrder, db, icPostNumber);
-  return pages[order]?.id ?? null;
-}
+/** @deprecated Use countChainPosts */
+export const countIcPosts = countChainPosts;
+/** @deprecated Use resolveChainPostNumber */
+export { resolveIcPostNumber, resolvePageIdForIcPost, resolvePageOrderForIcPost } from "./post-index.js";
 
 function formatWorldbookEntry(entry: WorldbookEntry): string {
   return `[${entry.entryType.toUpperCase()}]\n${entry.content}`;
@@ -103,12 +51,13 @@ function toChatRole(role: TextRole): "user" | "assistant" | "system" {
 }
 
 export interface VerbosePost {
-  /** 1-based in-character post number from kickoff onward. */
+  /** Absolute chain post number from kickoff (includes hidden turns). */
   icPostNumber: number;
   pageId: string;
   role: "user" | "assistant" | "system";
   content: string;
   tokens: number;
+  hidden: boolean;
 }
 
 export interface StoryCorpus {
@@ -159,17 +108,19 @@ export function buildStoryCorpus(
   const usableBudget = options.contextLimit - options.responseLimit;
   const systemTokens = estimateTokens(AUTHOR_SYSTEM_PROMPT);
 
-  const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
-  const cutoffIdx = options.fromPageId ? pages.findIndex((p) => p.id === options.fromPageId) : pages.length - 1;
-  const historyPages: PageRow[] = cutoffIdx >= 0 ? pages.slice(0, cutoffIdx + 1) : pages;
+  const allPages = listChronologicalPages(db, logbookId);
+  const cutoffIdx = options.fromPageId ? allPages.findIndex((p) => p.id === options.fromPageId) : allPages.length - 1;
+  const maxPostNumber =
+    cutoffIdx >= 0
+      ? (resolveChainPostNumber(db, logbookId, allPages[cutoffIdx]!.id) ?? 0)
+      : countChainPosts(db, logbookId);
 
   const kickoffPageId = getStoryState(db).kickoffPageId;
   if (!kickoffPageId) {
     throw new Error("story has no kickoff page — STORY BEGINS requires in-character log");
   }
-  const kickoffOrder = historyPages.findIndex((p) => p.id === kickoffPageId);
-  if (kickoffOrder < 0) {
-    throw new Error("kickoff page not found in visible log");
+  if (allPages.findIndex((p) => p.id === kickoffPageId) < 0) {
+    throw new Error("kickoff page not found on active chain");
   }
 
   const worldbookLines: string[] = [];
@@ -181,29 +132,23 @@ export function buildStoryCorpus(
   }
   const worldbookTokens = worldbookLines.reduce((sum, l) => sum + estimateTokens(l), 0);
 
-  const posts: VerbosePost[] = [];
-  let afterOrder = kickoffOrder - 1;
+  let afterPostNumber = 0;
   if (options.afterPageId) {
-    const idx = historyPages.findIndex((p) => p.id === options.afterPageId);
-    if (idx >= 0) afterOrder = idx;
+    afterPostNumber = resolveChainPostNumber(db, logbookId, options.afterPageId) ?? 0;
   }
 
-  let icPostNumber = 0;
-  for (let order = 0; order < historyPages.length; order++) {
-    const page = historyPages[order]!;
-    if (order < kickoffOrder) continue;
-    if (!page.selectedTextId) continue;
-    const text = getText(db, page.selectedTextId);
-    if (!text?.genPackage?.trim()) continue;
-    icPostNumber++;
-    if (order <= afterOrder) continue;
-    const content = text.genPackage.trim();
+  const posts: VerbosePost[] = [];
+  for (const entry of buildChainPostIndex(db, logbookId)) {
+    if (entry.postNumber > maxPostNumber) break;
+    if (entry.postNumber <= afterPostNumber) continue;
+    if (entry.hidden) continue;
     posts.push({
-      icPostNumber,
-      pageId: page.id,
-      role: toChatRole(text.role),
-      content,
-      tokens: estimateTokens(content),
+      icPostNumber: entry.postNumber,
+      pageId: entry.pageId,
+      role: toChatRole(entry.role),
+      content: entry.content,
+      tokens: estimateTokens(entry.content),
+      hidden: false,
     });
   }
 
@@ -274,7 +219,7 @@ export function formatCorpusForEditor(
   if (includeWorldbook && corpus.worldbookLines.length) {
     parts.push("=== WORLDBOOK ===\n" + corpus.worldbookLines.join("\n\n"));
   }
-  parts.push("=== LOG (in-character verbose prose, numbered from kickoff as post 1) ===");
+  parts.push("=== LOG (in-character verbose prose; post numbers are absolute from kickoff — hidden OOC turns occupy numbers but are omitted) ===");
   for (const post of posts) {
     parts.push(`--- post ${post.icPostNumber} (${post.role}) ---\n${post.content}`);
   }
@@ -337,7 +282,7 @@ export function buildDefaultBeginsSystemPrompt(inputCeilingPost: number | null):
 
   return `You are the Editor, compressing a long roleplay log into a durable "story so far" memory block.
 
-You receive the complete worldbook (CONTENT, ROSTER, MEMORY) and in-character verbose prose numbered from the kickoff post as post 1.
+You receive the complete worldbook (CONTENT, ROSTER, MEMORY) and in-character verbose prose. Post numbers are absolute from kickoff as post 1; hidden OOC/guide turns occupy numbers in the sequence but are not included in the log — expect gaps (e.g. post 198, then post 209).
 
 Write a [STORY BEGINS] block: third-person, matching the CONTENT register and tonality — not a neutral recap. Cover loadbearing events, relationships, promises, secrets revealed, and state changes that future scenes and NPCs must remember and build on. Preserve causal throughline (this happened, therefore…). Do not invent events absent from the log.
 
@@ -365,7 +310,7 @@ export function buildDefaultContinuesSystemPrompt(
 
   return `You are the Editor, extending an existing "story so far" memory block.
 
-You receive the complete worldbook, the current [STORY TO DATE], and new in-character verbose prose (numbered from kickoff as post 1) that begins after prior coverage ended.
+You receive the complete worldbook, the current [STORY TO DATE], and new in-character verbose prose that begins after prior coverage ended. Post numbers are absolute from kickoff; hidden turns occupy numbers but are omitted from the log.
 
 ${prior}
 

@@ -130,7 +130,7 @@ export default function LogsView({ story }: PanelProps) {
         <table className="logs-table">
           <thead>
             <tr>
-              <th>Post #</th>
+              <th title="Absolute post number from kickoff (hidden turns count)">Post #</th>
               <th>Time</th>
               <th>Role</th>
               <th>Tokens (est.)</th>

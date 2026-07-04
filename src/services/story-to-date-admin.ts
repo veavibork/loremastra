@@ -5,7 +5,7 @@ import {
   getStoryToDateSegment,
   setStoryToDateSegmentCoverage,
 } from "../db/story-to-date-store.js";
-import { resolvePageIdForIcPost } from "./story-to-date-corpus.js";
+import { resolvePageIdForChainPost } from "./post-index.js";
 import {
   enqueueEligibleStoryToDateJob,
   enqueuePendingStoryToDateJobs,
@@ -43,8 +43,8 @@ export function updateStoryToDateCoverageThroughPost(
   }
   const segment = getStoryToDateSegment(db, segmentId);
   if (!segment || segment.bookId !== logbookId) throw new Error("segment not found");
-  const pageId = resolvePageIdForIcPost(db, logbookId, coverageThroughIcPost);
-  if (!pageId) throw new Error(`no page for IC post ${coverageThroughIcPost}`);
+  const pageId = resolvePageIdForChainPost(db, logbookId, coverageThroughIcPost);
+  if (!pageId) throw new Error(`no page for chain post ${coverageThroughIcPost}`);
   setStoryToDateSegmentCoverage(db, segmentId, {
     coverageThroughIcPost,
     coveragePageId: pageId,

@@ -9,7 +9,7 @@ import { getPage, listChronologicalPages, setMemoryContentStamp } from "../db/pa
 import { getText, setTextBroken } from "../db/text-store.js";
 import { computeTextContentStamp } from "./content-stamp.js";
 import { enqueueEligibleStoryToDateJob, enqueuePendingStoryToDateJobs } from "./story-to-date.js";
-import { resolveIcPostNumber } from "./story-to-date-corpus.js";
+import { resolveChainPostNumber } from "./post-index.js";
 
 export { computeTextContentStamp, postNeedsCompress } from "./content-stamp.js";
 
@@ -31,7 +31,7 @@ function invalidateStoryToDateForPage(
 ): void {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const activeIds = new Set(pages.map((p) => p.id));
-  const editedIcPost = resolveIcPostNumber(db, logbookId, pageId);
+  const editedPost = resolveChainPostNumber(db, logbookId, pageId);
 
   for (const segment of listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true })) {
     if (segment.coveragePageId && !activeIds.has(segment.coveragePageId)) {
@@ -47,14 +47,14 @@ function invalidateStoryToDateForPage(
     }
 
     const coverageIc = segment.coverageThroughIcPost;
-    if (editedIcPost != null && coverageIc != null && editedIcPost <= coverageIc) {
+    if (editedPost != null && coverageIc != null && editedPost <= coverageIc) {
       cancelPendingJobsForStoryToDate(db, segment.id);
       deleteStoryToDateSegment(db, segment.id);
       continue;
     }
 
     // Fallback when IC numbering unavailable (pre-kickoff edit): compare page order on visible chain.
-    if (editedIcPost == null && coverageIc == null && segment.coveragePageId) {
+    if (editedPost == null && coverageIc == null && segment.coveragePageId) {
       const pageIndex = pages.findIndex((p) => p.id === pageId);
       const covIdx = pages.findIndex((p) => p.id === segment.coveragePageId);
       if (pageIndex >= 0 && covIdx >= 0 && pageIndex <= covIdx) {

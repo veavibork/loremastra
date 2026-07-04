@@ -166,7 +166,7 @@ export default function ArchivesView({ story }: PanelProps) {
           {stats.pending > 0 && ` — ${stats.pending} pending`}
           {stats.broken > 0 && ` — ${stats.broken} broken`}
           {stats.mergedCoverageThroughPost != null && ` · archive through post ${stats.mergedCoverageThroughPost}`}
-          {stats.icPostCount > 0 && ` · ${stats.icPostCount} IC posts on chain`}
+          {stats.icPostCount > 0 && ` · ${stats.icPostCount} posts on chain`}
         </p>
       )}
 

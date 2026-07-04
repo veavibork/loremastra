@@ -19,6 +19,7 @@ import {
   onCanonicalTextChanged,
   postNeedsCompress,
 } from "../src/services/memory-invalidation.js";
+import { setKickoffPageId } from "../src/db/story-state-store.js";
 import { newId } from "../src/uuid.js";
 
 const USER_ID = "019f1e21-c547-75b2-8bc1-47b4b6cfdbe6";
@@ -44,6 +45,8 @@ for (let i = 0; i < 10; i++) {
   prevId = page.id;
   pageIds.push(page.id);
 }
+
+setKickoffPageId(db, pageIds[0]!);
 
 const oldPageId = pageIds[2]!;
 const oldPage = getPage(db, oldPageId)!;

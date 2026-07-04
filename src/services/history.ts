@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { listChronologicalPages, type PageRow } from "../db/page-store.js";
+import { listChronologicalPages } from "../db/page-store.js";
 import { getText, type TextRole, type TextRow } from "../db/text-store.js";
 import { getBookByType } from "../db/book-store.js";
 import { listWorldbookEntries, listContentEntries, type WorldbookEntry } from "../db/worldbook-store.js";
@@ -8,7 +8,7 @@ import { listStoryToDateSegments } from "../db/story-to-date-store.js";
 import type { ChatMessage } from "../inference/featherless.js";
 import { getAgentProfile } from "./agent-config.js";
 import { AUTHOR_SYSTEM_PROMPT, AUTHOR_KICKOFF_PROMPT } from "../prompts.js";
-import { mergeStoryToDate, MIN_VERBOSE_IC_POSTS, resolvePageOrderForIcPost, countIcPosts } from "./story-to-date-corpus.js";
+import { mergeStoryToDate, MIN_VERBOSE_IC_POSTS, resolvePageOrderForChainPost, countChainPosts } from "./story-to-date-corpus.js";
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 function estimateTokens(text: string): number {
@@ -31,10 +31,10 @@ export function assembleAuthorPrompt(
   logbookId: string,
   fromPageId: string | null
 ): ChatMessage[] {
-  const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
-  const cutoffIdx = fromPageId ? pages.findIndex((p) => p.id === fromPageId) : pages.length - 1;
-  const historyPages: PageRow[] = cutoffIdx >= 0 ? pages.slice(0, cutoffIdx + 1) : pages;
-  if (!historyPages.length) return [];
+  const allPages = listChronologicalPages(db, logbookId);
+  const cutoffIdx = fromPageId ? allPages.findIndex((p) => p.id === fromPageId) : allPages.length - 1;
+  const cutoffOrder = cutoffIdx >= 0 ? cutoffIdx : allPages.length - 1;
+  if (!allPages.length) return [];
 
   const worldbookHeaderLines: string[] = [];
   const worldbookBook = getBookByType(db, "worldbook");
@@ -57,21 +57,21 @@ export function assembleAuthorPrompt(
   let afterOrder = -1;
   const lastSegment = readySegments.sort((a, b) => b.seq - a.seq)[0];
   if (lastSegment?.coveragePageId) {
-    const idx = historyPages.findIndex((p) => p.id === lastSegment.coveragePageId);
+    const idx = allPages.findIndex((p) => p.id === lastSegment.coveragePageId);
     if (idx >= 0) afterOrder = idx;
   }
 
   const state = getStoryState(db);
   const kickoffOrder = state.kickoffPageId
-    ? historyPages.findIndex((p) => p.id === state.kickoffPageId)
+    ? allPages.findIndex((p) => p.id === state.kickoffPageId)
     : -1;
 
   // Always keep a verbatim tail even when archives cover nearly the whole log.
   if (kickoffOrder >= 0 && lastSegment?.coverageThroughIcPost != null) {
-    const headIcPosts = countIcPosts(db, logbookId);
-    if (headIcPosts > MIN_VERBOSE_IC_POSTS) {
-      const tailStartIc = headIcPosts - MIN_VERBOSE_IC_POSTS + 1;
-      const tailOrder = resolvePageOrderForIcPost(historyPages, kickoffOrder, db, tailStartIc - 1);
+    const headPosts = countChainPosts(db, logbookId);
+    if (headPosts > MIN_VERBOSE_IC_POSTS) {
+      const tailStartPost = headPosts - MIN_VERBOSE_IC_POSTS + 1;
+      const tailOrder = resolvePageOrderForChainPost(allPages, kickoffOrder, db, tailStartPost - 1);
       if (tailOrder >= kickoffOrder && (afterOrder < 0 || tailOrder < afterOrder)) {
         afterOrder = tailOrder;
       }
@@ -83,10 +83,11 @@ export function assembleAuthorPrompt(
     text: TextRow;
   }
   const entries: HistoryEntry[] = [];
-  for (let order = 0; order < historyPages.length; order++) {
-    const page = historyPages[order]!;
+  for (let order = 0; order <= cutoffOrder; order++) {
+    const page = allPages[order]!;
     if (kickoffOrder >= 0 && order < kickoffOrder) continue;
     if (order <= afterOrder) continue;
+    if (page.hidden) continue;
     if (!page.selectedTextId) continue;
     const text = getText(db, page.selectedTextId);
     if (!text?.genPackage?.trim()) continue;
