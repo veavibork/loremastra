@@ -25,7 +25,7 @@ function tokensFromChars(chars: number): number {
 function estimateTokens(text: string): number {
   return tokensFromChars(text.length);
 }
-function estimateMessageTokens(messages: ChatMessage[]): number {
+export function estimateMessageTokens(messages: ChatMessage[]): number {
   return messages.reduce((sum, m) => sum + estimateTokens(m.content ?? ""), 0);
 }
 

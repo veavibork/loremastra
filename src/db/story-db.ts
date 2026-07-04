@@ -214,6 +214,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "story_state", "ooc_session_start_page_id", "TEXT REFERENCES page(id)");
   ensureColumn(db, "jobs", "model", "TEXT");
   ensureColumn(db, "jobs", "token_estimate", "INTEGER");
+  ensureColumn(db, "jobs", "input_token_estimate", "INTEGER");
   ensureColumn(db, "jobs", "horde_request_id", "TEXT");
   ensureColumn(db, "jobs", "elapsed_ms", "INTEGER");
   ensureColumn(db, "archive", "name", "TEXT");

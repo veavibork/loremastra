@@ -274,7 +274,10 @@ Per-post compression (~20 tokens via Worker) and non-overlapping ten-post archiv
 1. User submits a post.
 2. The back end queues the request. **User input never goes directly to the provider** — it always creates a queue entry. The queue is processed and prioritized by the back end. This is a hard requirement to handle provider concurrency limits and avoid the bounce condition when a prior request hasn't actually been cancelled yet.
 3. The assembled prompt is sent to the author via the queue.
-4. The author's response is returned and displayed.
+4. The author's response is returned and displayed progressively (Featherless streaming). While
+   waiting, the Story log shows phase labels: queue/memory wait → **Prefilling… (~Ns)** (prompt-size
+   estimate) → **Reasoning trace** (collapsible, KAI/SillyTavern-style — streams thinking tokens,
+   collapses when IC prose starts). Guidance on retry/continue is included in the prefill estimate.
 5. When the assembled Author prompt crosses the story-to-date trigger threshold, the pipeline enqueues an Editor `story-to-date` job (see Story-to-Date Memory Pipeline).
 
 ---

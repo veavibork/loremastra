@@ -75,7 +75,8 @@ export type JobEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; text: string }
   | { type: "progress"; label: string }
-  | { type: "sync"; text: string; thinking?: string; progress?: string }
+  | { type: "meta"; inputTokenEstimate: number }
+  | { type: "sync"; text: string; thinking?: string; progress?: string; inputTokenEstimate?: number }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string }
   | { type: "cancelled" };

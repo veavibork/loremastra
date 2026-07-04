@@ -36,9 +36,27 @@ interface PendingReply {
   progress?: string;
   startedAt: number;
   jobId: string;
-  /** Tracks queue wait vs active generation for elapsed-time labels. */
-  waitPhase?: "memory" | "reasoning" | "thinking";
+  inputTokenEstimate?: number;
+  prefillEstimateSec?: number;
+  /** When the worker claimed the job — prefill countdown starts here, not at send time. */
+  runningStartedAt?: number;
+  /** Tracks queue wait, prefill, reasoning, and prose for elapsed-time labels. */
+  waitPhase?: "memory" | "prefill" | "reasoning" | "generating";
   lastProseStatus?: string;
+}
+
+/** Conservative TTFT guess — intentionally high so early tokens feel like a win. */
+function estimatePrefillSeconds(inputTokens: number | null | undefined): number {
+  if (!inputTokens || inputTokens <= 0) return 30;
+  return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)));
+}
+
+function mergeJobMeta(pending: PendingReply, job: ActiveJobRow): Pick<PendingReply, "inputTokenEstimate" | "prefillEstimateSec" | "runningStartedAt"> {
+  const inputTokenEstimate = job.inputTokenEstimate ?? pending.inputTokenEstimate;
+  const runningStartedAt = job.startedAt ? new Date(job.startedAt).getTime() : pending.runningStartedAt;
+  const prefillEstimateSec =
+    inputTokenEstimate != null ? estimatePrefillSeconds(inputTokenEstimate) : pending.prefillEstimateSec;
+  return { inputTokenEstimate, prefillEstimateSec, runningStartedAt };
 }
 
 function isMemoryJobRunning(jobs: Awaited<ReturnType<typeof fetchActiveJobs>>): boolean {
@@ -61,7 +79,16 @@ function pendingStatusLabel(pending: PendingReply): string {
   if (pending.progress) return pending.progress;
   const elapsed = Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000));
   const queueHint =
-    pending.waitPhase !== "memory" && pending.lastProseStatus === "pending" ? ", queued" : "";
+    pending.waitPhase !== "memory" && pending.waitPhase !== "prefill" && pending.lastProseStatus === "pending"
+      ? ", queued"
+      : "";
+  if (pending.waitPhase === "prefill") {
+    const runAnchor = pending.runningStartedAt ?? pending.startedAt;
+    const runningElapsed = Math.max(0, Math.round((Date.now() - runAnchor) / 1000));
+    const est = pending.prefillEstimateSec ?? 30;
+    const remaining = Math.max(0, est - runningElapsed);
+    return remaining > 0 ? `Prefilling… (~${remaining}s)` : "Prefilling…";
+  }
   if (pending.thinking?.trim() && !pending.text.trim()) {
     return `Reasoning… (${elapsed}s${queueHint})`;
   }
@@ -81,42 +108,66 @@ function syncPendingWaitPhases(
 
   for (const [pageId, pending] of Object.entries(prev)) {
     if (pending.text || pending.progress) continue;
-    // Still sync wait-phase labels when only reasoning tokens have arrived.
     const proseJob = jobs.find((j) => j.id === pending.jobId);
     if (!proseJob) continue;
 
     const startedAt = stableElapsedAnchor(pending, proseJob);
+    const meta = mergeJobMeta(pending, proseJob);
 
     if (proseJob.status === "pending" && memoryBlocking) {
       if (pending.waitPhase !== "memory") {
-        next[pageId] = { ...pending, waitPhase: "memory", startedAt, lastProseStatus: proseJob.status };
+        next[pageId] = { ...pending, ...meta, waitPhase: "memory", startedAt, lastProseStatus: proseJob.status };
         changed = true;
       }
       continue;
     }
 
     if (pending.waitPhase === "memory") {
-      next[pageId] = { ...pending, waitPhase: "thinking", startedAt, lastProseStatus: proseJob.status };
+      const waitPhase = pending.thinking?.trim() ? "reasoning" : "prefill";
+      next[pageId] = { ...pending, ...meta, waitPhase, startedAt, lastProseStatus: proseJob.status };
       changed = true;
       continue;
     }
 
-    if (proseJob.status === "running" && pending.lastProseStatus !== "running") {
-      next[pageId] = {
-        ...pending,
-        waitPhase: pending.thinking?.trim() ? "reasoning" : "thinking",
-        startedAt,
-        lastProseStatus: "running",
-      };
-      changed = true;
+    if (proseJob.status === "running" && !pending.thinking?.trim()) {
+      const waitPhase = "prefill";
+      if (
+        pending.waitPhase !== waitPhase ||
+        pending.lastProseStatus !== proseJob.status ||
+        pending.startedAt !== startedAt ||
+        pending.prefillEstimateSec !== meta.prefillEstimateSec
+      ) {
+        next[pageId] = { ...pending, ...meta, waitPhase, startedAt, lastProseStatus: proseJob.status };
+        changed = true;
+      }
+      continue;
+    }
+
+    if (pending.thinking?.trim() && !pending.text.trim()) {
+      if (pending.waitPhase !== "reasoning" || pending.lastProseStatus !== proseJob.status) {
+        next[pageId] = { ...pending, ...meta, waitPhase: "reasoning", startedAt, lastProseStatus: proseJob.status };
+        changed = true;
+      }
       continue;
     }
 
     if (!pending.waitPhase) {
-      next[pageId] = { ...pending, waitPhase: "thinking", startedAt, lastProseStatus: proseJob.status };
+      const waitPhase =
+        proseJob.status === "running" ? "prefill" : proseJob.status === "pending" ? undefined : "prefill";
+      next[pageId] = {
+        ...pending,
+        ...meta,
+        waitPhase: waitPhase ?? pending.waitPhase,
+        startedAt,
+        lastProseStatus: proseJob.status,
+      };
       changed = true;
-    } else if (pending.lastProseStatus !== proseJob.status || pending.startedAt !== startedAt) {
-      next[pageId] = { ...pending, startedAt, lastProseStatus: proseJob.status };
+    } else if (
+      pending.lastProseStatus !== proseJob.status ||
+      pending.startedAt !== startedAt ||
+      pending.inputTokenEstimate !== meta.inputTokenEstimate
+    ) {
+      next[pageId] = { ...pending, ...meta, startedAt, lastProseStatus: proseJob.status };
       changed = true;
     }
   }
@@ -413,7 +464,7 @@ export default function StoryView({
       if (event.type === "token") {
         setPendingReplies((prev) => {
           const cur = prev[pageId];
-          return cur ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text, waitPhase: "thinking" } } : prev;
+          return cur ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text, waitPhase: "generating" } } : prev;
         });
       } else if (event.type === "thinking") {
         setPendingReplies((prev) => {
@@ -424,10 +475,27 @@ export default function StoryView({
                 [pageId]: {
                   ...cur,
                   thinking: (cur.thinking ?? "") + event.text,
-                  waitPhase: "reasoning",
+                  waitPhase: cur.text.trim() ? "generating" : "reasoning",
                 },
               }
             : prev;
+        });
+      } else if (event.type === "meta") {
+        setPendingReplies((prev) => {
+          const cur = prev[pageId];
+          if (!cur) return prev;
+          const prefillEstimateSec = estimatePrefillSeconds(event.inputTokenEstimate);
+          const waitPhase =
+            cur.text.trim() || cur.thinking?.trim() ? cur.waitPhase : cur.waitPhase ?? "prefill";
+          return {
+            ...prev,
+            [pageId]: {
+              ...cur,
+              inputTokenEstimate: event.inputTokenEstimate,
+              prefillEstimateSec,
+              waitPhase,
+            },
+          };
         });
       } else if (event.type === "progress") {
         setPendingReplies((prev) => {
@@ -439,18 +507,26 @@ export default function StoryView({
         // sets rather than appends, since it's a full snapshot, not an incremental token.
         setPendingReplies((prev) => {
           const cur = prev[pageId];
-          return cur
-            ? {
-                ...prev,
-                [pageId]: {
-                  ...cur,
-                  text: event.text,
-                  thinking: event.thinking ?? cur.thinking,
-                  progress: event.progress ?? cur.progress,
-                  waitPhase: event.thinking?.trim() && !event.text.trim() ? "reasoning" : cur.waitPhase,
-                },
-              }
-            : prev;
+          if (!cur) return prev;
+          const hasText = !!event.text.trim();
+          const hasThinking = !!event.thinking?.trim();
+          const waitPhase = hasText ? "generating" : hasThinking ? "reasoning" : cur.waitPhase;
+          const prefillEstimateSec =
+            event.inputTokenEstimate != null
+              ? estimatePrefillSeconds(event.inputTokenEstimate)
+              : cur.prefillEstimateSec;
+          return {
+            ...prev,
+            [pageId]: {
+              ...cur,
+              text: event.text,
+              thinking: event.thinking ?? cur.thinking,
+              progress: event.progress ?? cur.progress,
+              inputTokenEstimate: event.inputTokenEstimate ?? cur.inputTokenEstimate,
+              prefillEstimateSec,
+              waitPhase,
+            },
+          };
         });
       } else if (event.type === "done") {
         setPendingReplies((prev) => {
@@ -762,19 +838,25 @@ export default function StoryView({
           return (
             <div key={entry.pageId} className="entry entry-agent entry-pending">
               <RoleLabel role="agent" mode={mode} />
-              {pending?.text ? (
-                <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
-              ) : pending?.thinking?.trim() ? (
-                <>
-                  <p className="pending-thinking">{pendingStatusLabel(pending)}</p>
-                  <details className="pending-reasoning">
-                    <summary>Reasoning trace</summary>
-                    <pre className="pending-reasoning-body">{pending.thinking}</pre>
-                  </details>
-                </>
-              ) : (
+              {!pending?.text?.trim() ? (
                 <p className="pending-thinking">{pending ? pendingStatusLabel(pending) : "Thinking…"}</p>
-              )}
+              ) : null}
+              {pending?.thinking?.trim() ? (
+                <details className="pending-reasoning" open={!pending.text?.trim()}>
+                  <summary>Reasoning trace</summary>
+                  <pre
+                    className="pending-reasoning-body"
+                    ref={(el) => {
+                      if (el && !pending.text?.trim()) el.scrollTop = el.scrollHeight;
+                    }}
+                  >
+                    {pending.thinking}
+                  </pre>
+                </details>
+              ) : null}
+              {pending?.text?.trim() ? (
+                <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
+              ) : null}
               {pending?.jobId && (
                 <button
                   type="button"

@@ -21,6 +21,7 @@ export interface JobRow {
   cancelRequested: boolean;
   model: string | null;
   tokenEstimate: number | null;
+  inputTokenEstimate: number | null;
   hordeRequestId: string | null;
   elapsedMs: number | null;
 }
@@ -41,6 +42,7 @@ interface RawJobRow {
   cancel_requested: number;
   model: string | null;
   token_estimate: number | null;
+  input_token_estimate: number | null;
   horde_request_id: string | null;
   elapsed_ms: number | null;
 }
@@ -62,6 +64,7 @@ function mapJobRow(row: RawJobRow): JobRow {
     cancelRequested: !!row.cancel_requested,
     model: row.model,
     tokenEstimate: row.token_estimate,
+    inputTokenEstimate: row.input_token_estimate ?? null,
     hordeRequestId: row.horde_request_id,
     elapsedMs: row.elapsed_ms ?? null,
   };
@@ -130,6 +133,11 @@ export function setHordeRequestId(db: Database.Database, jobId: string, requestI
  */
 export function setJobModel(db: Database.Database, jobId: string, model: string): void {
   db.prepare(`UPDATE jobs SET model = ? WHERE id = ?`).run(model, jobId);
+}
+
+/** Prompt size at inference start — used for prefill countdown labels in the story UI. */
+export function setJobInputTokenEstimate(db: Database.Database, jobId: string, inputTokenEstimate: number): void {
+  db.prepare(`UPDATE jobs SET input_token_estimate = ? WHERE id = ?`).run(inputTokenEstimate, jobId);
 }
 
 /** Jobs submitted to Horde and still awaiting resolution — the "come back later and check on this" query the scan loop's Horde poll uses, since claimNextJob only ever looks at 'pending' rows. */

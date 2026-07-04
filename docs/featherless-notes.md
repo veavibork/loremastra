@@ -187,11 +187,28 @@ stored lore. Deliberately *not* applied to Author prose or the Editor's setup re
 stay untouched and visible to the user via the existing manual Stop/Retry controls — watching a
 refusal play out there is itself useful signal for judging a model's prudishness.
 
+## DeepSeek-style reasoning on `/v1/chat/completions` — two stream shapes
+
+**Confirmed 2026-07-04 on `deepseek-ai/DeepSeek-V4-Pro` via Featherless.** Reasoning text may arrive
+in either (or both) forms:
+
+1. **`delta.reasoning_content`** — OpenAI/DeepSeek API convention; parsed and forwarded as SSE
+   `thinking` events when present.
+2. **`delta.content` inside a `redacted_thinking` block** — common when the request prefills an open
+   `redacted_thinking` assistant turn (see `streamWithFallback` in `pipeline-runner.ts`). Without a
+   client-side splitter, these tokens look like ordinary prose and the reasoning trace never appears.
+
+`src/inference/reasoning-stream.ts` handles (2) incrementally; answer text after the close tag is
+what gets stored in `genPackage`. Idle timeout for DeepSeek ids remains **300s** (`REASONING_IDLE_TIMEOUT_MS`
+in `featherless.ts`) because prefill + thinking can sit silent for minutes before the first chunk.
+
 ## `chat_template_kwargs`
 
-Per-model template overrides, mainly for reasoning/"thinking" models (`enable_thinking`,
-`thinking_budget`, etc.) — relevant to the doc's per-agent "Effort toggle" for reasoning mode, not
-relevant to anything built so far.
+Per-model template overrides for reasoning/"thinking" models (`enable_thinking`, `thinking_budget`,
+etc.) — wired to the Author **Effort** toggle (`src/services/toggle-presets.ts` →
+`jobGenerationOptions` → `streamInference`). DeepSeek ids get reasoning-model handling (prefill,
+extended idle timeout) even when Effort is off; `enable_thinking: true` may lengthen the visible
+reasoning phase when the provider honors it.
 
 ## Deferred idea: cross-reference HuggingFace's own API for real per-model tags
 

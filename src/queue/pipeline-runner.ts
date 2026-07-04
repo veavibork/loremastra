@@ -6,6 +6,7 @@ import {
   cancelJob,
   setHordeRequestId,
   setJobModel,
+  setJobInputTokenEstimate,
   listRunningHordeJobs,
   type JobRow,
   type JobType,
@@ -39,8 +40,10 @@ import {
   JobCancelledError,
   isReasoningModel,
   streamIdleTimeoutMs,
+  estimateMessageTokens,
   type ChatMessage,
 } from "../inference/featherless.js";
+import { ReasoningStreamSplitter } from "../inference/reasoning-stream.js";
 import { submitTextGeneration, pollTextGeneration } from "../inference/horde.js";
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-store.js";
 import type { AgentProfile } from "../config.js";
@@ -244,10 +247,19 @@ async function streamWithFallback(
     const candidateMessages = isReasoningModel(candidate.model)
       ? [...messages, { role: "assistant" as const, content: "<think>\n" }]
       : messages;
+    const splitter = new ReasoningStreamSplitter({ startsInThinking: isReasoningModel(candidate.model) });
 
     for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
       reply = "";
       let sawReasoning = false;
+      const emitThinking = (text: string) => {
+        sawReasoning = true;
+        publishThinking(jobId, text);
+      };
+      const emitAnswer = (text: string) => {
+        reply += text;
+        publishToken(jobId, text);
+      };
       try {
         await new Promise<void>((resolve, reject) => {
           void streamInference(
@@ -256,14 +268,11 @@ async function streamWithFallback(
             candidateMessages,
             {
               onToken: (text) => {
-                reply += text;
-                publishToken(jobId, text);
+                splitter.push(text, emitThinking, emitAnswer);
               },
-              onReasoningToken: (text) => {
-                sawReasoning = true;
-                publishThinking(jobId, text);
-              },
+              onReasoningToken: emitThinking,
               onDone: () => {
+                splitter.flush(emitThinking, emitAnswer);
                 if (reply.trim()) resolve();
                 else if (sawReasoning) {
                   reject(
@@ -564,6 +573,10 @@ async function executeProseJob(
     if (moodFragment) {
       finalHistory = [...history, { role: "system", content: moodFragment }];
     }
+    const inferenceMessages = isReasoningModel(profile.model)
+      ? [...finalHistory, { role: "assistant" as const, content: "<think>\n" }]
+      : finalHistory;
+    setJobInputTokenEstimate(db, jobId, estimateMessageTokens(inferenceMessages));
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     const { text: fullText, model } = await streamWithFallback(
       profile,

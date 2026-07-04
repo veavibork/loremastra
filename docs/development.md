@@ -358,6 +358,22 @@ the pre-first-token gap showed a dead "…" with no signal at all.
   `Thinking… (Ns)` counter (elapsed since the job was created), only running the interval while
   something is actually in that dead zone.
 
+**Additional, post-Phase-1: reasoning trace, prefill labels, server-anchored timers** — ✅ done,
+2026-07-04. DeepSeek-V4-Pro (default Author) emits thinking inside a `redacted_thinking` block in the normal
+`delta.content` stream when the assistant turn is prefilled with an open block — not as a separate
+`reasoning_content` field. The UI previously listened only for `reasoning_content`, so reasoning
+looked like a dead "Thinking…" gap.
+- `src/inference/reasoning-stream.ts` splits streamed `content` into reasoning vs answer tokens;
+  `genPackage` stores answer text only. `reasoning_content` deltas (when present) still route to the
+  same trace. Wired through `streamWithFallback` in `pipeline-runner.ts`.
+- Story tab phases while a prose job is in flight: **queued** (`, queued` / memory wait) →
+  **Prefilling… (~Ns)** (conservative countdown from `jobs.input_token_estimate`, set at inference
+  start from assembled prompt size including guidance/mood inserts) → **Reasoning trace** (open,
+  streaming) → prose (trace collapses, still expandable). Elapsed timers anchor to server
+  `createdAt`/`startedAt` so closing the tab does not reset the counter.
+- SSE adds a one-shot `meta` event (`inputTokenEstimate`) on stream connect; `GET /jobs/active`
+  exposes the same field for poll-based phase sync.
+
 **Additional, post-Phase-1: silent OOC session boundary + Story tab mode persistence** — ✅ done,
 2026-07-03. The post-kickoff OOC "update session" boundary (`ooc_session_start_page_id`) used to be
 set by dropping a canned `EDITOR_UPDATE_OPENING` "Welcome back" message as a real hidden page every

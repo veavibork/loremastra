@@ -747,7 +747,7 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
 
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribeJob(jobId, (event) => {
-        if (event.type === "token" || event.type === "thinking" || event.type === "progress") {
+        if (event.type === "token" || event.type === "thinking" || event.type === "progress" || event.type === "meta") {
           void sse.writeSSE({ data: JSON.stringify(event) });
           return;
         }
@@ -771,6 +771,11 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
         const text = job.targetTextId ? getText(storyDb, job.targetTextId) : null;
         void finish({ type: "done", fullText: text?.genPackage ?? "" }).then(resolve);
         return;
+      }
+      if (job.inputTokenEstimate != null) {
+        void sse.writeSSE({
+          data: JSON.stringify({ type: "meta", inputTokenEstimate: job.inputTokenEstimate }),
+        });
       }
       // Still pending/running: replay whatever's accumulated so far (a reconnecting client —
       // e.g. the story tab was closed and reopened mid-generation — sees the post at its
