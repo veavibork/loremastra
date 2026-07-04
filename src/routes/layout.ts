@@ -35,7 +35,8 @@ layoutRoute.patch("/", async (c) => {
 
   const db = getGlobalDb();
   const userId = c.get("userId");
-  const configJson = JSON.stringify(body.config);
+  const config = normalizeLayoutConfig(body.config);
+  const configJson = JSON.stringify(config);
 
   const active = getActiveLayoutConfig(db, userId);
   const saved = active

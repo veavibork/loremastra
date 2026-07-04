@@ -67,7 +67,9 @@ export default function ButtonContainerRow({
       {containers.map((container) => {
         if (!container.visible) return null;
         const isCollapsed = container.showButton && collapsed[container.id];
-        const visibleButtons = container.buttons.filter((b) => getButtonProps(b.id) !== null);
+        const visibleButtons = container.buttons.filter(
+          (b) => b.visible && getButtonProps(b.id) !== null
+        );
 
         return (
           <div key={container.id} className={`button-container ${justifyClass(container.justify)}`}>

@@ -56,9 +56,13 @@ export type JsonData = Record<string, unknown> | unknown[];
 export interface SettingsSection {
   /** Stable identifier, independent of the display title. */
   key: string;
-  /** Display name — also doubles as the section's top-level key in the merged tree. */
+  /** Display name — top-level tree key, or legend label when nested under `parent`. */
   title: string;
   description?: string;
+  /** When set, value nests under this parent object key in the settings tree. */
+  parent?: string;
+  /** Key under the parent node; defaults to `title`. */
+  parentKey?: string;
   value: JsonData;
   onSave: (value: JsonData) => Promise<JsonData | void>;
   onRevert?: () => Promise<JsonData>;
@@ -76,6 +80,45 @@ function stringify(value: unknown): string {
 
 function initState(sections: SettingsSection[]): Record<string, SectionState> {
   return Object.fromEntries(sections.map((s) => [s.key, { lastSaved: s.value, draft: s.value }]));
+}
+
+function sectionTreeKey(section: SettingsSection): string {
+  return section.parentKey ?? section.title;
+}
+
+function readSectionValue(obj: Record<string, unknown>, section: SettingsSection): JsonData | undefined {
+  if (section.parent) {
+    const parent = obj[section.parent];
+    if (typeof parent !== "object" || parent === null || Array.isArray(parent)) return undefined;
+    return (parent as Record<string, JsonData>)[sectionTreeKey(section)];
+  }
+  return obj[section.title] as JsonData | undefined;
+}
+
+function buildCombinedTree(
+  sections: SettingsSection[],
+  state: Record<string, SectionState>,
+  field: "draft" | "lastSaved"
+): Record<string, JsonData> {
+  const result: Record<string, JsonData> = {};
+  for (const s of sections) {
+    const value = state[s.key]?.[field] ?? s.value;
+    if (s.parent) {
+      const parentObj =
+        typeof result[s.parent] === "object" && result[s.parent] !== null && !Array.isArray(result[s.parent])
+          ? (result[s.parent] as Record<string, JsonData>)
+          : {};
+      parentObj[sectionTreeKey(s)] = value;
+      result[s.parent] = parentObj;
+    } else {
+      result[s.title] = value;
+    }
+  }
+  return result;
+}
+
+function missingSections(obj: Record<string, unknown>, sections: SettingsSection[]): SettingsSection[] {
+  return sections.filter((s) => readSectionValue(obj, s) === undefined);
 }
 
 /**
@@ -139,12 +182,8 @@ export default function SettingsTreeEditor({ sections }: { sections: SettingsSec
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sections]);
 
-  const combinedDraft: Record<string, JsonData> = Object.fromEntries(
-    sections.map((s) => [s.title, state[s.key]?.draft ?? s.value])
-  );
-  const combinedLastSaved: Record<string, JsonData> = Object.fromEntries(
-    sections.map((s) => [s.title, state[s.key]?.lastSaved ?? s.value])
-  );
+  const combinedDraft = buildCombinedTree(sections, state, "draft");
+  const combinedLastSaved = buildCombinedTree(sections, state, "lastSaved");
   const dirtySections = sections.filter((s) => stringify(state[s.key]?.draft) !== stringify(state[s.key]?.lastSaved));
   const dirty = rawMode ? rawText !== stringify(combinedLastSaved) : dirtySections.length > 0;
 
@@ -166,34 +205,37 @@ export default function SettingsTreeEditor({ sections }: { sections: SettingsSec
       return;
     }
     const obj = parsed as Record<string, unknown>;
-    const missing = sections.filter((s) => !(s.title in obj));
+    const missing = missingSections(obj, sections);
     if (missing.length > 0) {
-      setError(`Missing section(s): ${missing.map((s) => s.title).join(", ")}`);
+      setError(`Missing section(s): ${missing.map((s) => (s.parent ? `${s.parent}.${sectionTreeKey(s)}` : s.title)).join(", ")}`);
       return;
     }
     setState((prev) => {
       const next = { ...prev };
       for (const s of sections) {
-        next[s.key] = { lastSaved: prev[s.key]?.lastSaved ?? s.value, draft: obj[s.title] as JsonData };
+        next[s.key] = { lastSaved: prev[s.key]?.lastSaved ?? s.value, draft: readSectionValue(obj, s)! };
       }
       return next;
     });
     for (const s of sections) {
-      if (stringify(obj[s.title]) !== stringify(state[s.key]?.draft)) s.onChange?.(obj[s.title] as JsonData);
+      const draft = readSectionValue(obj, s)!;
+      if (stringify(draft) !== stringify(state[s.key]?.draft)) s.onChange?.(draft);
     }
     setError(null);
     setRawMode(false);
   }
 
   function handleTreeChange(newData: unknown) {
-    const obj = newData as Record<string, JsonData>;
+    const obj = newData as Record<string, unknown>;
     setError(null);
     setState((prev) => {
       const next = { ...prev };
       for (const s of sections) {
-        if (stringify(prev[s.key]?.draft) !== stringify(obj[s.title])) {
-          next[s.key] = { lastSaved: prev[s.key]?.lastSaved ?? s.value, draft: obj[s.title] };
-          s.onChange?.(obj[s.title]);
+        const draft = readSectionValue(obj, s);
+        if (draft === undefined) continue;
+        if (stringify(prev[s.key]?.draft) !== stringify(draft)) {
+          next[s.key] = { lastSaved: prev[s.key]?.lastSaved ?? s.value, draft };
+          s.onChange?.(draft);
         }
       }
       return next;
@@ -217,12 +259,12 @@ export default function SettingsTreeEditor({ sections }: { sections: SettingsSec
         return;
       }
       const obj = parsed as Record<string, unknown>;
-      const missing = sections.filter((s) => !(s.title in obj));
+      const missing = missingSections(obj, sections);
       if (missing.length > 0) {
-        setError(`Not saved — missing section(s): ${missing.map((s) => s.title).join(", ")}`);
+        setError(`Not saved — missing section(s): ${missing.map((s) => (s.parent ? `${s.parent}.${sectionTreeKey(s)}` : s.title)).join(", ")}`);
         return;
       }
-      currentDraftByKey = Object.fromEntries(sections.map((s) => [s.key, obj[s.title] as JsonData]));
+      currentDraftByKey = Object.fromEntries(sections.map((s) => [s.key, readSectionValue(obj, s)!]));
     } else {
       currentDraftByKey = Object.fromEntries(sections.map((s) => [s.key, state[s.key]?.draft ?? s.value]));
     }
@@ -356,7 +398,9 @@ export default function SettingsTreeEditor({ sections }: { sections: SettingsSec
       <ul className="settings-tree-legend">
         {sections.map((s) => (
           <li key={s.key}>
-            <strong>{s.title}</strong>
+            <strong>
+              {s.parent ? `${s.parent} → ${sectionTreeKey(s)}` : s.title}
+            </strong>
             {s.description && <span> — {s.description}</span>}
           </li>
         ))}

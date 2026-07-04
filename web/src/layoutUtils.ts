@@ -10,10 +10,10 @@ export const DEFAULT_INPUT_BAR: LayoutRegion = {
       showLabel: false,
       justify: "left",
       buttons: [
-        { id: "mode.ooc", label: "OOC" },
-        { id: "mode.ic", label: "IC" },
-        { id: "action.undo", label: "↶ Undo" },
-        { id: "action.redo", label: "↷ Redo" },
+        { id: "mode.ooc", label: "OOC", visible: true },
+        { id: "mode.ic", label: "IC", visible: true },
+        { id: "action.undo", label: "↶ Undo", visible: true },
+        { id: "action.redo", label: "↷ Redo", visible: true },
       ],
     },
     {
@@ -23,11 +23,11 @@ export const DEFAULT_INPUT_BAR: LayoutRegion = {
       showLabel: false,
       justify: "center",
       buttons: [
-        { id: "toggle.length", label: "Length" },
-        { id: "toggle.mood", label: "Mood" },
-        { id: "toggle.param", label: "Param" },
-        { id: "toggle.model", label: "Model" },
-        { id: "toggle.effort", label: "Effort" },
+        { id: "toggle.length", label: "Length", visible: true },
+        { id: "toggle.mood", label: "Mood", visible: true },
+        { id: "toggle.param", label: "Param", visible: true },
+        { id: "toggle.model", label: "Model", visible: true },
+        { id: "toggle.effort", label: "Effort", visible: true },
       ],
     },
     {
@@ -37,8 +37,8 @@ export const DEFAULT_INPUT_BAR: LayoutRegion = {
       showLabel: false,
       justify: "right",
       buttons: [
-        { id: "action.retry", label: "Retry" },
-        { id: "action.continue", label: "Continue" },
+        { id: "action.retry", label: "Retry", visible: true },
+        { id: "action.continue", label: "Continue", visible: true },
       ],
     },
   ],
@@ -50,6 +50,7 @@ export function flattenNavTabs(config: LayoutConfigData): Array<{ id: string; la
   for (const container of config.nav.containers) {
     if (!container.visible) continue;
     for (const btn of container.buttons) {
+      if (!btn.visible) continue;
       if (seen.has(btn.id)) continue;
       seen.add(btn.id);
       out.push({ id: btn.id, label: btn.label ?? btn.id });

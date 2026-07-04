@@ -214,6 +214,7 @@ export type LayoutJustify = "left" | "center" | "right";
 export interface LayoutButton {
   id: string;
   label?: string;
+  visible: boolean;
 }
 
 export interface LayoutContainer {

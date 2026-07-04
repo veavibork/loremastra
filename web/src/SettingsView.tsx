@@ -138,7 +138,9 @@ export default function SettingsView() {
     },
     {
       key: TOGGLE_LENGTH_SPACE,
-      title: "Toggle — length steps",
+      parent: "preset",
+      parentKey: "length",
+      title: "Length steps",
       description: "Token counts cycled by the input bar Length toggle (Author responseLimit override).",
       value: toggleLength as unknown as JsonData,
       onSave: async (value) => {
@@ -154,7 +156,9 @@ export default function SettingsView() {
     },
     {
       key: TOGGLE_MOOD_SPACE,
-      title: "Toggle — mood presets",
+      parent: "preset",
+      parentKey: "mood",
+      title: "Mood presets",
       description: "Named prompt fragments appended when the Mood toggle is active.",
       value: toggleMood as unknown as JsonData,
       onSave: async (value) => {
@@ -170,7 +174,9 @@ export default function SettingsView() {
     },
     {
       key: TOGGLE_PARAM_SPACE,
-      title: "Toggle — param presets",
+      parent: "preset",
+      parentKey: "param",
+      title: "Param presets",
       description: "Sampler overrides merged atop the Author profile when Param toggle is active.",
       value: toggleParam as unknown as JsonData,
       onSave: async (value) => {
@@ -186,7 +192,9 @@ export default function SettingsView() {
     },
     {
       key: TOGGLE_EFFORT_SPACE,
-      title: "Toggle — effort presets",
+      parent: "preset",
+      parentKey: "effort",
+      title: "Effort presets",
       description: "Reasoning/thinking kwargs passed when Effort toggle is active (model-dependent).",
       value: toggleEffort as unknown as JsonData,
       onSave: async (value) => {
@@ -205,7 +213,7 @@ export default function SettingsView() {
       title: "Layout",
       description:
         "Nav tab bar and story input bar layout (v2): nested button containers with visibility, " +
-        "justify, and optional collapse controls. JSON edit only — drag-and-drop deferred.",
+        "justify, and optional collapse controls. Each button has id, label, and visible. JSON edit only — drag-and-drop deferred.",
       value: layout as unknown as JsonData,
       onSave: async (value) => {
         const res = await updateLayout(value as unknown as LayoutConfigData);

@@ -8,6 +8,7 @@ export type LayoutJustify = "left" | "center" | "right";
 export interface LayoutButton {
   id: string;
   label?: string;
+  visible: boolean;
 }
 
 export interface LayoutContainer {
@@ -75,10 +76,10 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: "left",
         buttons: [
-          { id: "story:play", label: "Story" },
-          { id: "lore:worldbook", label: "Worldbook" },
-          { id: "story:archives", label: "Archives" },
-          { id: "lore:memory", label: "Memory" },
+          { id: "story:play", label: "Story", visible: true },
+          { id: "lore:worldbook", label: "Worldbook", visible: true },
+          { id: "story:archives", label: "Archives", visible: true },
+          { id: "lore:memory", label: "Memory", visible: true },
         ],
       },
       {
@@ -89,9 +90,9 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: true,
         justify: "center",
         buttons: [
-          { id: "story:logs", label: "Logs" },
-          { id: "config:agents", label: "Agents" },
-          { id: "config:prompts", label: "Prompts" },
+          { id: "story:logs", label: "Logs", visible: true },
+          { id: "config:agents", label: "Agents", visible: true },
+          { id: "config:prompts", label: "Prompts", visible: true },
         ],
       },
       {
@@ -101,8 +102,8 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: "right",
         buttons: [
-          { id: "settings:", label: "Settings" },
-          { id: "story:saves", label: "Saves" },
+          { id: "settings:", label: "Settings", visible: true },
+          { id: "story:saves", label: "Saves", visible: true },
         ],
       },
     ],
@@ -116,10 +117,10 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: "left",
         buttons: [
-          { id: "mode.ooc", label: "OOC" },
-          { id: "mode.ic", label: "IC" },
-          { id: "action.undo", label: "↶ Undo" },
-          { id: "action.redo", label: "↷ Redo" },
+          { id: "mode.ooc", label: "OOC", visible: true },
+          { id: "mode.ic", label: "IC", visible: true },
+          { id: "action.undo", label: "↶ Undo", visible: true },
+          { id: "action.redo", label: "↷ Redo", visible: true },
         ],
       },
       {
@@ -129,11 +130,11 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: "center",
         buttons: [
-          { id: "toggle.length", label: "Length" },
-          { id: "toggle.mood", label: "Mood" },
-          { id: "toggle.param", label: "Param" },
-          { id: "toggle.model", label: "Model" },
-          { id: "toggle.effort", label: "Effort" },
+          { id: "toggle.length", label: "Length", visible: true },
+          { id: "toggle.mood", label: "Mood", visible: true },
+          { id: "toggle.param", label: "Param", visible: true },
+          { id: "toggle.model", label: "Model", visible: true },
+          { id: "toggle.effort", label: "Effort", visible: true },
         ],
       },
       {
@@ -143,8 +144,8 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: "right",
         buttons: [
-          { id: "action.retry", label: "Retry" },
-          { id: "action.continue", label: "Continue" },
+          { id: "action.retry", label: "Retry", visible: true },
+          { id: "action.continue", label: "Continue", visible: true },
         ],
       },
     ],
@@ -153,6 +154,18 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
 
 function stripRemovedButtons(buttons: LayoutButton[]): LayoutButton[] {
   return buttons.filter((b) => !REMOVED_TAB_IDS.has(b.id));
+}
+
+function normalizeButton(btn: LayoutButton): LayoutButton {
+  return {
+    id: btn.id,
+    label: btn.label,
+    visible: btn.visible !== false,
+  };
+}
+
+function normalizeButtons(buttons: LayoutButton[]): LayoutButton[] {
+  return stripRemovedButtons(buttons).map(normalizeButton);
 }
 
 function mergeNavButtons(config: LayoutConfigData): LayoutConfigData {
@@ -189,7 +202,11 @@ function migrateV1(raw: LayoutConfigV1): LayoutConfigData {
   function pick(ids: string[]): LayoutButton[] {
     return ids
       .filter((id) => tabIds.has(id))
-      .map((id) => ({ id, label: tabs.find((t) => t.id === id)?.label ?? TAB_LABELS[id] ?? id }));
+      .map((id) => ({
+        id,
+        label: tabs.find((t) => t.id === id)?.label ?? TAB_LABELS[id] ?? id,
+        visible: true,
+      }));
   }
 
   const defaults = DEFAULT_LAYOUT_CONFIG.nav.containers;
@@ -218,13 +235,13 @@ export function normalizeLayoutConfig(raw: unknown): LayoutConfigData {
           .filter((c) => c.visible !== false)
           .map((c) => ({
             ...c,
-            buttons: stripRemovedButtons(c.buttons ?? []),
+            buttons: normalizeButtons(c.buttons ?? []),
           })),
       },
       inputBar: {
         containers: (config.inputBar.containers ?? DEFAULT_LAYOUT_CONFIG.inputBar.containers).map((c) => ({
           ...c,
-          buttons: c.buttons ?? [],
+          buttons: normalizeButtons(c.buttons ?? []),
         })),
       },
     });
@@ -250,6 +267,7 @@ export function flattenNavTabs(config: LayoutConfigData): Array<{ id: string; la
   for (const container of config.nav.containers) {
     if (!container.visible) continue;
     for (const btn of container.buttons) {
+      if (!btn.visible) continue;
       if (seen.has(btn.id)) continue;
       seen.add(btn.id);
       out.push({ id: btn.id, label: btn.label ?? TAB_LABELS[btn.id] ?? btn.id });
