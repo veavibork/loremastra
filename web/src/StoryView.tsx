@@ -1006,6 +1006,9 @@ export default function StoryView({
               if (id === "toggle.model") {
                 return { onClick: toggles.cycleModel, disabled: busy || mode !== "play" };
               }
+              if (id === "toggle.length" || id === "toggle.mood" || id === "toggle.param" || id === "toggle.model") {
+                return null;
+              }
               if (id === "toggle.effort") {
                 return { onClick: toggles.cycleEffort, disabled: busy || mode !== "play" };
               }

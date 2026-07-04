@@ -140,41 +140,37 @@ export function useStoryToggles(storyId: string) {
   }, [indices, lengthSteps, moods, params, efforts, authorModels]);
 
   const generationOptions = useCallback((): GenerationOptions | undefined => {
-    if (authorModels.length === 0 && indices.model === 0) {
-      // still allow other toggles
-    }
+    // Length / mood / param / model toggles disabled — only Effort is wired for now.
+    const effort = efforts[indices.effort % efforts.length];
+    if (!effort) return undefined;
+    return {
+      effort: {
+        enableThinking: effort.enableThinking,
+        thinkingBudget: effort.thinkingBudget,
+      },
+    };
+  }, [indices.effort, efforts]);
+
+  /* Disabled toggle wiring — re-enable when presets are tuned.
+  const generationOptionsFull = useCallback((): GenerationOptions | undefined => {
     const len = lengthSteps[indices.length % lengthSteps.length];
     const mood = moods[indices.mood % moods.length];
     const param = params[indices.param % params.length];
     const model = authorModels[indices.model % Math.max(authorModels.length, 1)];
     const effort = efforts[indices.effort % efforts.length];
-
     const options: GenerationOptions = {};
     if (len != null) options.responseLimit = len;
     if (mood?.promptFragment?.trim()) options.moodFragment = mood.promptFragment.trim();
     if (param && param.id !== "default") {
-      options.paramOverrides = {
-        temperature: param.temperature,
-        topP: param.topP,
-        topK: param.topK,
-        minP: param.minP,
-        presencePenalty: param.presencePenalty,
-        frequencyPenalty: param.frequencyPenalty,
-        repetitionPenalty: param.repetitionPenalty,
-      };
+      options.paramOverrides = { temperature: param.temperature, topP: param.topP, ... };
     }
     if (model && indices.model > 0) {
       options.modelOverride = model.model;
       options.configIdOverride = model.id;
     }
-    if (effort) {
-      options.effort = {
-        enableThinking: effort.enableThinking,
-        thinkingBudget: effort.thinkingBudget,
-      };
-    }
-    return Object.keys(options).length ? options : undefined;
-  }, [indices, lengthSteps, moods, params, efforts, authorModels]);
+    ...
+  }, [...]);
+  */
 
   return {
     labels,

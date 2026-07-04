@@ -107,13 +107,6 @@ function applyGenerationOptions(
   options?: GenerationOptions
 ): { profile: AgentProfile; moodFragment?: string; chatTemplateKwargs?: Record<string, unknown> } {
   if (!options) return { profile };
-  let merged: AgentProfile = { ...profile };
-  if (options.responseLimit !== undefined) merged.responseLimit = options.responseLimit;
-  if (options.modelOverride) {
-    merged.model = options.modelOverride;
-    if (options.configIdOverride) merged.configId = options.configIdOverride;
-  }
-  if (options.paramOverrides) merged = { ...merged, ...options.paramOverrides };
   const chatTemplateKwargs: Record<string, unknown> = {};
   if (options.effort?.enableThinking !== undefined) {
     chatTemplateKwargs.enable_thinking = options.effort.enableThinking;
@@ -121,9 +114,9 @@ function applyGenerationOptions(
   if (options.effort?.thinkingBudget !== undefined) {
     chatTemplateKwargs.thinking_budget = options.effort.thinkingBudget;
   }
+  // Length / mood / param / model toggles disabled — Author uses agent-config defaults only.
   return {
-    profile: merged,
-    moodFragment: options.moodFragment?.trim() || undefined,
+    profile,
     chatTemplateKwargs: Object.keys(chatTemplateKwargs).length ? chatTemplateKwargs : undefined,
   };
 }

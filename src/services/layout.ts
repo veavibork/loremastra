@@ -132,10 +132,6 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: "center",
         buttons: [
-          { id: "toggle.length", label: "Length", visible: true },
-          { id: "toggle.mood", label: "Mood", visible: true },
-          { id: "toggle.param", label: "Param", visible: true },
-          { id: "toggle.model", label: "Model", visible: true },
           { id: "toggle.effort", label: "Effort", visible: true },
           { id: "toggle.reasoning.show", label: "Trace", visible: true },
           { id: "toggle.reasoning.expand", label: "Trace open", visible: true },
