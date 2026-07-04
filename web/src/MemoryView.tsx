@@ -42,8 +42,8 @@ export default function MemoryView({ story }: PanelProps) {
       <h2>Memory</h2>
       <p className="memory-note">
         Read-only preview of the assembled Author prompt at the current position. Full worldbook entries
-        are always included; recent posts appear as verbose prose; older history appears as [EVENT SUMMARY]
-        archive blocks when over budget. Refreshes every few seconds.
+        are always included; all history starts as verbose prose, then oldest archive blocks replace
+        decad summaries when over budget. Refreshes every few seconds.
       </p>
 
       {messages.map((m, i) => {

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { listChronologicalPages, type PageRow } from "../db/page-store.js";
-import { getText } from "../db/text-store.js";
+import { gatherArchiveMembers, ARCHIVE_BLOCK_SIZE } from "./archive-eligibility.js";
 import {
   createArchive,
   addArchiveMember,
@@ -15,8 +15,8 @@ import { nowIso } from "../db/time.js";
 import { getAgentProfile } from "./agent-config.js";
 
 // Non-overlapping decads: posts 1–10, 11–20, 21–30, … (Proposal A — no tag-promotion overlap needed).
-export const ARCHIVE_BLOCK_SIZE = 10;
-const ARCHIVE_BLOCK_STEP = 10;
+export { ARCHIVE_BLOCK_SIZE } from "./archive-eligibility.js";
+const ARCHIVE_BLOCK_STEP = ARCHIVE_BLOCK_SIZE;
 
 /**
  * State-based, not position-based: a block is created whenever a complete window of
@@ -26,19 +26,21 @@ export function enqueueEligibleArchiveBlocks(db: Database.Database, userId: stri
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const existingStarts = new Set(listArchivesForBook(db, logbookId).map((a) => a.startPageId));
 
-  for (let start = 0; start + ARCHIVE_BLOCK_SIZE <= pages.length; start += ARCHIVE_BLOCK_STEP) {
-    const windowPages = pages.slice(start, start + ARCHIVE_BLOCK_SIZE);
-    const startPage = windowPages[0];
-    if (existingStarts.has(startPage.id)) continue;
+  for (let start = 0; start < pages.length; start += ARCHIVE_BLOCK_STEP) {
+    const anchorPage = pages[start];
+    if (!anchorPage || existingStarts.has(anchorPage.id)) continue;
 
-    const windowTexts = windowPages.map((p) => (p.selectedTextId ? getText(db, p.selectedTextId) : null));
-    const allHaveProse = windowPages.every((_, i) => !!windowTexts[i]?.genPackage?.trim());
-    if (!allHaveProse) continue;
+    const gathered = gatherArchiveMembers(pages, start, db);
+    if (!gathered) continue;
 
-    const endPage = windowPages[windowPages.length - 1];
-    const archive = createArchive(db, { bookId: logbookId, startPageId: startPage.id, endPageId: endPage.id });
-    for (const text of windowTexts) {
-      if (text) addArchiveMember(db, archive.id, text.id, false);
+    const endPage = gathered.pages[gathered.pages.length - 1]!;
+    const archive = createArchive(db, {
+      bookId: logbookId,
+      startPageId: anchorPage.id,
+      endPageId: endPage.id,
+    });
+    for (const text of gathered.texts) {
+      addArchiveMember(db, archive.id, text.id, false);
     }
     createArchiveJob(db, userId, archive.id);
   }
@@ -92,26 +94,28 @@ export function queueArchiveDecad(
   startIndex: number
 ): QueueArchiveDecadResult {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
-  if (startIndex < 0 || startIndex + ARCHIVE_BLOCK_SIZE > pages.length) {
+  if (startIndex < 0 || startIndex >= pages.length) {
     throw new Error(`invalid decad start index ${startIndex} for ${pages.length} posts`);
   }
 
-  const windowPages = pages.slice(startIndex, startIndex + ARCHIVE_BLOCK_SIZE);
-  const windowTexts = windowPages.map((p) => (p.selectedTextId ? getText(db, p.selectedTextId) : null));
-  const allHaveProse = windowPages.every((_, i) => !!windowTexts[i]?.genPackage?.trim());
-  if (!allHaveProse) {
-    throw new Error("not all posts in this window have prose yet");
+  const anchorPage = pages[startIndex];
+  if (!anchorPage) {
+    throw new Error(`invalid decad start index ${startIndex} for ${pages.length} posts`);
   }
 
-  const startPage = windowPages[0]!;
-  const endPage = windowPages[windowPages.length - 1]!;
-  let archive = listArchivesForBook(db, logbookId).find((a) => a.startPageId === startPage.id);
+  const gathered = gatherArchiveMembers(pages, startIndex, db);
+  if (!gathered) {
+    throw new Error("not enough prose posts in this window yet");
+  }
+
+  const endPage = gathered.pages[gathered.pages.length - 1]!;
+  let archive = listArchivesForBook(db, logbookId).find((a) => a.startPageId === anchorPage.id);
   let created = false;
 
   if (!archive) {
-    archive = createArchive(db, { bookId: logbookId, startPageId: startPage.id, endPageId: endPage.id });
-    for (const text of windowTexts) {
-      if (text) addArchiveMember(db, archive.id, text.id, false);
+    archive = createArchive(db, { bookId: logbookId, startPageId: anchorPage.id, endPageId: endPage.id });
+    for (const text of gathered.texts) {
+      addArchiveMember(db, archive.id, text.id, false);
     }
     created = true;
   }

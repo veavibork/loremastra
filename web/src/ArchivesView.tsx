@@ -24,6 +24,18 @@ function applyPage(setArchives: (a: ArchiveEntry[]) => void, setStats: (s: Omit<
   });
 }
 
+function formatArchiveProseHint(archive: ArchiveEntry): string | null {
+  if (archive.queueEligible) return null;
+  const parts: string[] = [];
+  if (archive.proseMissingPostNumbers.length > 0) {
+    parts.push(`Waiting on prose in posts ${archive.proseMissingPostNumbers.join(", ")}`);
+  }
+  if (archive.proseEmptyPostNumbers.length > 0) {
+    parts.push(`Empty/skipped slots: ${archive.proseEmptyPostNumbers.join(", ")}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : "Not enough prose posts in this window yet";
+}
+
 /**
  * Scene-wide archive blocks (non-overlapping decads of ~10 posts) — older history in [EVENT SUMMARY] form.
  */
@@ -193,8 +205,9 @@ export default function ArchivesView({ story }: PanelProps) {
                     Requeue
                   </button>
                 )}
-                {!archive.queueEligible && archive.status === "missing" && (
-                  <span className="archive-hint">Waiting on prose in all 10 posts</span>
+                {!archive.queueEligible &&
+                  (archive.status === "missing" || archive.status === "pending") && (
+                  <span className="archive-hint">{formatArchiveProseHint(archive)}</span>
                 )}
               </div>
 

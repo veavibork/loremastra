@@ -1,9 +1,9 @@
 import type Database from "better-sqlite3";
 import { listChronologicalPages } from "../db/page-store.js";
-import { getText } from "../db/text-store.js";
 import { listArchivesForBook, listMemberTextIds } from "../db/archive-store.js";
 import { hasActiveJobForArchive } from "../db/job-store.js";
-import { ARCHIVE_BLOCK_SIZE } from "./archive.js";
+import { ARCHIVE_BLOCK_SIZE } from "./archive-eligibility.js";
+import { gatherArchiveMembers, proseEmptyInWindow, proseMissingInWindow } from "./archive-eligibility.js";
 
 export type ArchiveViewStatus = "ready" | "pending" | "broken" | "missing";
 
@@ -24,6 +24,10 @@ export interface ArchiveViewEntry {
   status: ArchiveViewStatus;
   /** All posts in the window have prose — manual Queue can create/run the archive job. */
   queueEligible: boolean;
+  /** 1-based log post numbers in the decad window that still lack prose. */
+  proseMissingPostNumbers: number[];
+  /** Empty/skippable slots in the decad window — gathering skips these. */
+  proseEmptyPostNumbers: number[];
   archiveJobActive: boolean;
   nameJobActive: boolean;
 }
@@ -57,11 +61,9 @@ export function buildArchiveView(
     const windowPages = pages.slice(start, start + ARCHIVE_BLOCK_SIZE);
     const startPage = windowPages[0]!;
     const endPage = windowPages[windowPages.length - 1]!;
-    const queueEligible = windowPages.every((p) => {
-      if (!p.selectedTextId) return false;
-      const text = getText(db, p.selectedTextId);
-      return !!text?.genPackage?.trim();
-    });
+    const proseMissingPostNumbers = proseMissingInWindow(windowPages, db, start);
+    const proseEmptyPostNumbers = proseEmptyInWindow(windowPages, db, start);
+    const gathered = gatherArchiveMembers(pages, start, db);
 
     const archive = archivesByStartPage.get(startPage.id);
 
@@ -79,7 +81,9 @@ export function buildArchiveView(
         startPageId: startPage.id,
         endPageId: endPage.id,
         status: "missing",
-        queueEligible,
+        queueEligible: gathered != null,
+        proseMissingPostNumbers,
+        proseEmptyPostNumbers,
         archiveJobActive: false,
         nameJobActive: false,
       });
@@ -89,6 +93,8 @@ export function buildArchiveView(
     const startIndex = indexOf.get(archive.startPageId);
     const endIndex = indexOf.get(archive.endPageId);
     if (startIndex == null || endIndex == null) continue;
+
+    const memberCount = listMemberTextIds(db, archive.id).length;
 
     let status: ArchiveViewStatus = "pending";
     if (archive.broken) status = "broken";
@@ -101,13 +107,15 @@ export function buildArchiveView(
       name: archive.name,
       hidden: archive.hidden,
       broken: archive.broken,
-      memberCount: listMemberTextIds(db, archive.id).length,
+      memberCount,
       startIndex,
       endIndex,
       startPageId: archive.startPageId,
       endPageId: archive.endPageId,
       status,
-      queueEligible,
+      queueEligible: memberCount >= ARCHIVE_BLOCK_SIZE || gathered != null,
+      proseMissingPostNumbers,
+      proseEmptyPostNumbers,
       archiveJobActive: hasActiveJobForArchive(db, archive.id, "archive"),
       nameJobActive: hasActiveJobForArchive(db, archive.id, "archive-name"),
     });

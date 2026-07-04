@@ -28,6 +28,7 @@ real sessions; act only if the named problem actually shows up.
 
 - **Compress-time auto-tagging** — auto-create tags from compressed summaries after compress runs ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
 - **MemoryView stale copy** — UI still references old Setting/Register/PC labels; cosmetic until Lore polish pass ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
+- **Mega-archive / story-so-far pass** — for very long campaigns, a higher-level compress job over the first ~10k tokens + worldbook that returns scene-block "story so far…" framing (continuity-oriented, not per-decad summaries); discuss design before implementing ([development.md](development.md))
 - **Worldbook deltas** — story-state changes stored separately from canonical entries so events don't contaminate baseline lore ([loremaster.md](../loremaster.md) Future Phases, [stub-revisions.md](stub-revisions.md))
 - **Fork point-in-time worldbook** — forks copy latest worldbook state, not reconstructed as-of fork timestamp ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
 

@@ -71,17 +71,15 @@ export function assembleAuthorPrompt(
     entries.push({ order, text });
   }
 
-  // Pass 1: fill from the recent end with full verbose prose.
+  const historyBudget = remaining;
+
+  // Pass 1: start with all history as full verbose prose.
   const verboseTextIds = new Set<string>();
-  let verboseUsed = 0;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const text = entries[i]!.text;
-    const cost = estimateTokens(text.genPackage!);
-    if (verboseUsed + cost > remaining) break;
-    verboseTextIds.add(text.id);
-    verboseUsed += cost;
+  let historyCost = 0;
+  for (const entry of entries) {
+    verboseTextIds.add(entry.text.id);
+    historyCost += estimateTokens(entry.text.genPackage!);
   }
-  remaining -= verboseUsed;
 
   const pageIndexOf = new Map(historyPages.map((p, i) => [p.id, i]));
   const archiveRows = listArchivesForBook(db, logbookId)
@@ -92,32 +90,33 @@ export function assembleAuthorPrompt(
     }))
     .sort((a, b) => a.startIdx - b.startIdx);
 
-  const archiveCoveredTextIds = new Set<string>();
   const eventSummaries: ChatMessage[] = [];
 
-  // Pass 2: oldest-first archive blocks for posts not already verbose.
-  for (const { archive } of archiveRows) {
-    const memberIds = listMemberTextIds(db, archive.id);
-    const coversUncovered = memberIds.some((id) => !verboseTextIds.has(id));
-    if (!coversUncovered) continue;
+  // Pass 2: when over budget, walk oldest-first archives and swap member verbose for summaries.
+  if (historyCost > historyBudget) {
+    for (const { archive } of archiveRows) {
+      if (historyCost <= historyBudget) break;
 
-    const content = formatEventSummary(archive.summary!, archive.name);
-    const cost = estimateTokens(content);
-    if (cost > remaining) break;
+      const memberIds = listMemberTextIds(db, archive.id);
+      const flipIds = memberIds.filter((id) => verboseTextIds.has(id));
+      if (flipIds.length === 0) continue;
 
-    remaining -= cost;
-    eventSummaries.push({ role: "system", content });
-    for (const id of memberIds) archiveCoveredTextIds.add(id);
-  }
+      const content = formatEventSummary(archive.summary!, archive.name);
+      const summaryCost = estimateTokens(content);
 
-  // Pass 3: if budget remains, pull more verbose from recent among still-uncovered posts.
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const text = entries[i]!.text;
-    if (verboseTextIds.has(text.id) || archiveCoveredTextIds.has(text.id)) continue;
-    const cost = estimateTokens(text.genPackage!);
-    if (cost > remaining) break;
-    verboseTextIds.add(text.id);
-    remaining -= cost;
+      let verboseCost = 0;
+      for (const id of flipIds) {
+        const entry = entries.find((e) => e.text.id === id);
+        if (entry) verboseCost += estimateTokens(entry.text.genPackage!);
+      }
+
+      const savings = verboseCost - summaryCost;
+      if (savings <= 0) continue;
+
+      for (const id of flipIds) verboseTextIds.delete(id);
+      historyCost -= savings;
+      eventSummaries.push({ role: "system", content });
+    }
   }
 
   const verboseMessages: ChatMessage[] = entries

@@ -548,6 +548,8 @@ export interface ArchiveEntry {
   endPageId: string;
   status: "ready" | "pending" | "broken" | "missing";
   queueEligible: boolean;
+  proseMissingPostNumbers: number[];
+  proseEmptyPostNumbers: number[];
   archiveJobActive: boolean;
   nameJobActive: boolean;
 }
