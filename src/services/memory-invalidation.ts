@@ -1,13 +1,14 @@
 import type Database from "better-sqlite3";
 import { getBookByType } from "../db/book-store.js";
-import { deleteArchive, listArchivesForBook, syncArchiveMembersForPage } from "../db/archive-store.js";
+import { cancelPendingJobsForStoryToDate } from "../db/job-store.js";
 import {
-  cancelPendingJobsForArchive,
-} from "../db/job-store.js";
+  deleteStoryToDateSegment,
+  listStoryToDateSegments,
+} from "../db/story-to-date-store.js";
 import { getPage, listChronologicalPages, setMemoryContentStamp } from "../db/page-store.js";
 import { getText, setTextBroken } from "../db/text-store.js";
 import { computeTextContentStamp } from "./content-stamp.js";
-import { enqueueEligibleArchiveBlocks } from "./archive.js";
+import { enqueueEligibleStoryToDateJob } from "./story-to-date.js";
 
 export { computeTextContentStamp, postNeedsCompress } from "./content-stamp.js";
 
@@ -20,57 +21,54 @@ export function markCompressValid(db: Database.Database, pageId: string, textId:
   setTextBroken(db, textId, false);
 }
 
-/**
- * Deletes archive blocks that are off the active page chain or overlap a changed page,
- * then lets enqueueEligibleArchiveBlocks recreate them once prose preconditions hold.
- */
-export function invalidateArchivesForPage(
+function invalidateStoryToDateForPage(
   db: Database.Database,
   userId: string,
   logbookId: string,
+  storyId: string,
   pageId: string
 ): void {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const pageIndex = pages.findIndex((p) => p.id === pageId);
   const activeIds = new Set(pages.map((p) => p.id));
 
-  for (const archive of listArchivesForBook(db, logbookId)) {
-    const onChain = activeIds.has(archive.startPageId) && activeIds.has(archive.endPageId);
-    if (!onChain) {
-      cancelPendingJobsForArchive(db, archive.id);
-      deleteArchive(db, archive.id);
+  for (const segment of listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true })) {
+    if (segment.coveragePageId && !activeIds.has(segment.coveragePageId)) {
+      cancelPendingJobsForStoryToDate(db, segment.id);
+      deleteStoryToDateSegment(db, segment.id);
       continue;
     }
     if (pageIndex < 0) continue;
 
-    const startIdx = pages.findIndex((p) => p.id === archive.startPageId);
-    const endIdx = pages.findIndex((p) => p.id === archive.endPageId);
-    if (pageIndex >= startIdx && pageIndex <= endIdx) {
-      cancelPendingJobsForArchive(db, archive.id);
-      deleteArchive(db, archive.id);
+    if (!segment.content?.trim()) {
+      cancelPendingJobsForStoryToDate(db, segment.id);
+      deleteStoryToDateSegment(db, segment.id);
+      continue;
+    }
+
+    const covIdx = segment.coveragePageId ? pages.findIndex((p) => p.id === segment.coveragePageId) : -1;
+    if (covIdx >= 0 && pageIndex <= covIdx) {
+      cancelPendingJobsForStoryToDate(db, segment.id);
+      deleteStoryToDateSegment(db, segment.id);
     }
   }
 
-  enqueueEligibleArchiveBlocks(db, userId, logbookId);
+  enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
 }
 
-/**
- * After edit, retry, or undo/redo changes which text is canonical on a page: sync archive
- * membership, drop stale archive blocks, and queue archive jobs.
- */
 export function onCanonicalTextChanged(
   db: Database.Database,
   userId: string,
   logbookId: string,
-  pageId: string
+  pageId: string,
+  storyId: string
 ): void {
   const page = getPage(db, pageId);
   if (!page) return;
   const text = page.selectedTextId ? getText(db, page.selectedTextId) : null;
   if (!text?.genPackage?.trim()) return;
 
-  syncArchiveMembersForPage(db, pageId, text.id);
-  invalidateArchivesForPage(db, userId, logbookId, pageId);
+  invalidateStoryToDateForPage(db, userId, logbookId, storyId, pageId);
 
   const stamp = computeTextContentStamp(text);
   if (stamp) {
@@ -79,28 +77,32 @@ export function onCanonicalTextChanged(
   }
 }
 
-/** Drop archive blocks whose page range is no longer on the active chain (e.g. after fork truncate). */
-export function pruneArchivesOffActiveChain(db: Database.Database, userId: string, logbookId: string): void {
+export function pruneStoryToDateOffActiveChain(
+  db: Database.Database,
+  userId: string,
+  logbookId: string,
+  storyId: string
+): void {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const activeIds = new Set(pages.map((p) => p.id));
 
-  for (const archive of listArchivesForBook(db, logbookId)) {
-    if (!activeIds.has(archive.startPageId) || !activeIds.has(archive.endPageId)) {
-      cancelPendingJobsForArchive(db, archive.id);
-      deleteArchive(db, archive.id);
+  for (const segment of listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true })) {
+    if (segment.coveragePageId && !activeIds.has(segment.coveragePageId)) {
+      cancelPendingJobsForStoryToDate(db, segment.id);
+      deleteStoryToDateSegment(db, segment.id);
     }
   }
 
-  enqueueEligibleArchiveBlocks(db, userId, logbookId);
+  enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
 }
 
-/** Convenience wrapper when only logbook id is known from story db. */
 export function onCanonicalTextChangedForStory(
   db: Database.Database,
   userId: string,
+  storyId: string,
   pageId: string
 ): void {
   const logbook = getBookByType(db, "logbook");
   if (!logbook) return;
-  onCanonicalTextChanged(db, userId, logbook.id, pageId);
+  onCanonicalTextChanged(db, userId, logbook.id, pageId, storyId);
 }

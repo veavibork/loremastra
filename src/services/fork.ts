@@ -5,7 +5,7 @@ import { createStory, type StoryRow } from "../db/story-store.js";
 import { getBookByType } from "../db/book-store.js";
 import { findHeadPageId, getPage, setSelectedFork, setPageHidden } from "../db/page-store.js";
 import { setCurrentPageId } from "../db/story-state-store.js";
-import { pruneArchivesOffActiveChain } from "../services/memory-invalidation.js";
+import { pruneStoryToDateOffActiveChain } from "../services/memory-invalidation.js";
 
 /**
  * "Fork" per the schema-design decision: a genuinely new save slot, a full
@@ -55,7 +55,7 @@ export function forkStory(
   }
   setSelectedFork(newDb, forkPageId, null);
   setCurrentPageId(newDb, null);
-  pruneArchivesOffActiveChain(newDb, input.ownerUserId, logbook.id);
+  pruneStoryToDateOffActiveChain(newDb, input.ownerUserId, logbook.id, newStory.id);
 
   return newStory;
 }

@@ -2,10 +2,13 @@ import type Database from "better-sqlite3";
 import { listChronologicalPages } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
 import { setMemoryContentStamp } from "../db/page-store.js";
-import { listArchivesForBook, listMemberTextIds, getOwnerArchiveForText } from "../db/archive-store.js";
+import { listStoryToDateSegments } from "../db/story-to-date-store.js";
+import { hasActiveJobForStoryToDate, listPendingJobs } from "../db/job-store.js";
 import { computeTextContentStamp, postNeedsCompress } from "./content-stamp.js";
-import { enqueueEligibleArchiveBlocks, enqueuePendingArchiveJobs, enqueuePendingArchiveNameJobs } from "./archive.js";
-import { listPendingJobs } from "../db/job-store.js";
+import {
+  enqueueEligibleStoryToDateJob,
+  enqueuePendingStoryToDateJobs,
+} from "./story-to-date.js";
 
 /** Adopt content stamps for all canonical posts (idempotent). */
 export function backfillContentStamps(db: Database.Database): { stamped: number; skipped: number } {
@@ -29,35 +32,39 @@ export function backfillContentStamps(db: Database.Database): { stamped: number;
   return { stamped, skipped };
 }
 
-/** Queue compress + archive jobs for anything currently eligible. */
-export function enqueueMemoryPipeline(db: Database.Database, userId: string, logbookId: string): number {
-  enqueueEligibleArchiveBlocks(db, userId, logbookId);
-  enqueuePendingArchiveJobs(db, userId, logbookId);
-  enqueuePendingArchiveNameJobs(db, userId, logbookId);
-  return listPendingJobs(db).filter((j) => j.jobType === "archive" || j.jobType === "archive-name").length;
+export function enqueueMemoryPipeline(
+  db: Database.Database,
+  userId: string,
+  logbookId: string,
+  storyId: string
+): number {
+  enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
+  enqueuePendingStoryToDateJobs(db, userId, logbookId);
+  return listPendingJobs(db).filter((j) => j.jobType === "story-to-date").length;
 }
 
 export interface MemorySummary {
   logbookId: string;
   postCount: number;
   needsCompressCount: number;
-  archiveCount: number;
-  archivesMissingSummary: number;
-  brokenArchives: number;
-  stalePostIndices: number[];
+  storyToDateSegmentCount: number;
+  segmentsMissingContent: number;
+  brokenSegments: number;
+  coverageThroughPost: number | null;
 }
 
-/** Compact manifest for quick diagnostics (no per-post dump). */
 export function buildMemorySummary(db: Database.Database, logbookId: string): MemorySummary {
   const full = buildMemoryManifest(db, logbookId);
+  const ready = full.segments.filter((s) => s.hasContent && !s.broken);
+  const last = ready.sort((a, b) => b.seq - a.seq)[0];
   return {
     logbookId: full.logbookId,
     postCount: full.postCount,
     needsCompressCount: full.needsCompressCount,
-    archiveCount: full.archiveCount,
-    archivesMissingSummary: full.archives.filter((a) => !a.hasSummary).length,
-    brokenArchives: full.archives.filter((a) => a.broken).length,
-    stalePostIndices: full.posts.filter((p) => p.needsCompress).map((p) => p.index),
+    storyToDateSegmentCount: full.segments.length,
+    segmentsMissingContent: full.segments.filter((s) => !s.hasContent).length,
+    brokenSegments: full.segments.filter((s) => s.broken).length,
+    coverageThroughPost: last?.coverageThroughIcPost ?? null,
   };
 }
 
@@ -68,17 +75,17 @@ export interface MemoryBackfillResult {
   summary: MemorySummary;
 }
 
-/** Shared by MCP backfill_memory and POST /memory/backfill. */
 export function runMemoryBackfill(
   db: Database.Database,
   userId: string,
   logbookId: string,
+  storyId: string,
   options: { enqueueJobs?: boolean } = {}
 ): MemoryBackfillResult {
   const stamps = backfillContentStamps(db);
   let pendingMemoryJobs = 0;
   if (options.enqueueJobs !== false) {
-    pendingMemoryJobs = enqueueMemoryPipeline(db, userId, logbookId);
+    pendingMemoryJobs = enqueueMemoryPipeline(db, userId, logbookId, storyId);
   }
   return {
     stamps,
@@ -102,28 +109,26 @@ export interface MemoryManifestPost {
   hasExtract: boolean;
   stampMatch: boolean;
   needsCompress: boolean;
-  ownedArchiveId: string | null;
 }
 
-export interface MemoryManifestArchive {
+export interface MemoryManifestSegment {
   id: string;
-  startPageId: string;
-  endPageId: string;
-  hasSummary: boolean;
+  kind: string;
+  seq: number;
+  hasContent: boolean;
   broken: boolean;
-  memberCount: number;
+  coverageThroughIcPost: number | null;
+  coveragePageId: string | null;
+  jobActive: boolean;
 }
 
 export interface MemoryManifest {
   logbookId: string;
   postCount: number;
   needsCompressCount: number;
-  archiveCount: number;
-  posts: MemoryManifestPost[];
-  archives: MemoryManifestArchive[];
+  segments: MemoryManifestSegment[];
 }
 
-/** Diagnostic snapshot of compress stamps and archive coverage. */
 export function buildMemoryManifest(db: Database.Database, logbookId: string): MemoryManifest {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const posts: MemoryManifestPost[] = [];
@@ -142,25 +147,27 @@ export function buildMemoryManifest(db: Database.Database, logbookId: string): M
       hasExtract: !!text?.genExtract,
       stampMatch: !!stamp && page.memoryContentStamp === stamp,
       needsCompress,
-      ownedArchiveId: page.selectedTextId ? getOwnerArchiveForText(db, page.selectedTextId)?.id ?? null : null,
     });
   });
 
-  const archives: MemoryManifestArchive[] = listArchivesForBook(db, logbookId).map((a) => ({
-    id: a.id,
-    startPageId: a.startPageId,
-    endPageId: a.endPageId,
-    hasSummary: !!a.summary?.trim(),
-    broken: a.broken,
-    memberCount: listMemberTextIds(db, a.id).length,
+  const segments: MemoryManifestSegment[] = listStoryToDateSegments(db, logbookId, {
+    includeHidden: true,
+    includeBroken: true,
+  }).map((s) => ({
+    id: s.id,
+    kind: s.kind,
+    seq: s.seq,
+    hasContent: !!s.content?.trim(),
+    broken: s.broken,
+    coverageThroughIcPost: s.coverageThroughIcPost,
+    coveragePageId: s.coveragePageId,
+    jobActive: hasActiveJobForStoryToDate(db, s.id),
   }));
 
   return {
     logbookId,
     postCount: posts.length,
     needsCompressCount,
-    archiveCount: archives.length,
-    posts,
-    archives,
+    segments,
   };
 }

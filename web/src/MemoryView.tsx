@@ -10,7 +10,7 @@ const POLL_MS = 3000;
 
 function messageClass(m: PromptMessage): string {
   const kind = classifyPromptBlock(m.content, m.role);
-  if (kind === "content" || kind === "roster" || kind === "memory" || kind === "event-summary") {
+  if (kind === "content" || kind === "roster" || kind === "memory" || kind === "story-to-date" || kind === "event-summary") {
     return `prompt-message prompt-block-${kind}`;
   }
   return `prompt-message prompt-message-${m.role}`;
@@ -41,9 +41,8 @@ export default function MemoryView({ story }: PanelProps) {
     <div className="memory-view">
       <h2>Memory</h2>
       <p className="memory-note">
-        Read-only preview of the assembled Author prompt at the current position. Full worldbook entries
-        are always included; all history starts as verbose prose, then oldest archive blocks replace
-        decad summaries when over budget. Refreshes every few seconds.
+        Read-only preview of the assembled Author prompt at the current position. Full worldbook,
+        merged [STORY TO DATE] segments, then verbose prose after coverage. Refreshes every few seconds.
       </p>
 
       {messages.map((m, i) => {

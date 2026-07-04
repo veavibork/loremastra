@@ -15,7 +15,6 @@ import { getPage, listChronologicalPages, setPageHidden, type PageRow } from "..
 import { createPageWithText } from "../db/content-store.js";
 import { getBookByType } from "../db/book-store.js";
 import { listContentEntries, listWorldbookEntries } from "../db/worldbook-store.js";
-import { fillArchiveSummary, fillArchiveName, getArchive } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { getStory, renameStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
@@ -46,10 +45,10 @@ import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-sto
 import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
-import { enqueueEligibleArchiveBlocks, enqueuePendingArchiveJobs } from "../services/archive.js";
+import { enqueueEligibleStoryToDateJob } from "../services/story-to-date.js";
+import { executeStoryToDateJob } from "../services/story-to-date-worker.js";
 import { cancelPendingCompressJobs } from "../services/compression.js";
 import { nowIso } from "../db/time.js";
-import { buildArchiveUserPrompt, finalizeArchiveSummary } from "../services/archive-worker.js";
 import { markCompressValid } from "../services/memory-invalidation.js";
 import {
   buildCompressUserPrompt,
@@ -69,15 +68,13 @@ import {
   EDITOR_SETUP_WORLDBOOK,
   EDITOR_UPDATE_PROMPT,
   COMPRESS_SYSTEM_PROMPT,
-  ARCHIVE_SYSTEM_PROMPT,
   NAMING_PROMPT,
-  ARCHIVE_NAMING_PROMPT,
   guidedRegenerateNote,
   guidedContinueNote,
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const WORKER_JOB_TYPES: JobType[] = ["archive", "story-name", "archive-name"];
+const WORKER_JOB_TYPES: JobType[] = ["story-to-date", "story-name"];
 const PROSE_JOB_TYPES: JobType[] = ["prose", "setup", "setup-worldbook"];
 
 /**
@@ -147,7 +144,7 @@ function truncateToWordLimit(text: string, maxWords: number): string {
   return words.slice(0, maxWords).join(" ");
 }
 
-function countRunningArchiveJobsForUser(
+function countRunningStoryToDateJobsForUser(
   globalDb: ReturnType<typeof getGlobalDb>,
   userId: string
 ): number {
@@ -156,7 +153,7 @@ function countRunningArchiveJobsForUser(
     const story = getStory(globalDb, storyId);
     if (!story || story.ownerUserId !== userId) continue;
     const row = db
-      .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'archive' AND status = 'running'`)
+      .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'story-to-date' AND status = 'running'`)
       .get() as { n: number };
     count += row.n;
   }
@@ -164,11 +161,16 @@ function countRunningArchiveJobsForUser(
 }
 
 const STORY_NAME_MAX_ATTEMPTS = 2;
-const ARCHIVE_NAME_MAX_ATTEMPTS = 3;
 const NAMING_MAX_TOKENS = 64;
 const STORY_NAME_MAX_WORDS = 12; // generous ceiling for a 2-6 word title — catches "wrote a sentence instead" cases
 const NAME_PATTERN = /\[NAME\]([\s\S]*?)\[\/NAME\]/i;
 const NAME_OPEN_PATTERN = /\[NAME\]\s*([^\n\[]+)/i;
+
+function isValidExtractedName(content: string): boolean {
+  if (/<\|[^|>]*\|>/.test(content)) return false;
+  if (/:\s+\S/.test(content)) return false;
+  return withinWordLimit(content, STORY_NAME_MAX_WORDS);
+}
 
 function extractStoryName(text: string): string | null {
   const trimmed = text.trim();
@@ -191,14 +193,14 @@ function extractStoryName(text: string): string | null {
       .replace(/^\*+|\*+$/g, "")
       .replace(/^["'`""'']+|["'`""'']+$/g, "")
       .trim();
-    if (cleaned && !/[\[\]]/.test(cleaned) && withinWordLimit(cleaned, STORY_NAME_MAX_WORDS)) {
+    if (cleaned && !/[\[\]]/.test(cleaned) && isValidExtractedName(cleaned)) {
       content = cleaned;
     }
   }
 
   if (!content) return null;
   content = content.replace(/^["'`""'']+|["'`""'']+$/g, "").trim();
-  if (!content || !withinWordLimit(content, STORY_NAME_MAX_WORDS)) return null;
+  if (!isValidExtractedName(content)) return null;
   return content;
 }
 
@@ -386,8 +388,8 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
 
       // Editor archives cost the full account limit — only one in flight per user.
       if (
-        job.jobType === "archive" &&
-        countRunningArchiveJobsForUser(globalDb, story.ownerUserId) > 1
+        job.jobType === "story-to-date" &&
+        countRunningStoryToDateJobsForUser(globalDb, story.ownerUserId) > 1
       ) {
         unclaimJob(db, job.id);
         continue;
@@ -400,12 +402,17 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       }
 
       dispatched = true;
-      if (job.jobType === "archive" && job.targetArchiveId) {
-        void executeArchiveJob(db, story.ownerUserId, job.id, job.targetArchiveId);
+      if (job.jobType === "story-to-date" && job.targetStoryToDateId) {
+        const logbook = getBookByType(db, "logbook");
+        if (!logbook) {
+          finishJob(db, job.id, "failed", "logbook not found");
+          releaseSlot(story.ownerUserId, job.id);
+          releaseWorkerLane();
+          continue;
+        }
+        void executeStoryToDateJobWrapper(db, story.ownerUserId, storyId, logbook.id, job.id, job.targetStoryToDateId);
       } else if (job.jobType === "story-name" && job.targetTextId) {
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId);
-      } else if (job.jobType === "archive-name" && job.targetArchiveId) {
-        void executeArchiveNameJob(db, story.ownerUserId, job.id, job.targetArchiveId);
       } else {
         finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
         releaseSlot(story.ownerUserId, job.id);
@@ -548,6 +555,8 @@ async function executeProseJob(
     if (genOptions) metrics.toggles = genOptions;
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify(metrics) });
     maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
+    const logbook = getBookByType(db, "logbook");
+    if (logbook) maybeEnqueueStoryToDateJob(db, userId, storyId, logbook.id);
     finishJob(db, jobId, "done", undefined, { model, tokenEstimate, elapsedMs: Date.now() - startedAt });
     publishDone(jobId, fullText);
   } catch (err) {
@@ -646,6 +655,8 @@ async function resolveHordeJob(db: Database.Database, job: JobRow, storyId: stri
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify({ tokenEstimate }) });
     if (targetPage) {
       maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
+      const logbook = getBookByType(db, "logbook");
+      if (logbook) maybeEnqueueStoryToDateJob(db, userId, storyId, logbook.id);
     }
 
     hordeJobTerminal(job.id);
@@ -995,7 +1006,6 @@ async function executeCompressJob(
     fillTextExtract(db, targetTextId, summary, compressMetrics);
     if (targetPage) {
       markCompressValid(db, targetPage.id, targetTextId);
-      enqueueEligibleArchiveBlocks(db, userId, targetPage.bookId);
     }
     finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate, elapsedMs: Date.now() - startedAt });
   } catch (err) {
@@ -1083,45 +1093,25 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
   }
 }
 
-async function executeArchiveNameJob(
+async function executeStoryToDateJobWrapper(
   db: Database.Database,
   userId: string,
+  storyId: string,
+  logbookId: string,
   jobId: string,
-  targetArchiveId: string
+  segmentId: string
 ): Promise<void> {
   const startedAt = Date.now();
   try {
-    const archive = getArchive(db, targetArchiveId);
-    if (!archive?.summary?.trim()) throw new Error("archive has no summary to name from");
-
-    const nameMessages: ChatMessage[] = [
-      { role: "system", content: ARCHIVE_NAMING_PROMPT },
-      { role: "user", content: `Scene summary:\n${archive.summary.trim()}` },
-    ];
-
-    let name: string | null = null;
-    let usedModel = "";
-    let lastError = "unknown error";
-    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
-    const workerProfile = getAgentProfile(userId, "worker");
-    for (let attempt = 1; attempt <= ARCHIVE_NAME_MAX_ATTEMPTS && !name; attempt++) {
-      try {
-        const rawText = await withModelFallback(workerProfile, (profile) => {
-          usedModel = profile.model;
-          return completeChat(profile, featherlessKey, nameMessages, { maxTokens: NAMING_MAX_TOKENS });
-        });
-        name = extractStoryName(rawText);
-        if (!name?.trim()) {
-          lastError = `no usable [NAME] block on attempt ${attempt}: "${rawText.trim().slice(0, 80)}"`;
-        }
-      } catch (err) {
-        lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
-
-    if (!name) throw new Error(`archive naming failed after ${ARCHIVE_NAME_MAX_ATTEMPTS} attempts — ${lastError}`);
-    fillArchiveName(db, targetArchiveId, name);
-    finishJob(db, jobId, "done", undefined, { model: usedModel, elapsedMs: Date.now() - startedAt });
+    const apiKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    if (!apiKey) throw new Error("no Featherless API key configured");
+    await executeStoryToDateJob(db, userId, storyId, logbookId, segmentId, apiKey);
+    const editor = getAgentProfile(userId, "editor");
+    finishJob(db, jobId, "done", undefined, {
+      model: editor.model,
+      elapsedMs: Date.now() - startedAt,
+    });
+    enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
@@ -1131,104 +1121,11 @@ async function executeArchiveNameJob(
   }
 }
 
-/**
- * Archive blocks use full member prose (KAI-style), not compressed lines — see archive-worker.ts.
- * Runs on the Editor agent for quality; still dispatched via the worker lane.
- */
-async function executeArchiveJob(
+function maybeEnqueueStoryToDateJob(
   db: Database.Database,
   userId: string,
-  jobId: string,
-  targetArchiveId: string
-): Promise<void> {
-  const startedAt = Date.now();
-  let logbookId: string | null = null;
-  try {
-    const archive = getArchive(db, targetArchiveId);
-    if (!archive) throw new Error("target archive no longer exists");
-    logbookId = archive.bookId;
-
-    const userContent = buildArchiveUserPrompt(db, targetArchiveId);
-
-    let summary: string | null = null;
-    let usedModel = "";
-    let lastError = "unknown error";
-
-    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
-    const editorProfile = getAgentProfile(userId, "editor");
-    for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS && !summary; attempt++) {
-      try {
-        const attemptMessages: ChatMessage[] = [{ role: "system", content: ARCHIVE_SYSTEM_PROMPT }];
-        if (attempt > 1 && lastError.includes("missing [SUMMARY]")) {
-          attemptMessages.push({
-            role: "system",
-            content:
-              "Your prior reply did not include a [SUMMARY]...[/SUMMARY] block. Reply again with ONLY that block wrapping the scene summary.",
-          });
-        } else if (attempt > 1 && lastError.includes("word limit")) {
-          attemptMessages.push({
-            role: "system",
-            content:
-              "Your prior [SUMMARY] was too long. Keep it under 80 words — causal throughline only, no filler or commentary.",
-          });
-        }
-        attemptMessages.push({ role: "user", content: userContent });
-
-        const rawText = await withModelFallback(editorProfile, (profile) => {
-          usedModel = profile.model;
-          return completeChat(profile, featherlessKey, attemptMessages);
-        });
-
-        let candidate = extractSummary(rawText);
-        if (!candidate?.trim()) {
-          const stripped = rawText.trim();
-          if (stripped && withinWordLimit(stripped, ARCHIVE_MAX_WORDS) && !stripped.includes("[/SUMMARY]")) {
-            candidate = stripped;
-          }
-        }
-        if (!candidate?.trim()) {
-          lastError = `missing [SUMMARY] block on attempt ${attempt}`;
-          continue;
-        }
-
-        if (matchesRefusalPrefix(userId, candidate)) {
-          lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
-        } else if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {
-          summary = candidate;
-        } else if (attempt < ARCHIVE_MAX_ATTEMPTS) {
-          lastError = `summary over word limit on attempt ${attempt}`;
-        } else {
-          summary = truncateToWordLimit(candidate, ARCHIVE_MAX_WORDS);
-        }
-      } catch (err) {
-        lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    }
-
-    if (!summary) throw new Error(`archiving failed after ${ARCHIVE_MAX_ATTEMPTS} attempts — ${lastError}`);
-
-    summary = finalizeArchiveSummary(db, summary);
-    fillArchiveSummary(db, targetArchiveId, summary);
-    const elapsedMs = Date.now() - startedAt;
-    finishJob(db, jobId, "done", undefined, {
-      model: usedModel,
-      tokenEstimate: Math.ceil(summary.length / 4),
-      elapsedMs,
-    });
-    createJob(db, {
-      targetArchiveId,
-      jobType: "archive-name",
-      slotCost: getAgentProfile(userId, "worker").concurrencyCost,
-      priority: -1,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finishJob(db, jobId, "failed", message);
-    if (logbookId && /429|timeout|ECONNRESET|fetch failed/i.test(message)) {
-      enqueuePendingArchiveJobs(db, userId, logbookId);
-    }
-  } finally {
-    releaseSlot(userId, jobId);
-    releaseWorkerLane();
-  }
+  storyId: string,
+  logbookId: string
+): void {
+  enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
 }

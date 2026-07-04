@@ -67,6 +67,22 @@ CREATE TABLE IF NOT EXISTS archive_member (
 );
 CREATE INDEX IF NOT EXISTS idx_archive_member_text ON archive_member(text_id);
 
+CREATE TABLE IF NOT EXISTS story_to_date_segment (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  book_id TEXT NOT NULL REFERENCES book(id),
+  kind TEXT NOT NULL CHECK (kind IN ('begins','continues')),
+  content TEXT,
+  coverage_through_ic_post INTEGER,
+  coverage_page_id TEXT REFERENCES page(id),
+  input_ceiling_ic_post INTEGER,
+  input_ceiling_page_id TEXT REFERENCES page(id),
+  seq INTEGER NOT NULL,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  broken INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_story_to_date_book ON story_to_date_segment(book_id);
+
 -- One row per worldbook entry, keyed to its page. Content lives in
 -- text.gen_package as a raw freeform string (no structured fields), so
 -- editing an entry is just createRetryText -- the same write-once-per-version
@@ -133,7 +149,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at TEXT NOT NULL,
   target_text_id TEXT REFERENCES text(id),
   target_archive_id TEXT REFERENCES archive(id),
-  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook','tag-gen','story-name','archive-name')),
+  target_story_to_date_id TEXT REFERENCES story_to_date_segment(id),
+  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook','tag-gen','story-name','archive-name','story-to-date')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
   priority INTEGER NOT NULL DEFAULT 0,
   slot_cost INTEGER NOT NULL DEFAULT 1,
@@ -148,4 +165,5 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_text ON jobs(target_text_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_archive ON jobs(target_archive_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_target_story_to_date ON jobs(target_story_to_date_id);
 `;

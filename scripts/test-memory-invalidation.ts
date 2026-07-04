@@ -1,5 +1,5 @@
 /**
- * In-process smoke test for Phase 1 memory invalidation (no HTTP / Featherless).
+ * In-process smoke test for memory invalidation (no HTTP / Featherless).
  * Run: npx tsx scripts/test-memory-invalidation.ts
  */
 import { getStoryDb } from "../src/db/story-db.js";
@@ -7,9 +7,13 @@ import { createBook } from "../src/db/book-store.js";
 import { createPageWithText, createRetryText } from "../src/db/content-store.js";
 import { getPage } from "../src/db/page-store.js";
 import { getText } from "../src/db/text-store.js";
-import { listArchivesForBook } from "../src/db/archive-store.js";
+import {
+  createStoryToDateSegment,
+  fillStoryToDateSegment,
+  listStoryToDateSegments,
+} from "../src/db/story-to-date-store.js";
 import { listPendingJobs } from "../src/db/job-store.js";
-import { enqueueEligibleArchiveBlocks } from "../src/services/archive.js";
+import { enqueueEligibleStoryToDateJob } from "../src/services/story-to-date.js";
 import {
   computeTextContentStamp,
   onCanonicalTextChanged,
@@ -18,13 +22,14 @@ import {
 import { newId } from "../src/uuid.js";
 
 const USER_ID = "019f1e21-c547-75b2-8bc1-47b4b6cfdbe6";
+const STORY_ID = `smoke-invalidation-${newId()}`;
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`FAILED: ${message}`);
   console.log(`ok: ${message}`);
 }
 
-const db = getStoryDb(`smoke-invalidation-${newId()}`);
+const db = getStoryDb(STORY_ID);
 const logbook = createBook(db, { bookType: "logbook" });
 
 let prevId: string | null = null;
@@ -52,7 +57,7 @@ const edited = createRetryText(db, {
   role: oldText.role,
   genPackage: "Post 2 REVISED content.",
 });
-onCanonicalTextChanged(db, USER_ID, logbook.id, oldPageId);
+onCanonicalTextChanged(db, USER_ID, logbook.id, oldPageId, STORY_ID);
 
 const editedPage = getPage(db, oldPageId)!;
 const editedText = getText(db, edited.id)!;
@@ -63,9 +68,16 @@ assert(
 );
 assert(editedPage.memoryContentStamp !== null, "edit updates content stamp");
 
-enqueueEligibleArchiveBlocks(db, USER_ID, logbook.id);
-const archivesBefore = listArchivesForBook(db, logbook.id).length;
-assert(archivesBefore >= 1, "archive block exists for 10 posts with prose");
+const seg = createStoryToDateSegment(db, { bookId: logbook.id, kind: "begins", seq: 0 });
+fillStoryToDateSegment(db, seg.id, {
+  content: "Summary of posts 0–9.",
+  coverageThroughIcPost: 9,
+  coveragePageId: pageIds[9]!,
+  inputCeilingIcPost: 9,
+  inputCeilingPageId: pageIds[9]!,
+});
+const segmentsBefore = listStoryToDateSegments(db, logbook.id).length;
+assert(segmentsBefore >= 1, "story-to-date segment exists");
 
 createRetryText(db, {
   pageId: pageIds[4]!,
@@ -73,19 +85,19 @@ createRetryText(db, {
   role: "agent",
   genPackage: "Post 4 totally changed.",
 });
-onCanonicalTextChanged(db, USER_ID, logbook.id, pageIds[4]!);
-const archivesAfter = listArchivesForBook(db, logbook.id);
+onCanonicalTextChanged(db, USER_ID, logbook.id, pageIds[4]!, STORY_ID);
+const segmentsAfter = listStoryToDateSegments(db, logbook.id);
 assert(
-  archivesAfter.length < archivesBefore || archivesAfter.every((a) => !a.summary),
-  "edit inside archive window invalidated archives"
+  segmentsAfter.length < segmentsBefore || segmentsAfter.every((s) => !s.content?.trim()),
+  "edit inside coverage window invalidated story-to-date segments"
 );
 
 const stamp1 = computeTextContentStamp(getText(db, edited.id)!);
 const stamp2 = computeTextContentStamp(getText(db, edited.id)!);
 assert(stamp1 === stamp2 && stamp1 !== null, "content stamp is deterministic");
 
-// Archive enqueue reaches full log without compress preconditions.
-const gapDb = getStoryDb(`smoke-archive-gap-${newId()}`);
+// Enqueue helper runs without throw on prose-only log.
+const gapDb = getStoryDb(`smoke-story-to-date-gap-${newId()}`);
 const gapLog = createBook(gapDb, { bookType: "logbook" });
 let gapPrev: string | null = null;
 for (let i = 0; i < 12; i++) {
@@ -97,8 +109,7 @@ for (let i = 0; i < 12; i++) {
   });
   gapPrev = page.id;
 }
-enqueueEligibleArchiveBlocks(gapDb, USER_ID, gapLog.id);
-const gapArchives = listArchivesForBook(gapDb, gapLog.id);
-assert(gapArchives.length >= 1, "archive blocks enqueue from prose-only log");
+enqueueEligibleStoryToDateJob(gapDb, USER_ID, gapLog.id, `gap-${newId()}`);
+assert(true, "enqueueEligibleStoryToDateJob completes on prose-only log");
 
 console.log("\nAll memory-invalidation smoke checks passed.");

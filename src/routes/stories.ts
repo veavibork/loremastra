@@ -7,14 +7,13 @@ import type { AppVariables } from "../middleware/session-guard.js";
 import { createStory, listStories, getStory, renameStory, deleteStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
 import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType } from "../db/book-store.js";
-import { setArchiveSummary, setArchiveName, getArchive } from "../db/archive-store.js";
 import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../db/page-store.js";
 import {
-  enqueueEligibleArchiveBlocks,
-  enqueuePendingArchiveNameJobs,
-  queueArchiveDecad,
-  requeueArchiveBlock,
-} from "../services/archive.js";
+  enqueueEligibleStoryToDateJob,
+  enqueuePendingStoryToDateJobs,
+  requeueStoryToDateSegment,
+} from "../services/story-to-date.js";
+import { getStoryToDateSegment } from "../db/story-to-date-store.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
 import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from "../db/job-store.js";
 import { getPage, setPageHidden } from "../db/page-store.js";
@@ -35,7 +34,7 @@ import { trackStoryDb, untrackStoryDb, setJobGuidance, setJobGenerationOptions, 
 import type { GenerationOptions } from "../services/settings-space-registry.js";
 import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
-import { buildArchiveView } from "../services/archive-view.js";
+import { buildStoryToDateView } from "../services/story-to-date-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
 import {
   buildMemoryManifest,
@@ -177,64 +176,37 @@ storiesRoute.get("/:id/prompt-preview", (c) => {
   const messages = assembleAuthorPrompt(storyDb, c.get("userId"), logbook.id, currentPageId);
   return c.json({ messages });
 });
-storiesRoute.get("/:id/archives", (c) => {
+storiesRoute.get("/:id/story-to-date", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  const includeHidden = c.req.query("includeHidden") === "true";
-  return c.json(buildArchiveView(storyDb, logbook.id, { includeHidden }));
+  return c.json(buildStoryToDateView(storyDb, logbook.id));
 });
 
-storiesRoute.post("/:id/archives/backfill-names", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
+storiesRoute.post("/:id/story-to-date/enqueue", (c) => {
+  const storyId = c.req.param("id");
+  const storyDb = openTrackedStoryDb(storyId);
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
-  const enqueued = enqueuePendingArchiveNameJobs(storyDb, c.get("userId"), logbook.id);
-  return c.json({ enqueued, view: buildArchiveView(storyDb, logbook.id) });
+  enqueueEligibleStoryToDateJob(storyDb, c.get("userId"), logbook.id, storyId);
+  enqueuePendingStoryToDateJobs(storyDb, c.get("userId"), logbook.id);
+  return c.json({ view: buildStoryToDateView(storyDb, logbook.id) });
 });
 
-storiesRoute.post("/:id/archives/queue", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { startIndex?: number };
-  if (typeof body.startIndex !== "number") return c.json({ error: "startIndex is required" }, 400);
-
+storiesRoute.post("/:id/story-to-date/:segmentId/requeue", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
+  const segment = getStoryToDateSegment(storyDb, c.req.param("segmentId"));
+  if (!segment) return c.json({ error: "segment not found" }, 404);
   try {
-    const result = queueArchiveDecad(storyDb, c.get("userId"), logbook.id, body.startIndex);
-    return c.json({ ...result, view: buildArchiveView(storyDb, logbook.id) });
+    requeueStoryToDateSegment(storyDb, c.get("userId"), segment.id);
+    const logbook = getBookByType(storyDb, "logbook")!;
+    return c.json({ ok: true, view: buildStoryToDateView(storyDb, logbook.id) });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
 });
 
-storiesRoute.patch("/:id/archives/:archiveId", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { summary?: string; name?: string };
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const archive = getArchive(storyDb, c.req.param("archiveId"));
-  if (!archive) return c.json({ error: "archive not found" }, 404);
-  if (body.summary !== undefined) setArchiveSummary(storyDb, archive.id, body.summary);
-  if (body.name !== undefined) setArchiveName(storyDb, archive.id, body.name);
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-  return c.json({ ok: true, view: buildArchiveView(storyDb, logbook.id) });
-});
-
-storiesRoute.post("/:id/archives/:archiveId/requeue", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-  try {
-    requeueArchiveBlock(storyDb, c.get("userId"), c.req.param("archiveId"));
-    return c.json({ ok: true, view: buildArchiveView(storyDb, logbook.id) });
-  } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
-  }
-});
-
-/** Compact memory health — stale compress counts, archive gaps, no per-post dump. */
+/** Compact memory health — story-to-date coverage, no per-post dump. */
 storiesRoute.get("/:id/memory/summary", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
@@ -257,7 +229,7 @@ storiesRoute.post("/:id/memory/backfill", async (c) => {
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
   return c.json(
-    runMemoryBackfill(storyDb, c.get("userId"), logbook.id, {
+    runMemoryBackfill(storyDb, c.get("userId"), logbook.id, c.req.param("id"), {
       enqueueJobs: body.enqueueJobs,
     })
   );
@@ -268,7 +240,7 @@ storiesRoute.post("/:id/memory/enqueue", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
-  const pendingMemoryJobs = enqueueMemoryPipeline(storyDb, c.get("userId"), logbook.id);
+  const pendingMemoryJobs = enqueueMemoryPipeline(storyDb, c.get("userId"), logbook.id, c.req.param("id"));
   return c.json({ pendingMemoryJobs, summary: buildMemorySummary(storyDb, logbook.id) });
 });
 
@@ -319,7 +291,7 @@ storiesRoute.post("/:id/messages", async (c) => {
     priority: 10,
   });
   if (body.generationOptions) setJobGenerationOptions(job.id, body.generationOptions);
-  enqueueEligibleArchiveBlocks(storyDb, c.get("userId"), logbook.id);
+  enqueueEligibleStoryToDateJob(storyDb, c.get("userId"), logbook.id, c.req.param("id"));
 
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
 });
@@ -356,7 +328,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
     role: "agent",
   });
   recordHistoryEvent(storyDb, { kind: "text", pageId, fromValue: currentText.id, toValue: newText.id });
-  onCanonicalTextChangedForStory(storyDb, c.get("userId"), pageId);
+  onCanonicalTextChangedForStory(storyDb, c.get("userId"), c.req.param("id"), pageId);
   const job = createJob(storyDb, {
     targetTextId: newText.id,
     jobType: isSetupPage ? "setup" : "prose",
@@ -391,7 +363,7 @@ storiesRoute.post("/:id/posts/:pageId/edit", async (c) => {
     genPackage: content,
   });
   recordHistoryEvent(storyDb, { kind: "text", pageId, fromValue: currentText.id, toValue: newText.id });
-  onCanonicalTextChangedForStory(storyDb, c.get("userId"), pageId);
+  onCanonicalTextChangedForStory(storyDb, c.get("userId"), c.req.param("id"), pageId);
 
   return c.json({ ok: true, textId: newText.id });
 });
@@ -461,7 +433,7 @@ storiesRoute.post("/:id/position/undo", (c) => {
   const result = undoHistory(storyDb);
   if (!result) return c.json({ error: "already at the beginning" }, 400);
   if (result.canonicalTextPageId) {
-    onCanonicalTextChangedForStory(storyDb, c.get("userId"), result.canonicalTextPageId);
+    onCanonicalTextChangedForStory(storyDb, c.get("userId"), c.req.param("id"), result.canonicalTextPageId);
   }
   return c.json(currentPositionResponse(storyDb));
 });
@@ -471,7 +443,7 @@ storiesRoute.post("/:id/position/redo", (c) => {
   const result = redoHistory(storyDb);
   if (!result) return c.json({ error: "nothing to redo" }, 400);
   if (result.canonicalTextPageId) {
-    onCanonicalTextChangedForStory(storyDb, c.get("userId"), result.canonicalTextPageId);
+    onCanonicalTextChangedForStory(storyDb, c.get("userId"), c.req.param("id"), result.canonicalTextPageId);
   }
   return c.json(currentPositionResponse(storyDb));
 });

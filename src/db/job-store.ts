@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 
-export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name" | "archive-name";
+export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name" | "archive-name" | "story-to-date";
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
 export interface JobRow {
@@ -10,6 +10,7 @@ export interface JobRow {
   createdAt: string;
   targetTextId: string | null;
   targetArchiveId: string | null;
+  targetStoryToDateId: string | null;
   jobType: JobType;
   status: JobStatus;
   priority: number;
@@ -29,6 +30,7 @@ interface RawJobRow {
   created_at: string;
   target_text_id: string | null;
   target_archive_id: string | null;
+  target_story_to_date_id: string | null;
   job_type: JobType;
   status: JobStatus;
   priority: number;
@@ -49,6 +51,7 @@ function mapJobRow(row: RawJobRow): JobRow {
     createdAt: row.created_at,
     targetTextId: row.target_text_id,
     targetArchiveId: row.target_archive_id,
+    targetStoryToDateId: row.target_story_to_date_id ?? null,
     jobType: row.job_type,
     status: row.status,
     priority: row.priority,
@@ -69,23 +72,26 @@ export function createJob(
   input: {
     targetTextId?: string;
     targetArchiveId?: string;
+    targetStoryToDateId?: string;
     jobType: JobType;
     priority?: number;
     slotCost?: number;
   }
 ): JobRow {
-  if (!input.targetTextId && !input.targetArchiveId) {
-    throw new Error("createJob requires either targetTextId or targetArchiveId");
+  const targets = [input.targetTextId, input.targetArchiveId, input.targetStoryToDateId].filter(Boolean);
+  if (targets.length !== 1) {
+    throw new Error("createJob requires exactly one of targetTextId, targetArchiveId, or targetStoryToDateId");
   }
   const id = newId();
   db.prepare(
-    `INSERT INTO jobs (id, created_at, target_text_id, target_archive_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested)
-     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, 0)`
+    `INSERT INTO jobs (id, created_at, target_text_id, target_archive_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, 0)`
   ).run(
     id,
     nowIso(),
     input.targetTextId ?? null,
     input.targetArchiveId ?? null,
+    input.targetStoryToDateId ?? null,
     input.jobType,
     input.priority ?? 0,
     input.slotCost ?? 1
@@ -150,6 +156,26 @@ export function hasActiveJobForArchive(db: Database.Database, targetArchiveId: s
     )
     .get(targetArchiveId, jobType);
   return !!row;
+}
+
+export function hasActiveJobForStoryToDate(
+  db: Database.Database,
+  targetStoryToDateId: string,
+  jobType: JobType = "story-to-date"
+): boolean {
+  const row = db
+    .prepare(
+      `SELECT 1 FROM jobs WHERE target_story_to_date_id = ? AND job_type = ? AND status IN ('pending', 'running') LIMIT 1`
+    )
+    .get(targetStoryToDateId, jobType);
+  return !!row;
+}
+
+export function cancelPendingJobsForStoryToDate(db: Database.Database, targetStoryToDateId: string): void {
+  db.prepare(
+    `UPDATE jobs SET status = 'cancelled', finished_at = ?, cancel_requested = 1
+     WHERE target_story_to_date_id = ? AND status = 'pending'`
+  ).run(nowIso(), targetStoryToDateId);
 }
 
 /** Most recent jobs regardless of status, for the Debug section's live queue view. */

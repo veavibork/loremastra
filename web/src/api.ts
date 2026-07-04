@@ -534,6 +534,43 @@ export async function fetchLog(storyId: string, opts?: { background?: boolean })
   return data.entries;
 }
 
+export interface StoryToDateSegment {
+  id: string;
+  kind: "begins" | "continues";
+  seq: number;
+  content: string | null;
+  coverageThroughIcPost: number | null;
+  coveragePageId: string | null;
+  hidden: boolean;
+  broken: boolean;
+  jobActive: boolean;
+}
+
+export interface StoryToDatePage {
+  segments: StoryToDateSegment[];
+  mergedCoverageThroughPost: number | null;
+}
+
+export async function fetchStoryToDate(storyId: string): Promise<StoryToDatePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date`);
+  return res.json() as Promise<StoryToDatePage>;
+}
+
+export async function enqueueStoryToDate(storyId: string): Promise<StoryToDatePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date/enqueue`, { method: "POST" });
+  const data = (await res.json()) as { view: StoryToDatePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
+}
+
+export async function requeueStoryToDateSegment(storyId: string, segmentId: string): Promise<StoryToDatePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date/${segmentId}/requeue`, { method: "POST" });
+  const data = (await res.json()) as { view: StoryToDatePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
+}
+
+/** @deprecated decad archives removed — use StoryToDateSegment */
 export interface ArchiveEntry {
   id: string | null;
   createdAt: string | null;

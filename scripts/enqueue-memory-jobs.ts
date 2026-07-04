@@ -21,7 +21,7 @@ if (!logbook) {
 }
 
 trackStoryDb(storyId, db);
-const pendingMemoryJobs = enqueueMemoryPipeline(db, userId, logbook.id);
+const pendingMemoryJobs = enqueueMemoryPipeline(db, userId, logbook.id, storyId);
 const byType = listPendingJobs(db).reduce(
   (acc, j) => {
     acc[j.jobType] = (acc[j.jobType] ?? 0) + 1;

@@ -204,7 +204,7 @@ server.registerTool(
     return withStoryDb(storyId, (db) => {
       const logbook = getBookByType(db, "logbook");
       if (!logbook) return textResult({ error: "no logbook for this story" });
-      const pending = enqueueMemoryPipeline(db, story.ownerUserId, logbook.id);
+      const pending = enqueueMemoryPipeline(db, story.ownerUserId, logbook.id, storyId);
       return textResult({ pendingMemoryJobs: pending, summary: buildMemorySummary(db, logbook.id) });
     });
   }
@@ -244,7 +244,7 @@ server.registerTool(
       const logbook = getBookByType(db, "logbook");
       if (!logbook) return textResult({ error: "no logbook for this story" });
       return textResult(
-        runMemoryBackfill(db, story.ownerUserId, logbook.id, { enqueueJobs })
+        runMemoryBackfill(db, story.ownerUserId, logbook.id, storyId, { enqueueJobs })
       );
     });
   }

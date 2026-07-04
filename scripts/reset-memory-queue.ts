@@ -1,17 +1,17 @@
 /**
- * Clear archive blocks and re-enqueue archive jobs (compression disabled).
+ * Clear story-to-date segments and re-enqueue jobs (compression disabled).
  *
  * Run while the app is up (or restart after) so the pipeline runner drains the queue.
  *
  *   npx tsx scripts/reset-memory-queue.ts <storyId> [userId]
  */
 import { getGlobalDb } from "../src/db/global-db.js";
-import { getStoryDb, closeStoryDb } from "../src/db/story-db.js";
+import { getStoryDb } from "../src/db/story-db.js";
 import { getStory } from "../src/db/story-store.js";
 import { getBookByType } from "../src/db/book-store.js";
 import { listChronologicalPages, setMemoryContentStamp } from "../src/db/page-store.js";
 import { clearTextExtract } from "../src/db/text-store.js";
-import { deleteArchive, listArchivesForBook } from "../src/db/archive-store.js";
+import { deleteStoryToDateSegment, listStoryToDateSegments } from "../src/db/story-to-date-store.js";
 import { enqueueMemoryPipeline } from "../src/services/memory-manifest.js";
 import { nowIso } from "../src/db/time.js";
 import { trackStoryDb } from "../src/queue/pipeline-runner.js";
@@ -21,18 +21,19 @@ const DEFAULT_USER_ID = "019f1e21-c547-75b2-8bc1-47b4b6cfdbe6";
 function resetMemoryQueue(
   db: ReturnType<typeof getStoryDb>,
   userId: string,
-  logbookId: string
-): { clearedExtracts: number; deletedArchives: number; cancelledJobs: number; pendingJobs: number } {
+  logbookId: string,
+  storyId: string
+): { clearedExtracts: number; deletedSegments: number; cancelledJobs: number; pendingJobs: number } {
   const cancelResult = db
     .prepare(
       `UPDATE jobs SET status = 'cancelled', finished_at = ?, error = COALESCE(error, 'reset by reset-memory-queue')
-       WHERE status IN ('pending', 'running') AND job_type IN ('compress', 'archive')`
+       WHERE status IN ('pending', 'running') AND job_type IN ('compress', 'story-to-date')`
     )
     .run(nowIso());
 
-  const archives = listArchivesForBook(db, logbookId);
-  for (const archive of archives) {
-    deleteArchive(db, archive.id);
+  const segments = listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true });
+  for (const segment of segments) {
+    deleteStoryToDateSegment(db, segment.id);
   }
 
   let clearedExtracts = 0;
@@ -43,11 +44,11 @@ function resetMemoryQueue(
     clearedExtracts++;
   }
 
-  const pendingJobs = enqueueMemoryPipeline(db, userId, logbookId);
+  const pendingJobs = enqueueMemoryPipeline(db, userId, logbookId, storyId);
 
   return {
     clearedExtracts,
-    deletedArchives: archives.length,
+    deletedSegments: segments.length,
     cancelledJobs: cancelResult.changes,
     pendingJobs,
   };
@@ -78,9 +79,9 @@ function main(): void {
 
   trackStoryDb(storyId, db);
 
-  const result = resetMemoryQueue(db, userId, logbook.id);
+  const result = resetMemoryQueue(db, userId, logbook.id, storyId);
   console.log(JSON.stringify({ storyId, logbookId: logbook.id, ...result }, null, 2));
-  console.log("\nMemory queue reset — archive jobs enqueued. Pipeline will regen summaries.");
+  console.log("\nMemory queue reset — story-to-date jobs enqueued. Pipeline will regen segments.");
 }
 
 main();

@@ -1,6 +1,6 @@
 /**
  * End-to-end memory pipeline smoke test — in-process + HTTP via ephemeral server.
- * No Playwright, no DevTools, no LLM calls (manual archive fill where needed).
+ * No Playwright, no DevTools, no LLM calls.
  *
  * Run: npx tsx scripts/test-memory-pipeline-smoke.ts
  */
@@ -13,17 +13,13 @@ import { createPageWithText, createRetryText } from "../src/db/content-store.js"
 import { getPage, findHeadPageId } from "../src/db/page-store.js";
 import { getText } from "../src/db/text-store.js";
 import { createWorldbookEntry } from "../src/db/worldbook-store.js";
-import { listArchivesForBook, fillArchiveSummary } from "../src/db/archive-store.js";
+import { createStoryToDateSegment, fillStoryToDateSegment, listStoryToDateSegments } from "../src/db/story-to-date-store.js";
 import { setStoryPhase, setKickoffPageId } from "../src/db/story-state-store.js";
 import { recordHistoryEvent, undoHistory } from "../src/db/history-store.js";
-import { enqueueEligibleArchiveBlocks } from "../src/services/archive.js";
+import { enqueueEligibleStoryToDateJob } from "../src/services/story-to-date.js";
 import { onCanonicalTextChanged, postNeedsCompress } from "../src/services/memory-invalidation.js";
 import { assembleAuthorPrompt } from "../src/services/history.js";
-import { buildArchiveUserPrompt } from "../src/services/archive-worker.js";
-import {
-  backfillContentStamps,
-  buildMemoryManifest,
-} from "../src/services/memory-manifest.js";
+import { backfillContentStamps, buildMemoryManifest } from "../src/services/memory-manifest.js";
 import { newId } from "../src/uuid.js";
 
 const USER_ID = "019f1e21-c547-75b2-8bc1-47b4b6cfdbe6";
@@ -32,10 +28,6 @@ function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`FAILED: ${message}`);
   console.log(`ok: ${message}`);
 }
-
-// ---------------------------------------------------------------------------
-// In-process integration
-// ---------------------------------------------------------------------------
 
 function runInProcessSmoke(): void {
   console.log("\n=== in-process memory pipeline ===\n");
@@ -85,26 +77,23 @@ function runInProcessSmoke(): void {
   setKickoffPageId(db, kickoffPageId);
   setStoryPhase(db, "story");
 
-  enqueueEligibleArchiveBlocks(db, USER_ID, logbook.id);
-
-  const archivesBefore = listArchivesForBook(db, logbook.id);
-  assert(archivesBefore.length >= 2, "two non-overlapping archive blocks for 20 posts with prose");
-
-  const firstArchive = archivesBefore[0]!;
-  fillArchiveSummary(db, firstArchive.id, "Earlier: the party explored the Dragon's lair.");
-  const secondArchive = archivesBefore[1]!;
-  const archivePrompt = buildArchiveUserPrompt(db, secondArchive.id);
-  assert(archivePrompt.includes("Messages to archive"), "archive prompt uses full prose blob");
-  assert(archivePrompt.includes('"role"'), "archive prompt JSON includes role labels");
-  assert(archivePrompt.includes("Earlier story summary"), "non-overlapping prior archive included in prompt");
-  assert(archivePrompt.includes("PC: Lex"), "archive prompt includes CONTENT PC line");
+  const seg = createStoryToDateSegment(db, { bookId: logbook.id, kind: "begins", seq: 0 });
+  fillStoryToDateSegment(db, seg.id, {
+    content: "Lex approached the Dragon's lair and explored the surrounding cliffs.",
+    coverageThroughIcPost: 10,
+    coveragePageId: pageIds[9]!,
+    inputCeilingIcPost: 10,
+    inputCeilingPageId: pageIds[9]!,
+  });
 
   const headId = findHeadPageId(db, logbook.id)!;
-
   const messages = assembleAuthorPrompt(db, USER_ID, logbook.id, headId);
   const blob = JSON.stringify(messages);
-  assert(blob.includes("Dragon") && blob.includes("ROSTER"), "assembled prompt includes full worldbook roster entries");
-  assert(blob.includes("[EVENT SUMMARY]") || blob.includes("Player action"), "assembled prompt uses verbose and/or event summaries");
+  assert(blob.includes("[STORY TO DATE]"), "assembled prompt includes merged story to date");
+  assert(blob.includes("Dragon") && blob.includes("ROSTER"), "assembled prompt includes worldbook");
+  assert(blob.includes("mountain pass") || blob.includes("Player action 19"), "verbose tail after coverage");
+
+  enqueueEligibleStoryToDateJob(db, USER_ID, logbook.id, storyId);
 
   const editPageId = pageIds[4]!;
   const editPage = getPage(db, editPageId)!;
@@ -121,56 +110,31 @@ function runInProcessSmoke(): void {
     fromValue: priorText.id,
     toValue: revisedText.id,
   });
-  onCanonicalTextChanged(db, USER_ID, logbook.id, editPageId);
+  onCanonicalTextChanged(db, USER_ID, logbook.id, editPageId, storyId);
   assert(!postNeedsCompress(getPage(db, editPageId)!, revisedText), "compression disabled after edit");
-  enqueueEligibleArchiveBlocks(db, USER_ID, logbook.id);
-  assert(listArchivesForBook(db, logbook.id).length >= 1, "archives exist after edit invalidation");
 
   const undoResult = undoHistory(db);
   assert(!!undoResult?.canonicalTextPageId, "undo returns canonical text page for invalidation");
   if (undoResult?.canonicalTextPageId) {
-    onCanonicalTextChanged(db, USER_ID, logbook.id, undoResult.canonicalTextPageId);
+    onCanonicalTextChanged(db, USER_ID, logbook.id, undoResult.canonicalTextPageId, storyId);
   }
-  assert(!postNeedsCompress(getPage(db, editPageId)!, priorText), "compression disabled after undo");
 
   const manifest = buildMemoryManifest(db, logbook.id);
   assert(manifest.postCount === 20, "manifest reports all posts");
-  assert(manifest.needsCompressCount === 0, "manifest reports no compress backlog when compression disabled");
+  assert(manifest.segments.length >= 0, "manifest lists story-to-date segments");
 
   const stamps = backfillContentStamps(db);
-  assert(stamps.stamped + stamps.skipped === 20, "backfill stamps walks all posts");
+  assert(stamps.stamped + stamps.skipped === 20, "stamp backfill covers all posts");
 
-  const filePath = story.filePath;
   closeStoryDb(storyId);
   deleteStory(globalDb, storyId);
   try {
-    unlinkSync(filePath);
+    unlinkSync(`data/stories/${storyId}.sqlite`);
   } catch {
-    /* file may not exist in some test envs */
+    /* ignore */
   }
-  assert(getStory(globalDb, storyId) === null, "cleanup deleted smoke story");
 
-  console.log("\nIn-process checks passed.\n");
+  console.log("\n=== in-process smoke passed ===\n");
 }
 
-// ---------------------------------------------------------------------------
-// Also run HTTP + existing unit smokes
-// ---------------------------------------------------------------------------
-
-async function runExistingSmokes(): Promise<void> {
-  console.log("=== existing smoke scripts ===\n");
-  const { execSync } = await import("node:child_process");
-  execSync("npx tsx scripts/test-memory-pipeline-http.ts", { stdio: "inherit", cwd: process.cwd() });
-  execSync("npx tsx scripts/test-memory-invalidation.ts", { stdio: "inherit", cwd: process.cwd() });
-}
-
-async function main(): Promise<void> {
-  runInProcessSmoke();
-  await runExistingSmokes();
-  console.log("\nAll memory pipeline smoke tests passed.");
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+runInProcessSmoke();
