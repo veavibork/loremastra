@@ -115,7 +115,7 @@ Prefer paraphrase over long dialogue quotes; if you include a short spoken fragm
 
 You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
 
-export const ARCHIVE_SYSTEM_PROMPT = `You compress a contiguous block of roleplay messages into one dense chronological scene memory note (about 60 tokens).
+export const ARCHIVE_SYSTEM_PROMPT = `You compress a contiguous block of roleplay messages into one dense chronological scene memory note (under 80 words).
 
 Each message is provided as full prose (role + text). Summarize from the prose — do not invent events not present in the text. Do not rely on or reference any prior compressed summaries; only the prose blob counts.
 

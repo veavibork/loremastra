@@ -110,6 +110,28 @@ function withinWordLimit(text: string, maxWords: number): boolean {
   return !!text && text.split(/\s+/).length <= maxWords;
 }
 
+function truncateToWordLimit(text: string, maxWords: number): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return text.trim();
+  return words.slice(0, maxWords).join(" ");
+}
+
+function countRunningArchiveJobsForUser(
+  globalDb: ReturnType<typeof getGlobalDb>,
+  userId: string
+): number {
+  let count = 0;
+  for (const [storyId, db] of trackedDbs) {
+    const story = getStory(globalDb, storyId);
+    if (!story || story.ownerUserId !== userId) continue;
+    const row = db
+      .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'archive' AND status = 'running'`)
+      .get() as { n: number };
+    count += row.n;
+  }
+  return count;
+}
+
 const TAG_GEN_MAX_ATTEMPTS = 2;
 const TAGS_PATTERN = /\[TAGS\]([\s\S]*?)\[\/TAGS\]/;
 
@@ -308,6 +330,15 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
 
       const job = claimNextJob(db, WORKER_JOB_TYPES);
       if (!job) continue;
+
+      // Editor archives cost the full account limit — only one in flight per user.
+      if (
+        job.jobType === "archive" &&
+        countRunningArchiveJobsForUser(globalDb, story.ownerUserId) > 1
+      ) {
+        unclaimJob(db, job.id);
+        continue;
+      }
 
       ensureConcurrencyFeedForUser(story.ownerUserId, getDecryptedFeatherlessKey(globalDb, story.ownerUserId) ?? "");
       if (!tryAcquireSlot(story.ownerUserId, job.id, job.slotCost)) {
@@ -1126,6 +1157,12 @@ async function executeArchiveJob(
             content:
               "Your prior reply did not include a [SUMMARY]...[/SUMMARY] block. Reply again with ONLY that block wrapping the scene summary.",
           });
+        } else if (attempt > 1 && lastError.includes("word limit")) {
+          attemptMessages.push({
+            role: "system",
+            content:
+              "Your prior [SUMMARY] was too long. Keep it under 80 words — causal throughline only, no filler or commentary.",
+          });
         }
         attemptMessages.push({ role: "user", content: userContent });
 
@@ -1150,8 +1187,10 @@ async function executeArchiveJob(
           lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
         } else if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {
           summary = candidate;
+        } else if (attempt < ARCHIVE_MAX_ATTEMPTS) {
+          lastError = `summary over word limit on attempt ${attempt}`;
         } else {
-          lastError = `invalid summary on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
+          summary = truncateToWordLimit(candidate, ARCHIVE_MAX_WORDS);
         }
       } catch (err) {
         lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;

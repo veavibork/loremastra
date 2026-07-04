@@ -80,7 +80,7 @@ function main(): void {
 
   const result = resetMemoryQueue(db, userId, logbook.id);
   console.log(JSON.stringify({ storyId, logbookId: logbook.id, ...result }, null, 2));
-  console.log("\nMemory queue reset — compress/archive jobs enqueued. Pipeline will regen summaries.");
+  console.log("\nMemory queue reset — archive jobs enqueued. Pipeline will regen summaries.");
 }
 
 main();
