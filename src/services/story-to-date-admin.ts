@@ -1,10 +1,8 @@
 import type Database from "better-sqlite3";
-import { cancelPendingJobsForStoryToDate } from "../db/job-store.js";
 import {
   deleteStoryToDateSegment,
   deleteStoryToDateSegmentsFromSeq,
   getStoryToDateSegment,
-  listStoryToDateSegments,
   setStoryToDateSegmentCoverage,
 } from "../db/story-to-date-store.js";
 import { resolvePageIdForIcPost } from "./story-to-date-corpus.js";
@@ -25,12 +23,8 @@ export function removeStoryToDateSegment(
   if (!segment || segment.bookId !== logbookId) throw new Error("segment not found");
 
   if (options.deleteLaterSegments) {
-    for (const seg of listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true })) {
-      if (seg.seq >= segment.seq) cancelPendingJobsForStoryToDate(db, seg.id);
-    }
     deleteStoryToDateSegmentsFromSeq(db, logbookId, segment.seq);
   } else {
-    cancelPendingJobsForStoryToDate(db, segmentId);
     deleteStoryToDateSegment(db, segmentId);
   }
 

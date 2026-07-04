@@ -151,12 +151,23 @@ export function markStoryToDateSegmentBroken(db: Database.Database, id: string):
   db.prepare(`UPDATE story_to_date_segment SET broken = 1 WHERE id = ?`).run(id);
 }
 
+/** Cancel in-flight jobs and detach completed rows so segment DELETE satisfies FK constraints. */
+export function prepareStoryToDateSegmentDelete(db: Database.Database, segmentId: string): void {
+  cancelPendingJobsForStoryToDateSegment(db, segmentId);
+  db.prepare(`UPDATE jobs SET target_story_to_date_id = NULL WHERE target_story_to_date_id = ?`).run(segmentId);
+}
+
 export function deleteStoryToDateSegment(db: Database.Database, id: string): void {
+  prepareStoryToDateSegmentDelete(db, id);
   db.prepare(`DELETE FROM story_to_date_segment WHERE id = ?`).run(id);
 }
 
 /** Drop segments at or after seq (for invalidation regen). */
 export function deleteStoryToDateSegmentsFromSeq(db: Database.Database, bookId: string, fromSeq: number): void {
+  const rows = db
+    .prepare(`SELECT id FROM story_to_date_segment WHERE book_id = ? AND seq >= ?`)
+    .all(bookId, fromSeq) as { id: string }[];
+  for (const row of rows) prepareStoryToDateSegmentDelete(db, row.id);
   db.prepare(`DELETE FROM story_to_date_segment WHERE book_id = ? AND seq >= ?`).run(bookId, fromSeq);
 }
 

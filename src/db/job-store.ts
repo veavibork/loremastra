@@ -181,9 +181,12 @@ export function hasActiveJobForStoryToDate(
 
 export function cancelPendingJobsForStoryToDate(db: Database.Database, targetStoryToDateId: string): void {
   db.prepare(
-    `UPDATE jobs SET status = 'cancelled', finished_at = ?, cancel_requested = 1
-     WHERE target_story_to_date_id = ? AND status = 'pending'`
-  ).run(nowIso(), targetStoryToDateId);
+    `UPDATE jobs SET status = 'cancelled', finished_at = ?, cancel_requested = 1, error = COALESCE(error, ?)
+     WHERE target_story_to_date_id = ? AND status IN ('pending', 'running')`
+  ).run(nowIso(), "segment removed", targetStoryToDateId);
+  db.prepare(`UPDATE jobs SET target_story_to_date_id = NULL WHERE target_story_to_date_id = ?`).run(
+    targetStoryToDateId
+  );
 }
 
 /** Most recent jobs regardless of status, for the Debug section's live queue view. */
