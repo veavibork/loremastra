@@ -31,7 +31,7 @@ import {
 } from "./worker-lanes.js";
 import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
 import { ensureConcurrencyFeedForUser } from "./concurrency-feed.js";
-import { publishToken, publishThinking, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
+import { publishToken, publishThinking, publishStreamReset, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
 import {
   streamInference,
   completeChat,
@@ -242,14 +242,20 @@ async function streamWithFallback(
 ): Promise<{ text: string; model: string }> {
   let reply = "";
   let usedModel = profile.model;
+  let isFirstStream = true;
   await withModelFallback(profile, async (candidate) => {
     usedModel = candidate.model;
     const candidateMessages = isReasoningModel(candidate.model)
       ? [...messages, { role: "assistant" as const, content: "<think>\n" }]
       : messages;
-    const splitter = new ReasoningStreamSplitter({ startsInThinking: false });
 
     for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
+      if (!isFirstStream) {
+        publishStreamReset(jobId, { thinking: true, text: true }, `Retrying… (attempt ${attempt})`);
+      }
+      isFirstStream = false;
+
+      const splitter = new ReasoningStreamSplitter({ startsInThinking: false });
       reply = "";
       let sawReasoning = false;
       const emitThinking = (text: string) => {

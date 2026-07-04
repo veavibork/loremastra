@@ -747,7 +747,7 @@ storiesRoute.get("/:id/jobs/:jobId/stream", (c) => {
 
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribeJob(jobId, (event) => {
-        if (event.type === "token" || event.type === "thinking" || event.type === "progress" || event.type === "meta") {
+        if (event.type === "token" || event.type === "thinking" || event.type === "progress" || event.type === "meta" || event.type === "reset") {
           void sse.writeSSE({ data: JSON.stringify(event) });
           return;
         }

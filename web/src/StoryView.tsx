@@ -473,7 +473,9 @@ export default function StoryView({
       if (event.type === "token") {
         setPendingReplies((prev) => {
           const cur = prev[pageId];
-          return cur ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text, waitPhase: "generating" } } : prev;
+          return cur
+            ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text, waitPhase: "generating", progress: undefined } }
+            : prev;
         });
       } else if (event.type === "thinking") {
         setPendingReplies((prev) => {
@@ -485,6 +487,7 @@ export default function StoryView({
                   ...cur,
                   thinking: (cur.thinking ?? "") + event.text,
                   waitPhase: cur.text.trim() ? "generating" : "reasoning",
+                  progress: undefined,
                 },
               }
             : prev;
@@ -505,6 +508,20 @@ export default function StoryView({
               waitPhase,
             },
           };
+        });
+      } else if (event.type === "reset") {
+        setPendingReplies((prev) => {
+          const cur = prev[pageId];
+          if (!cur) return prev;
+          const next: PendingReply = { ...cur };
+          if (event.thinking) {
+            next.thinking = undefined;
+            next.waitPhase = next.text.trim() ? "generating" : "prefill";
+          }
+          if (event.text) next.text = "";
+          if (event.label) next.progress = event.label;
+          else if (event.thinking || event.text) next.progress = undefined;
+          return { ...prev, [pageId]: next };
         });
       } else if (event.type === "progress") {
         setPendingReplies((prev) => {

@@ -36,6 +36,26 @@ export function publishThinking(jobId: string, text: string): void {
   emitter.emit(jobId, { type: "thinking", text });
 }
 
+/** Clears accumulated stream snapshot before an internal retry or fallback model switch. */
+export function publishStreamReset(
+  jobId: string,
+  parts: { thinking?: boolean; text?: boolean },
+  label?: string
+): void {
+  const buf = buffers.get(jobId) ?? { text: "" };
+  if (parts.thinking) buf.thinking = undefined;
+  if (parts.text) buf.text = "";
+  if (label) buf.progress = label;
+  else if (parts.thinking || parts.text) buf.progress = undefined;
+  buffers.set(jobId, buf);
+  emitter.emit(jobId, {
+    type: "reset",
+    thinking: !!parts.thinking,
+    text: !!parts.text,
+    label,
+  });
+}
+
 /** For non-streaming jobs (e.g. the Editor's tool-calling setup turn) that have no tokens to emit but do have real intermediate steps worth narrating instead of a dead "…". */
 export function publishProgress(jobId: string, label: string): void {
   const buf = buffers.get(jobId) ?? { text: "" };
@@ -76,6 +96,7 @@ export type JobEvent =
   | { type: "thinking"; text: string }
   | { type: "progress"; label: string }
   | { type: "meta"; inputTokenEstimate: number }
+  | { type: "reset"; thinking: boolean; text: boolean; label?: string }
   | { type: "sync"; text: string; thinking?: string; progress?: string; inputTokenEstimate?: number }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string }

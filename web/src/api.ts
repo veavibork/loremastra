@@ -840,6 +840,7 @@ export type JobStreamEvent =
   | { type: "thinking"; text: string }
   | { type: "progress"; label: string }
   | { type: "meta"; inputTokenEstimate: number }
+  | { type: "reset"; thinking: boolean; text: boolean; label?: string }
   | { type: "sync"; text: string; thinking?: string; progress?: string; inputTokenEstimate?: number }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string }
