@@ -63,6 +63,8 @@ export const INPUT_BAR_BUTTON_LABELS: Record<string, string> = {
   "toggle.param": "Param",
   "toggle.model": "Model",
   "toggle.effort": "Effort",
+  "toggle.reasoning.show": "Trace",
+  "toggle.reasoning.expand": "Trace open",
 };
 
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
@@ -135,6 +137,8 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
           { id: "toggle.param", label: "Param", visible: true },
           { id: "toggle.model", label: "Model", visible: true },
           { id: "toggle.effort", label: "Effort", visible: true },
+          { id: "toggle.reasoning.show", label: "Trace", visible: true },
+          { id: "toggle.reasoning.expand", label: "Trace open", visible: true },
         ],
       },
       {
@@ -166,6 +170,33 @@ function normalizeButton(btn: LayoutButton): LayoutButton {
 
 function normalizeButtons(buttons: LayoutButton[]): LayoutButton[] {
   return stripRemovedButtons(buttons).map(normalizeButton);
+}
+
+function mergeInputBarButtons(config: LayoutConfigData): LayoutConfigData {
+  const existingIds = new Set(
+    config.inputBar.containers.flatMap((c) => c.buttons.map((b) => b.id))
+  );
+  const missing: LayoutButton[] = [];
+  for (const container of DEFAULT_LAYOUT_CONFIG.inputBar.containers) {
+    for (const btn of container.buttons) {
+      if (!existingIds.has(btn.id)) {
+        missing.push(btn);
+        existingIds.add(btn.id);
+      }
+    }
+  }
+  if (missing.length === 0) return config;
+
+  const toggles = config.inputBar.containers.find((c) => c.id === "input-toggles") ?? config.inputBar.containers[0];
+  if (!toggles) return config;
+  return {
+    ...config,
+    inputBar: {
+      containers: config.inputBar.containers.map((c) =>
+        c.id === toggles.id ? { ...c, buttons: [...c.buttons, ...missing] } : c
+      ),
+    },
+  };
 }
 
 function mergeNavButtons(config: LayoutConfigData): LayoutConfigData {
@@ -228,7 +259,7 @@ export function normalizeLayoutConfig(raw: unknown): LayoutConfigData {
   const obj = raw as Record<string, unknown>;
   if (obj.version === 2 && obj.nav && obj.inputBar) {
     const config = obj as unknown as LayoutConfigData;
-    return mergeNavButtons({
+    return mergeInputBarButtons(mergeNavButtons({
       version: 2,
       nav: {
         containers: config.nav.containers
@@ -244,7 +275,7 @@ export function normalizeLayoutConfig(raw: unknown): LayoutConfigData {
           buttons: normalizeButtons(c.buttons ?? []),
         })),
       },
-    });
+    }));
   }
 
   const v1 = obj as unknown as LayoutConfigV1;

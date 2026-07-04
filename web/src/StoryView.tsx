@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   cancelJob,
   continuePost,
@@ -25,6 +25,12 @@ import { toast } from "./toast";
 import ButtonContainerRow from "./ButtonContainerRow";
 import { DEFAULT_INPUT_BAR } from "./layoutUtils";
 import { useStoryToggles } from "./storyToggles";
+import {
+  loadAllReasoningTraces,
+  ReasoningTracePanel,
+  saveReasoningTrace,
+  useReasoningDisplayPrefs,
+} from "./reasoningDisplay";
 import type { LayoutRegion } from "./api";
 import "./StoryView.css";
 
@@ -345,6 +351,13 @@ export default function StoryView({
   inputBar?: LayoutRegion;
 }) {
   const toggles = useStoryToggles(storyId);
+  const reasoningPrefs = useReasoningDisplayPrefs();
+  const { showReasoning, reasoningExpanded, toggleShowReasoning, toggleReasoningExpanded } = reasoningPrefs;
+  const [traceCacheVersion, setTraceCacheVersion] = useState(0);
+  const reasoningTraces = useMemo(
+    () => (showReasoning ? loadAllReasoningTraces(storyId) : {}),
+    [storyId, showReasoning, traceCacheVersion]
+  );
   const toolbarContainers = inputBar?.containers?.length ? inputBar.containers : DEFAULT_INPUT_BAR.containers;
   const [mode, setMode] = useState<"guide" | "play">(
     () => loadPersistedMode(storyId) ?? (phase === "setup" ? "guide" : "play")
@@ -556,9 +569,12 @@ export default function StoryView({
         });
       } else if (event.type === "done") {
         setPendingReplies((prev) => {
+          const cur = prev[pageId];
+          if (cur?.thinking?.trim()) saveReasoningTrace(storyId, pageId, cur.thinking);
           const { [pageId]: _done, ...rest } = prev;
           return rest;
         });
+        setTraceCacheVersion((v) => v + 1);
         setHiddenPending((prev) => {
           if (!prev.has(pageId)) return prev;
           const next = new Set(prev);
@@ -833,7 +849,10 @@ export default function StoryView({
   return (
     <div className="story-view">
       <div className="log" ref={logRef} onClick={handleLogClick}>
-        {shown.map((entry) => (
+        {shown.map((entry) => {
+          const cachedTrace =
+            entry.role === "agent" ? reasoningTraces[entry.pageId]?.trim() : undefined;
+          return (
           <div key={entry.pageId} data-page-id={entry.pageId} className={`entry entry-${entry.role}`}>
             <RoleLabel role={entry.role} mode={mode} />
             {entry.pageId === editingPageId ? (
@@ -855,10 +874,16 @@ export default function StoryView({
                 />
               </>
             ) : (
-              <EntryContent content={entry.content ?? "…"} highlightBlocks={mode === "guide"} />
+              <>
+                {cachedTrace ? (
+                  <ReasoningTracePanel thinking={cachedTrace} expanded={reasoningExpanded} />
+                ) : null}
+                <EntryContent content={entry.content ?? "…"} highlightBlocks={mode === "guide"} />
+              </>
             )}
           </div>
-        ))}
+          );
+        })}
         {pendingEntries.map((entry) => {
           const pending = pendingReplies[entry.pageId];
           return (
@@ -867,18 +892,12 @@ export default function StoryView({
               {!pending?.text?.trim() ? (
                 <p className="pending-thinking">{pending ? pendingStatusLabel(pending) : "Thinking…"}</p>
               ) : null}
-              {pending?.thinking?.trim() ? (
-                <details className="pending-reasoning" open={!pending.text?.trim()}>
-                  <summary>Reasoning trace</summary>
-                  <pre
-                    className="pending-reasoning-body"
-                    ref={(el) => {
-                      if (el && !pending.text?.trim()) el.scrollTop = el.scrollHeight;
-                    }}
-                  >
-                    {pending.thinking}
-                  </pre>
-                </details>
+              {showReasoning && pending?.thinking?.trim() ? (
+                <ReasoningTracePanel
+                  thinking={pending.thinking}
+                  expanded={reasoningExpanded}
+                  autoScroll={!pending.text?.trim()}
+                />
               ) : null}
               {pending?.text?.trim() ? (
                 <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
@@ -936,6 +955,8 @@ export default function StoryView({
               if (id === "toggle.param") return `Param: ${toggles.labels.param}`;
               if (id === "toggle.model") return `Model: ${toggles.labels.model}`;
               if (id === "toggle.effort") return `Effort: ${toggles.labels.effort}`;
+              if (id === "toggle.reasoning.show") return showReasoning ? "Trace: On" : "Trace: Off";
+              if (id === "toggle.reasoning.expand") return reasoningExpanded ? "Trace: Open" : "Trace: Closed";
               return fallback ?? id;
             }}
             getButtonProps={(id) => {
@@ -987,6 +1008,12 @@ export default function StoryView({
               }
               if (id === "toggle.effort") {
                 return { onClick: toggles.cycleEffort, disabled: busy || mode !== "play" };
+              }
+              if (id === "toggle.reasoning.show") {
+                return { onClick: toggleShowReasoning, disabled: mode !== "play" };
+              }
+              if (id === "toggle.reasoning.expand") {
+                return { onClick: toggleReasoningExpanded, disabled: mode !== "play" || !showReasoning };
               }
               return null;
             }}

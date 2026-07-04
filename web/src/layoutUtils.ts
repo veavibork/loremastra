@@ -28,6 +28,8 @@ export const DEFAULT_INPUT_BAR: LayoutRegion = {
         { id: "toggle.param", label: "Param", visible: true },
         { id: "toggle.model", label: "Model", visible: true },
         { id: "toggle.effort", label: "Effort", visible: true },
+        { id: "toggle.reasoning.show", label: "Trace", visible: true },
+        { id: "toggle.reasoning.expand", label: "Trace open", visible: true },
       ],
     },
     {
