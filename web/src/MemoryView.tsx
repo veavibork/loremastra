@@ -30,10 +30,9 @@ export default function MemoryView({ story }: PanelProps) {
     <div className="memory-view">
       <h2>Memory</h2>
       <p className="memory-note">
-        Simulates which tags are "active" on the triggering post, independent of what actually happened in
-        the story — click a tag to see how the prompt assembler reacts to its presence. With nothing
-        selected, this is the zero-keyword-match baseline: just the always-included Setting/Register/PC and
-        recent history, no tag-triggered worldbook entries or promoted lines.
+        Read-only preview of the assembled Author prompt at the current position. Full worldbook entries
+        are always included; recent posts appear as verbose prose; older history appears as [EVENT SUMMARY]
+        archive blocks when over budget. Tag toggles below are legacy — they no longer change assembly.
       </p>
       <div className="memory-tag-row">
         {tags.length === 0 && <span className="memory-note">No tags yet.</span>}

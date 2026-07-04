@@ -61,7 +61,7 @@ export default function ArchivesView({ story }: PanelProps) {
           Show hidden
         </label>
       </div>
-      {stats.total === 0 && <p className="archives-empty">No archive blocks yet — need 10 compressed posts per window.</p>}
+      {stats.total === 0 && <p className="archives-empty">No archive blocks yet — need 10 posts per window.</p>}
       {stats.total > 0 && (
         <p className="archives-count">
           {stats.withSummary} of {stats.total} blocks summarized

@@ -1,4 +1,4 @@
-/** Enqueue compress + archive for all eligible posts: npx tsx scripts/enqueue-memory-jobs.ts <storyId> [userId] */
+/** Enqueue archive jobs for eligible blocks: npx tsx scripts/enqueue-memory-jobs.ts <storyId> [userId] */
 import { getBookByType } from "../src/db/book-store.js";
 import { getStoryDb } from "../src/db/story-db.js";
 import { listPendingJobs } from "../src/db/job-store.js";

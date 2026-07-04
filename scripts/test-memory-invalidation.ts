@@ -6,15 +6,12 @@ import { getStoryDb } from "../src/db/story-db.js";
 import { createBook } from "../src/db/book-store.js";
 import { createPageWithText, createRetryText } from "../src/db/content-store.js";
 import { getPage } from "../src/db/page-store.js";
-import { fillTextExtract, getText } from "../src/db/text-store.js";
+import { getText } from "../src/db/text-store.js";
 import { listArchivesForBook } from "../src/db/archive-store.js";
 import { listPendingJobs } from "../src/db/job-store.js";
-import { finishJob } from "../src/db/job-store.js";
 import { enqueueEligibleArchiveBlocks } from "../src/services/archive.js";
-import { enqueueEligibleCompressJobs } from "../src/services/compression.js";
 import {
   computeTextContentStamp,
-  markCompressValid,
   onCanonicalTextChanged,
   postNeedsCompress,
 } from "../src/services/memory-invalidation.js";
@@ -33,7 +30,7 @@ const logbook = createBook(db, { bookType: "logbook" });
 let prevId: string | null = null;
 const pageIds: string[] = [];
 for (let i = 0; i < 10; i++) {
-  const { page, text } = createPageWithText(db, {
+  const { page } = createPageWithText(db, {
     bookId: logbook.id,
     prevPageId: prevId,
     role: i % 2 === 0 ? "user" : "agent",
@@ -41,17 +38,13 @@ for (let i = 0; i < 10; i++) {
   });
   prevId = page.id;
   pageIds.push(page.id);
-  if (i < 8) {
-    fillTextExtract(db, text.id, `Compressed summary for post ${i}.`);
-    markCompressValid(db, page.id, text.id);
-  }
 }
 
 const oldPageId = pageIds[2]!;
 const oldPage = getPage(db, oldPageId)!;
 const oldText = getText(db, oldPage.selectedTextId!)!;
 
-assert(!postNeedsCompress(oldPage, oldText), "pre-edit compress is valid");
+assert(!postNeedsCompress(oldPage, oldText), "compression disabled — postNeedsCompress is always false");
 
 const edited = createRetryText(db, {
   pageId: oldPageId,
@@ -63,32 +56,16 @@ onCanonicalTextChanged(db, USER_ID, logbook.id, oldPageId);
 
 const editedPage = getPage(db, oldPageId)!;
 const editedText = getText(db, edited.id)!;
-assert(postNeedsCompress(editedPage, editedText), "post-edit marks compress stale");
-const compressJobs = listPendingJobs(db).filter((j) => j.jobType === "compress" && j.targetTextId === edited.id);
-assert(compressJobs.length >= 1, "compress job queued for edited post");
-
-enqueueEligibleCompressJobs(db, USER_ID, logbook.id);
+assert(!postNeedsCompress(editedPage, editedText), "compression disabled after edit");
 assert(
-  listPendingJobs(db).some((j) => j.jobType === "compress" && j.targetTextId === edited.id),
-  "enqueue walk still targets deep stale post"
+  listPendingJobs(db).every((j) => j.jobType !== "compress"),
+  "no compress jobs queued on edit"
 );
+assert(editedPage.memoryContentStamp !== null, "edit updates content stamp");
 
-finishJob(db, compressJobs[0]!.id, "done");
-fillTextExtract(db, edited.id, "Revised post 2 summary.");
-markCompressValid(db, oldPageId, edited.id);
-assert(!postNeedsCompress(getPage(db, oldPageId)!, getText(db, edited.id)!), "after recompress stamp valid");
-
-for (let i = 8; i < 10; i++) {
-  const p = getPage(db, pageIds[i]!)!;
-  const t = getText(db, p.selectedTextId!)!;
-  if (postNeedsCompress(p, t)) {
-    fillTextExtract(db, t.id, `Compressed summary for post ${i}.`);
-    markCompressValid(db, p.id, t.id);
-  }
-}
 enqueueEligibleArchiveBlocks(db, USER_ID, logbook.id);
 const archivesBefore = listArchivesForBook(db, logbook.id).length;
-assert(archivesBefore >= 1, "archive block exists for 10 compressed posts");
+assert(archivesBefore >= 1, "archive block exists for 10 posts with prose");
 
 createRetryText(db, {
   pageId: pageIds[4]!,
@@ -107,28 +84,21 @@ const stamp1 = computeTextContentStamp(getText(db, edited.id)!);
 const stamp2 = computeTextContentStamp(getText(db, edited.id)!);
 assert(stamp1 === stamp2 && stamp1 !== null, "content stamp is deterministic");
 
-// Gap enqueue: compressed band near head must not block deeper stale posts.
-const gapDb = getStoryDb(`smoke-compress-gap-${newId()}`);
+// Archive enqueue reaches full log without compress preconditions.
+const gapDb = getStoryDb(`smoke-archive-gap-${newId()}`);
 const gapLog = createBook(gapDb, { bookType: "logbook" });
 let gapPrev: string | null = null;
-const gapPageIds: string[] = [];
 for (let i = 0; i < 12; i++) {
-  const { page, text } = createPageWithText(gapDb, {
+  const { page } = createPageWithText(gapDb, {
     bookId: gapLog.id,
     prevPageId: gapPrev,
     role: i % 2 === 0 ? "user" : "agent",
     genPackage: `Gap post ${i}.`,
   });
   gapPrev = page.id;
-  gapPageIds.push(page.id);
-  if (i >= 5) {
-    fillTextExtract(gapDb, text.id, `Summary ${i}.`);
-    markCompressValid(gapDb, page.id, text.id);
-  }
 }
-gapDb.prepare(`DELETE FROM jobs WHERE job_type = 'compress'`).run();
-enqueueEligibleCompressJobs(gapDb, USER_ID, gapLog.id);
-const gapQueued = listPendingJobs(gapDb).filter((j) => j.jobType === "compress");
-assert(gapQueued.length >= 5, "enqueue reaches stale posts past a valid compress band near head");
+enqueueEligibleArchiveBlocks(gapDb, USER_ID, gapLog.id);
+const gapArchives = listArchivesForBook(gapDb, gapLog.id);
+assert(gapArchives.length >= 1, "archive blocks enqueue from prose-only log");
 
 console.log("\nAll memory-invalidation smoke checks passed.");

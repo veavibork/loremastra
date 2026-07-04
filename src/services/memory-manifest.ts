@@ -10,8 +10,7 @@ import { getStoryState } from "../db/story-state-store.js";
 import { computeTextContentStamp, postNeedsCompress } from "./content-stamp.js";
 import { reindexTagAcrossBook, indexTextAgainstAllTags } from "./tag-index.js";
 import { activateTagsFromQuery, buildTagQueryText } from "./tag-retrieval.js";
-import { enqueueEligibleCompressJobs } from "./compression.js";
-import { enqueueEligibleArchiveBlocks } from "./archive.js";
+import { enqueueEligibleArchiveBlocks, enqueuePendingArchiveJobs } from "./archive.js";
 import { listPendingJobs } from "../db/job-store.js";
 
 /** Adopt content stamps for all canonical posts (idempotent). */
@@ -53,9 +52,9 @@ export function reindexAllMemoryTags(db: Database.Database, logbookId: string): 
 
 /** Queue compress + archive jobs for anything currently eligible. */
 export function enqueueMemoryPipeline(db: Database.Database, userId: string, logbookId: string): number {
-  enqueueEligibleCompressJobs(db, userId, logbookId);
   enqueueEligibleArchiveBlocks(db, userId, logbookId);
-  return listPendingJobs(db).filter((j) => j.jobType === "compress" || j.jobType === "archive").length;
+  enqueuePendingArchiveJobs(db, userId, logbookId);
+  return listPendingJobs(db).filter((j) => j.jobType === "archive").length;
 }
 
 export interface MemorySummary {

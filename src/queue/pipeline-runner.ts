@@ -47,8 +47,8 @@ import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-sto
 import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
-import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
-import { enqueueEligibleCompressJobs } from "../services/compression.js";
+import { enqueueEligibleArchiveBlocks, enqueuePendingArchiveJobs } from "../services/archive.js";
+import { cancelPendingCompressJobs } from "../services/compression.js";
 import { buildArchiveUserPrompt, finalizeArchiveSummary } from "../services/archive-worker.js";
 import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
 import { markCompressValid } from "../services/memory-invalidation.js";
@@ -77,7 +77,7 @@ import {
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const WORKER_JOB_TYPES: JobType[] = ["compress", "archive", "tag-gen", "story-name"];
+const WORKER_JOB_TYPES: JobType[] = ["archive", "tag-gen", "story-name"];
 const PROSE_JOB_TYPES: JobType[] = ["prose", "setup", "setup-worldbook"];
 
 /**
@@ -269,6 +269,10 @@ function scanOnce(): void {
     }
   }
 
+  for (const [, db] of trackedDbs) {
+    cancelPendingCompressJobs(db);
+  }
+
   dispatchWorkerJobs(globalDb);
 
   for (const [storyId, db] of trackedDbs) {
@@ -312,9 +316,7 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       }
 
       dispatched = true;
-      if (job.jobType === "compress" && job.targetTextId) {
-        void executeCompressJob(db, story.ownerUserId, job.id, job.targetTextId);
-      } else if (job.jobType === "archive" && job.targetArchiveId) {
+      if (job.jobType === "archive" && job.targetArchiveId) {
         void executeArchiveJob(db, story.ownerUserId, job.id, job.targetArchiveId);
       } else if (job.jobType === "tag-gen" && job.targetTextId) {
         void executeTagGenJob(db, story.ownerUserId, job.id, job.targetTextId);
@@ -902,7 +904,6 @@ async function executeCompressJob(
     if (targetPage) {
       markCompressValid(db, targetPage.id, targetTextId);
       indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
-      enqueueEligibleCompressJobs(db, userId, targetPage.bookId);
       enqueueEligibleArchiveBlocks(db, userId, targetPage.bookId);
     }
     finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate });
@@ -1094,6 +1095,7 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
 
 /**
  * Archive blocks use full member prose (KAI-style), not compressed lines — see archive-worker.ts.
+ * Runs on the Editor agent for quality; still dispatched via the worker lane.
  */
 async function executeArchiveJob(
   db: Database.Database,
@@ -1101,9 +1103,11 @@ async function executeArchiveJob(
   jobId: string,
   targetArchiveId: string
 ): Promise<void> {
+  let logbookId: string | null = null;
   try {
     const archive = getArchive(db, targetArchiveId);
     if (!archive) throw new Error("target archive no longer exists");
+    logbookId = archive.bookId;
 
     const userContent = buildArchiveUserPrompt(db, targetArchiveId);
 
@@ -1112,16 +1116,36 @@ async function executeArchiveJob(
     let lastError = "unknown error";
 
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    const editorProfile = getAgentProfile(userId, "editor");
     for (let attempt = 1; attempt <= ARCHIVE_MAX_ATTEMPTS && !summary; attempt++) {
       try {
-        const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
+        const attemptMessages: ChatMessage[] = [{ role: "system", content: ARCHIVE_SYSTEM_PROMPT }];
+        if (attempt > 1 && lastError.includes("missing [SUMMARY]")) {
+          attemptMessages.push({
+            role: "system",
+            content:
+              "Your prior reply did not include a [SUMMARY]...[/SUMMARY] block. Reply again with ONLY that block wrapping the scene summary.",
+          });
+        }
+        attemptMessages.push({ role: "user", content: userContent });
+
+        const rawText = await withModelFallback(editorProfile, (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, featherlessKey, [
-            { role: "system", content: ARCHIVE_SYSTEM_PROMPT },
-            { role: "user", content: userContent },
-          ]);
+          return completeChat(profile, featherlessKey, attemptMessages);
         });
-        const candidate = extractSummary(rawText) ?? "";
+
+        let candidate = extractSummary(rawText);
+        if (!candidate?.trim()) {
+          const stripped = rawText.trim();
+          if (stripped && withinWordLimit(stripped, ARCHIVE_MAX_WORDS) && !stripped.includes("[/SUMMARY]")) {
+            candidate = stripped;
+          }
+        }
+        if (!candidate?.trim()) {
+          lastError = `missing [SUMMARY] block on attempt ${attempt}`;
+          continue;
+        }
+
         if (matchesRefusalPrefix(userId, candidate)) {
           lastError = `model refused on attempt ${attempt}: "${candidate.slice(0, 80)}"`;
         } else if (withinWordLimit(candidate, ARCHIVE_MAX_WORDS)) {
@@ -1142,6 +1166,9 @@ async function executeArchiveJob(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
+    if (logbookId && /429|timeout|ECONNRESET|fetch failed/i.test(message)) {
+      enqueuePendingArchiveJobs(db, userId, logbookId);
+    }
   } finally {
     releaseSlot(userId, jobId);
     releaseWorkerLane();

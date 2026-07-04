@@ -3,13 +3,9 @@ import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { deleteArchive, listArchivesForBook, syncArchiveMembersForPage } from "../db/archive-store.js";
 import {
   cancelPendingJobsForArchive,
-  cancelPendingJobsForText,
-  createJob,
-  hasActiveJobForText,
 } from "../db/job-store.js";
 import { getPage, listChronologicalPages, setMemoryContentStamp } from "../db/page-store.js";
 import { getText, setTextBroken } from "../db/text-store.js";
-import { getAgentProfile } from "./agent-config.js";
 import { computeTextContentStamp } from "./content-stamp.js";
 import { enqueueEligibleArchiveBlocks } from "./archive.js";
 import { indexTextAgainstAllTags } from "./tag-index.js";
@@ -27,7 +23,7 @@ export function markCompressValid(db: Database.Database, pageId: string, textId:
 
 /**
  * Deletes archive blocks that are off the active page chain or overlap a changed page,
- * then lets enqueueEligibleArchiveBlocks recreate them once compress preconditions hold.
+ * then lets enqueueEligibleArchiveBlocks recreate them once prose preconditions hold.
  */
 export function invalidateArchivesForPage(
   db: Database.Database,
@@ -61,7 +57,7 @@ export function invalidateArchivesForPage(
 
 /**
  * After edit, retry, or undo/redo changes which text is canonical on a page: sync archive
- * membership, drop stale archive blocks, and queue compress when the stamp no longer matches.
+ * membership, drop stale archive blocks, re-index tags, and queue archive jobs.
  */
 export function onCanonicalTextChanged(
   db: Database.Database,
@@ -77,30 +73,13 @@ export function onCanonicalTextChanged(
   syncArchiveMembersForPage(db, pageId, text.id);
   invalidateArchivesForPage(db, userId, logbookId, pageId);
 
-  const stamp = computeTextContentStamp(text);
   const tagScopeBookId = getTagScopeBookId(db, logbookId);
   indexTextAgainstAllTags(db, tagScopeBookId, text.id);
 
-  if (stamp && text.genExtract !== null && !text.broken && page.memoryContentStamp === stamp) {
-    return;
-  }
-
-  // Undo/redo restored a text version that still has a valid extract for this content.
-  if (stamp && text.genExtract !== null && !text.broken && page.memoryContentStamp === null) {
+  const stamp = computeTextContentStamp(text);
+  if (stamp) {
     setMemoryContentStamp(db, pageId, stamp);
-    enqueueEligibleArchiveBlocks(db, userId, logbookId);
-    return;
-  }
-
-  setMemoryContentStamp(db, pageId, null);
-  cancelPendingJobsForText(db, text.id);
-  if (!hasActiveJobForText(db, text.id, "compress")) {
-    createJob(db, {
-      targetTextId: text.id,
-      jobType: "compress",
-      slotCost: getAgentProfile(userId, "worker").concurrencyCost,
-      priority: 8,
-    });
+    setTextBroken(db, text.id, false);
   }
 }
 

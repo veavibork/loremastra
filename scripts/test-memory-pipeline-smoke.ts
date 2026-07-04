@@ -1,6 +1,6 @@
 /**
  * End-to-end memory pipeline smoke test — in-process + HTTP via ephemeral server.
- * No Playwright, no DevTools, no LLM calls (trivial compress + manual extract fill).
+ * No Playwright, no DevTools, no LLM calls (manual archive fill where needed).
  *
  * Run: npx tsx scripts/test-memory-pipeline-smoke.ts
  */
@@ -11,30 +11,23 @@ import { createStory, deleteStory, getStory } from "../src/db/story-store.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../src/db/book-store.js";
 import { createPageWithText, createRetryText } from "../src/db/content-store.js";
 import { getPage, listChronologicalPages, findHeadPageId } from "../src/db/page-store.js";
-import { fillTextExtract, getText } from "../src/db/text-store.js";
+import { getText } from "../src/db/text-store.js";
 import { createTag } from "../src/db/tag-store.js";
 import { createWorldbookEntry } from "../src/db/worldbook-store.js";
 import { listArchivesForBook, fillArchiveSummary } from "../src/db/archive-store.js";
 import { setStoryPhase, setKickoffPageId } from "../src/db/story-state-store.js";
 import { recordHistoryEvent, undoHistory } from "../src/db/history-store.js";
-import { enqueueEligibleCompressJobs } from "../src/services/compression.js";
 import { enqueueEligibleArchiveBlocks } from "../src/services/archive.js";
-import {
-  markCompressValid,
-  onCanonicalTextChanged,
-  postNeedsCompress,
-} from "../src/services/memory-invalidation.js";
+import { onCanonicalTextChanged, postNeedsCompress } from "../src/services/memory-invalidation.js";
 import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../src/services/tag-index.js";
 import { assembleAuthorPrompt } from "../src/services/history.js";
 import { activateTagsFromQuery, buildTagQueryText } from "../src/services/tag-retrieval.js";
 import { buildArchiveUserPrompt } from "../src/services/archive-worker.js";
-import { buildCompressUserPrompt } from "../src/services/compress-worker.js";
 import {
   backfillContentStamps,
   buildMemoryManifest,
   reindexAllMemoryTags,
 } from "../src/services/memory-manifest.js";
-import { tryTrivialCompress } from "../src/services/compress-worker.js";
 import { newId } from "../src/uuid.js";
 
 const USER_ID = "019f1e21-c547-75b2-8bc1-47b4b6cfdbe6";
@@ -42,13 +35,6 @@ const USER_ID = "019f1e21-c547-75b2-8bc1-47b4b6cfdbe6";
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`FAILED: ${message}`);
   console.log(`ok: ${message}`);
-}
-
-function compressPage(db: ReturnType<typeof getStoryDb>, pageId: string, textId: string, summary: string): void {
-  fillTextExtract(db, textId, summary);
-  markCompressValid(db, pageId, textId);
-  const page = getPage(db, pageId)!;
-  indexTextAgainstAllTags(db, getTagScopeBookId(db, page.bookId), textId);
 }
 
 // ---------------------------------------------------------------------------
@@ -102,21 +88,16 @@ function runInProcessSmoke(): void {
     prevId = page.id;
     pageIds.push(page.id);
     indexTextAgainstAllTags(db, gameBook.id, text.id);
-
-    const trivial = tryTrivialCompress(content);
-    const summary = trivial?.summary ?? `Compressed: ${content.slice(0, 80)}`;
-    compressPage(db, page.id, text.id, summary);
   }
 
   const kickoffPageId = pageIds[0]!;
   setKickoffPageId(db, kickoffPageId);
   setStoryPhase(db, "story");
 
-  enqueueEligibleCompressJobs(db, USER_ID, logbook.id);
   enqueueEligibleArchiveBlocks(db, USER_ID, logbook.id);
 
   const archivesBefore = listArchivesForBook(db, logbook.id);
-  assert(archivesBefore.length >= 3, "three overlapping archive blocks for 20 compressed posts");
+  assert(archivesBefore.length >= 3, "three overlapping archive blocks for 20 posts with prose");
 
   const firstArchive = archivesBefore[0]!;
   fillArchiveSummary(db, firstArchive.id, "Earlier: the party explored the Dragon's lair.");
@@ -127,13 +108,6 @@ function runInProcessSmoke(): void {
   assert(archivePrompt.includes("Earlier story summary"), "non-overlapping prior archive included in prompt");
   assert(archivePrompt.includes("PC: Lex"), "archive prompt includes CONTENT PC line");
 
-  const samplePage = getPage(db, pageIds[10]!)!;
-  const sampleText = getText(db, samplePage.selectedTextId!)!;
-  const compressPrompt = buildCompressUserPrompt(db, sampleText, samplePage);
-  assert(compressPrompt.includes("PC: Lex"), "compress prompt includes CONTENT PC line");
-  assert(compressPrompt.includes("Prior context"), "compress prompt includes prior prose snippets");
-  assert(!compressPrompt.includes("[ROSTER]"), "compress prompt does not dump ROSTER entries");
-
   const headId = findHeadPageId(db, logbook.id)!;
   const pages = listChronologicalPages(db, logbook.id).filter((p) => !p.hidden);
   const query = buildTagQueryText(db, pages);
@@ -142,7 +116,8 @@ function runInProcessSmoke(): void {
 
   const messages = assembleAuthorPrompt(db, USER_ID, logbook.id, headId);
   const blob = JSON.stringify(messages);
-  assert(blob.includes("Dragon") && blob.includes("ROSTER"), "assembled prompt includes Dragon roster from query activation");
+  assert(blob.includes("Dragon") && blob.includes("ROSTER"), "assembled prompt includes full worldbook roster entries");
+  assert(blob.includes("[EVENT SUMMARY]") || blob.includes("Player action"), "assembled prompt uses verbose and/or event summaries");
 
   const editPageId = pageIds[4]!;
   const editPage = getPage(db, editPageId)!;
@@ -160,24 +135,20 @@ function runInProcessSmoke(): void {
     toValue: revisedText.id,
   });
   onCanonicalTextChanged(db, USER_ID, logbook.id, editPageId);
-  assert(postNeedsCompress(getPage(db, editPageId)!, revisedText), "edit invalidates compress stamp");
-
-  compressPage(db, editPageId, revisedText.id, "Revised compress: Dragon roars.");
-  assert(listArchivesForBook(db, logbook.id).length >= 1, "archives exist after edit recompress");
+  assert(!postNeedsCompress(getPage(db, editPageId)!, revisedText), "compression disabled after edit");
+  enqueueEligibleArchiveBlocks(db, USER_ID, logbook.id);
+  assert(listArchivesForBook(db, logbook.id).length >= 1, "archives exist after edit invalidation");
 
   const undoResult = undoHistory(db);
   assert(!!undoResult?.canonicalTextPageId, "undo returns canonical text page for invalidation");
   if (undoResult?.canonicalTextPageId) {
     onCanonicalTextChanged(db, USER_ID, logbook.id, undoResult.canonicalTextPageId);
   }
-  assert(
-    postNeedsCompress(getPage(db, editPageId)!, getText(db, priorText.id)!),
-    "undo restores prior text and marks compress stale"
-  );
+  assert(!postNeedsCompress(getPage(db, editPageId)!, priorText), "compression disabled after undo");
 
   const manifest = buildMemoryManifest(db, logbook.id);
   assert(manifest.postCount === 20, "manifest reports all posts");
-  assert(manifest.needsCompressCount >= 1, "manifest flags stale posts");
+  assert(manifest.needsCompressCount === 0, "manifest reports no compress backlog when compression disabled");
 
   const stamps = backfillContentStamps(db);
   assert(stamps.stamped + stamps.skipped === 20, "backfill stamps walks all posts");

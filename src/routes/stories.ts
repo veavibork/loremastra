@@ -9,7 +9,6 @@ import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../db/page-store.js";
 import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
-import { enqueueEligibleCompressJobs } from "../services/compression.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
 import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from "../db/job-store.js";
@@ -298,7 +297,6 @@ storiesRoute.post("/:id/messages", async (c) => {
     slotCost: getAgentProfile(c.get("userId"), "author").concurrencyCost,
     priority: 10,
   });
-  enqueueEligibleCompressJobs(storyDb, c.get("userId"), logbook.id);
   enqueueEligibleArchiveBlocks(storyDb, c.get("userId"), logbook.id);
 
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });

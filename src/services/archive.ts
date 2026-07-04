@@ -8,19 +8,16 @@ import {
   listArchivesForBook,
   type ArchiveRow,
 } from "../db/archive-store.js";
-import { createJob } from "../db/job-store.js";
+import { createJob, hasActiveJobForArchive } from "../db/job-store.js";
 import { getAgentProfile } from "./agent-config.js";
-import { postNeedsCompress } from "./content-stamp.js";
 
 // Doc + lorepebble-proven design: overlapping 10-post windows, 50% overlap.
 const ARCHIVE_BLOCK_SIZE = 10;
 const ARCHIVE_BLOCK_STEP = 5;
 
 /**
- * State-based, not position-based, per the doc: a block is created whenever
- * a complete window of fully-compressed posts exists with no block covering
- * that start point yet. Handles rewrites/undos/branches correctly because it
- * checks the precondition rather than counting rows.
+ * State-based, not position-based: a block is created whenever a complete window of
+ * posts with prose exists with no block covering that start point yet.
  */
 export function enqueueEligibleArchiveBlocks(db: Database.Database, userId: string, logbookId: string): void {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
@@ -32,27 +29,40 @@ export function enqueueEligibleArchiveBlocks(db: Database.Database, userId: stri
     if (existingStarts.has(startPage.id)) continue;
 
     const windowTexts = windowPages.map((p) => (p.selectedTextId ? getText(db, p.selectedTextId) : null));
-    const allCompressed = windowPages.every((page, i) => {
-      const text = windowTexts[i];
-      return text?.genPackage && !postNeedsCompress(page, text);
-    });
-    if (!allCompressed) continue;
+    const allHaveProse = windowPages.every((_, i) => !!windowTexts[i]?.genPackage?.trim());
+    if (!allHaveProse) continue;
 
     const endPage = windowPages[windowPages.length - 1];
     const archive = createArchive(db, { bookId: logbookId, startPageId: startPage.id, endPageId: endPage.id });
     for (const text of windowTexts) {
-      if (text) addArchiveMember(db, archive.id, text.id, false); // ownership computed separately, across all overlapping blocks
+      if (text) addArchiveMember(db, archive.id, text.id, false);
     }
-    // Worker tier (KAI/lorepebble) — editor was 3+ min/block on full-prose archive prompts.
-    createJob(db, {
-      targetArchiveId: archive.id,
-      jobType: "archive",
-      slotCost: getAgentProfile(userId, "worker").concurrencyCost,
-      priority: 5,
-    });
+    createArchiveJob(db, userId, archive.id);
   }
 
   recomputeArchiveOwnership(db, logbookId, pages);
+  enqueuePendingArchiveJobs(db, userId, logbookId);
+}
+
+/** Re-queue archive jobs for blocks that exist but never received a summary. */
+export function enqueuePendingArchiveJobs(db: Database.Database, userId: string, logbookId: string): number {
+  let enqueued = 0;
+  for (const archive of listArchivesForBook(db, logbookId)) {
+    if (archive.summary?.trim() || archive.broken) continue;
+    if (hasActiveJobForArchive(db, archive.id, "archive")) continue;
+    createArchiveJob(db, userId, archive.id);
+    enqueued++;
+  }
+  return enqueued;
+}
+
+function createArchiveJob(db: Database.Database, userId: string, archiveId: string): void {
+  createJob(db, {
+    targetArchiveId: archiveId,
+    jobType: "archive",
+    slotCost: getAgentProfile(userId, "editor").concurrencyCost,
+    priority: 5,
+  });
 }
 
 /**
@@ -80,7 +90,7 @@ function recomputeArchiveOwnership(db: Database.Database, logbookId: string, pag
     candidates.sort((a, b) => {
       const distanceDiff = Math.abs(idx - a.midpoint) - Math.abs(idx - b.midpoint);
       if (distanceDiff !== 0) return distanceDiff;
-      return b.startIdx - a.startIdx; // tie -> more recent block wins
+      return b.startIdx - a.startIdx;
     });
 
     const text = page.selectedTextId ? getText(db, page.selectedTextId) : null;
