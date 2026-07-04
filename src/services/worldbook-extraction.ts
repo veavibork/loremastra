@@ -1,6 +1,5 @@
 import type Database from "better-sqlite3";
 import { createWorldbookEntry, type WorldbookEntry, type WorldbookEntryType } from "../db/worldbook-store.js";
-import { indexTextAgainstAllTags } from "./tag-index.js";
 
 export interface ExtractedBlock {
   entryType: WorldbookEntryType;
@@ -29,22 +28,15 @@ export function extractWorldbookBlocks(text: string): ExtractedBlock[] {
   return blocks;
 }
 
-/**
- * Extracts blocks from a piece of Editor output and creates a worldbook entry for each,
- * indexing every new entry against existing tags immediately -- entry creation never
- * otherwise triggers a tag scan (only post creation did, until now), so without this a
- * brand-new entry wouldn't retroactively match a tag that already existed.
- */
+/** Extracts blocks from Editor output and creates a worldbook entry for each. */
 export function applyExtractedWorldbookBlocks(
   db: Database.Database,
   worldbookBookId: string,
-  tagScopeBookId: string,
   text: string
 ): WorldbookEntry[] {
   const created: WorldbookEntry[] = [];
   for (const block of extractWorldbookBlocks(text)) {
     const entry = createWorldbookEntry(db, { bookId: worldbookBookId, entryType: block.entryType, content: block.content });
-    indexTextAgainstAllTags(db, tagScopeBookId, entry.currentTextId);
     created.push(entry);
   }
   return created;

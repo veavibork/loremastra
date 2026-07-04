@@ -159,6 +159,10 @@ function finishJobTypeCheckMigration(db: Database.Database): void {
   `);
 }
 
+function dropTagTablesIfExist(db: Database.Database): void {
+  db.exec(`DROP TABLE IF EXISTS tag_index; DROP TABLE IF EXISTS tags;`);
+}
+
 export function closeStoryDb(storyId: string): void {
   const db = openStoryDbs.get(storyId);
   if (!db) return;
@@ -188,8 +192,8 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   db.pragma("foreign_keys = ON");
   migrateWorldbookEntryShape(db);
   migrateJobTypeCheck(db);
+  dropTagTablesIfExist(db);
   db.exec(STORY_SCHEMA_SQL);
-  dropColumnIfExists(db, "tags", "worldbook_page_id");
   ensureColumn(db, "story_state", "current_page_id", "TEXT REFERENCES page(id)");
   ensureColumn(db, "story_state", "history_cursor_seq", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "story_state", "ooc_session_start_page_id", "TEXT REFERENCES page(id)");

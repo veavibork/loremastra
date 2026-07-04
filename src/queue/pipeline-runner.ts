@@ -13,7 +13,7 @@ import {
 import { fillTextExtract, fillTextGeneration, getText } from "../db/text-store.js";
 import { getPage, listChronologicalPages, setPageHidden, type PageRow } from "../db/page-store.js";
 import { createPageWithText } from "../db/content-store.js";
-import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
+import { getBookByType } from "../db/book-store.js";
 import { listContentEntries, listWorldbookEntries } from "../db/worldbook-store.js";
 import { fillArchiveSummary, getArchive } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
@@ -50,7 +50,6 @@ import { enqueueEligibleArchiveBlocks, enqueuePendingArchiveJobs } from "../serv
 import { cancelPendingCompressJobs } from "../services/compression.js";
 import { nowIso } from "../db/time.js";
 import { buildArchiveUserPrompt, finalizeArchiveSummary } from "../services/archive-worker.js";
-import { indexTextAgainstAllTags } from "../services/tag-index.js";
 import { markCompressValid } from "../services/memory-invalidation.js";
 import {
   buildCompressUserPrompt,
@@ -472,7 +471,6 @@ async function executeProseJob(
     const tokenEstimate = Math.ceil(fullText.length / 4);
     const metrics = { elapsedMs: Date.now() - startedAt, tokenEstimate };
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify(metrics) });
-    indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
     maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
     finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
     publishDone(jobId, fullText);
@@ -571,7 +569,6 @@ async function resolveHordeJob(db: Database.Database, job: JobRow, storyId: stri
 
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify({ tokenEstimate }) });
     if (targetPage) {
-      indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
       maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
     }
 
@@ -716,7 +713,7 @@ async function executeSetupJob(
     if (isUpdateSession) {
       // Single-pass: EDITOR_UPDATE_PROMPT's own reply may itself contain bracket blocks.
       try {
-        applyExtractedWorldbookBlocks(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), reply);
+        applyExtractedWorldbookBlocks(db, worldbook.id, reply);
       } catch (err) {
         console.error(`[setup ${jobId}] worldbook extraction failed, reply still stands:`, err);
       }
@@ -802,7 +799,7 @@ async function executeSetupWorldbookJob(
     fillTextGeneration(db, targetTextId, { genPackage: rawText, genMetrics: JSON.stringify({ tokenEstimate }) });
 
     try {
-      applyExtractedWorldbookBlocks(db, worldbook.id, getTagScopeBookId(db, targetPage.bookId), rawText);
+      applyExtractedWorldbookBlocks(db, worldbook.id, rawText);
     } catch (err) {
       console.error(`[setup-worldbook ${jobId}] worldbook extraction failed, message still stands:`, err);
     }
@@ -922,7 +919,6 @@ async function executeCompressJob(
     fillTextExtract(db, targetTextId, summary, compressMetrics);
     if (targetPage) {
       markCompressValid(db, targetPage.id, targetTextId);
-      indexTextAgainstAllTags(db, getTagScopeBookId(db, targetPage.bookId), targetTextId);
       enqueueEligibleArchiveBlocks(db, userId, targetPage.bookId);
     }
     finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate });

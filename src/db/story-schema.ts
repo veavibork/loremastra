@@ -78,25 +78,6 @@ CREATE TABLE IF NOT EXISTS worldbook_entry (
   entry_type TEXT NOT NULL CHECK (entry_type IN ('content','roster','memory'))
 );
 
-CREATE TABLE IF NOT EXISTS tags (
-  id TEXT PRIMARY KEY,
-  book_id TEXT NOT NULL REFERENCES book(id),
-  name TEXT NOT NULL,
-  hidden INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  UNIQUE (book_id, name)
-);
-CREATE INDEX IF NOT EXISTS idx_tags_book ON tags(book_id);
-
-CREATE TABLE IF NOT EXISTS tag_index (
-  tag_id TEXT NOT NULL REFERENCES tags(id),
-  text_id TEXT NOT NULL REFERENCES text(id),
-  matched_at TEXT NOT NULL,
-  PRIMARY KEY (tag_id, text_id)
-);
-CREATE INDEX IF NOT EXISTS idx_tag_index_text ON tag_index(text_id);
-
 -- Single-row table (id=1 enforced) tracking where this story is in the
 -- Setup -> Kickoff -> Story flow (loremaster.md's Story Flow section).
 -- kickoff_page_id identifies the opening-post page once kickoff starts, so

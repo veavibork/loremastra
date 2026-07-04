@@ -194,7 +194,7 @@ server.registerTool(
 server.registerTool(
   "enqueue_memory_jobs",
   {
-    description: "Queue eligible compress and archive jobs without changing stamps or reindexing tags.",
+    description: "Queue eligible compress and archive jobs without changing stamps.",
     inputSchema: { storyId: z.string() },
   },
   async ({ storyId }) => {
@@ -214,7 +214,7 @@ server.registerTool(
   "get_memory_manifest",
   {
     description:
-      "Per-post memory diagnostics: content stamps, compress validity, tag match counts, and archive coverage for a story.",
+      "Per-post memory diagnostics: content stamps, compress validity, and archive coverage for a story.",
     inputSchema: { storyId: z.string() },
   },
   async ({ storyId }) =>
@@ -229,15 +229,14 @@ server.registerTool(
   "backfill_memory",
   {
     description:
-      "Repair memory pipeline state after direct DB edits or schema upgrades: adopt content stamps, reindex tags, " +
+      "Repair memory pipeline state after direct DB edits or schema upgrades: adopt content stamps " +
       "and enqueue eligible compress/archive jobs. Call notify_direct_mutation afterward if a browser tab is open.",
     inputSchema: {
       storyId: z.string(),
-      reindexTags: z.boolean().optional(),
       enqueueJobs: z.boolean().optional(),
     },
   },
-  async ({ storyId, reindexTags, enqueueJobs }) => {
+  async ({ storyId, enqueueJobs }) => {
     const story = getStory(getGlobalDb(), storyId);
     if (!story) return textResult({ error: "story not found" });
 
@@ -245,7 +244,7 @@ server.registerTool(
       const logbook = getBookByType(db, "logbook");
       if (!logbook) return textResult({ error: "no logbook for this story" });
       return textResult(
-        runMemoryBackfill(db, story.ownerUserId, logbook.id, { reindexTags, enqueueJobs })
+        runMemoryBackfill(db, story.ownerUserId, logbook.id, { enqueueJobs })
       );
     });
   }

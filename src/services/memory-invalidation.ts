@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { getBookByType, getTagScopeBookId } from "../db/book-store.js";
+import { getBookByType } from "../db/book-store.js";
 import { deleteArchive, listArchivesForBook, syncArchiveMembersForPage } from "../db/archive-store.js";
 import {
   cancelPendingJobsForArchive,
@@ -8,7 +8,6 @@ import { getPage, listChronologicalPages, setMemoryContentStamp } from "../db/pa
 import { getText, setTextBroken } from "../db/text-store.js";
 import { computeTextContentStamp } from "./content-stamp.js";
 import { enqueueEligibleArchiveBlocks } from "./archive.js";
-import { indexTextAgainstAllTags } from "./tag-index.js";
 
 export { computeTextContentStamp, postNeedsCompress } from "./content-stamp.js";
 
@@ -57,7 +56,7 @@ export function invalidateArchivesForPage(
 
 /**
  * After edit, retry, or undo/redo changes which text is canonical on a page: sync archive
- * membership, drop stale archive blocks, re-index tags, and queue archive jobs.
+ * membership, drop stale archive blocks, and queue archive jobs.
  */
 export function onCanonicalTextChanged(
   db: Database.Database,
@@ -72,9 +71,6 @@ export function onCanonicalTextChanged(
 
   syncArchiveMembersForPage(db, pageId, text.id);
   invalidateArchivesForPage(db, userId, logbookId, pageId);
-
-  const tagScopeBookId = getTagScopeBookId(db, logbookId);
-  indexTextAgainstAllTags(db, tagScopeBookId, text.id);
 
   const stamp = computeTextContentStamp(text);
   if (stamp) {

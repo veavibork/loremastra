@@ -6,9 +6,8 @@ import { getStoryDb, closeStoryDb } from "../db/story-db.js";
 import type { AppVariables } from "../middleware/session-guard.js";
 import { createStory, listStories, getStory, renameStory, deleteStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
 import { getStoryStats } from "../services/story-stats.js";
-import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
+import { createBook, getBookByType } from "../db/book-store.js";
 import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../db/page-store.js";
-import { indexTextAgainstAllTags } from "../services/tag-index.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
 import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from "../db/job-store.js";
@@ -196,15 +195,14 @@ storiesRoute.get("/:id/memory/manifest", (c) => {
   return c.json(buildMemoryManifest(storyDb, logbook.id));
 });
 
-/** Repair stamps, optionally reindex tags and enqueue compress/archive jobs. */
+/** Repair stamps and optionally enqueue compress/archive jobs. */
 storiesRoute.post("/:id/memory/backfill", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { reindexTags?: boolean; enqueueJobs?: boolean };
+  const body = (await c.req.json().catch(() => ({}))) as { enqueueJobs?: boolean };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
   return c.json(
     runMemoryBackfill(storyDb, c.get("userId"), logbook.id, {
-      reindexTags: body.reindexTags,
       enqueueJobs: body.enqueueJobs,
     })
   );
@@ -247,7 +245,6 @@ storiesRoute.post("/:id/messages", async (c) => {
     role: "user",
     genPackage: content,
   });
-  indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, logbook.id), userText.id);
 
   const { page: agentPage, text: agentText } = createPageWithText(storyDb, {
     bookId: logbook.id,
@@ -496,7 +493,6 @@ storiesRoute.post("/:id/setup/messages", async (c) => {
     genPackage: content,
   });
   setPageHidden(storyDb, userPage.id, true);
-  indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, logbook.id), userText.id);
 
   const { page: agentPage, text: agentText } = createPageWithText(storyDb, {
     bookId: logbook.id,
@@ -589,7 +585,6 @@ storiesRoute.post("/:id/worldbook", async (c) => {
 
   try {
     const entry = createWorldbookEntry(storyDb, { bookId: worldbook.id, entryType: body.entryType, content: body.content });
-    indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, worldbook.id), entry.currentTextId);
     return c.json({ entry });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
@@ -605,7 +600,6 @@ storiesRoute.patch("/:id/worldbook/:pageId", async (c) => {
     if (typeof body.hidden === "boolean") setWorldbookEntryHidden(storyDb, pageId, body.hidden);
     if (typeof body.content === "string") {
       const entry = updateWorldbookEntry(storyDb, pageId, { content: body.content });
-      indexTextAgainstAllTags(storyDb, getTagScopeBookId(storyDb, entry.bookId), entry.currentTextId);
     }
     return c.json({ ok: true });
   } catch (err) {

@@ -65,9 +65,3 @@ export function getBookByType(db: Database.Database, bookType: BookType): BookRo
     .get(bookType) as RawBookRow | undefined;
   return row ? mapBookRow(row) : null;
 }
-
-/** Tags belong to the story's root book so they can eventually match both worldbook and log content — resolve up one level if this book has a parent. */
-export function getTagScopeBookId(db: Database.Database, bookId: string): string {
-  const book = getBook(db, bookId);
-  return book?.parentBookId ?? bookId;
-}
