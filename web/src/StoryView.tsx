@@ -45,16 +45,30 @@ function isMemoryJobRunning(jobs: Awaited<ReturnType<typeof fetchActiveJobs>>): 
   return jobs.some((j) => MEMORY_JOB_TYPES.has(j.jobType) && j.status === "running");
 }
 
+type ActiveJobRow = Awaited<ReturnType<typeof fetchActiveJobs>>[number];
+
+/** Wall-clock anchor for elapsed labels — job creation, or run start once the worker picks it up. */
+function jobElapsedAnchor(job: ActiveJobRow): number {
+  return new Date(job.startedAt ?? job.createdAt).getTime();
+}
+
+/** Keep the oldest known anchor so reconnect/phase sync never resets the visible timer. */
+function stableElapsedAnchor(pending: PendingReply, proseJob: ActiveJobRow): number {
+  return Math.min(pending.startedAt, jobElapsedAnchor(proseJob));
+}
+
 function pendingStatusLabel(pending: PendingReply): string {
   if (pending.progress) return pending.progress;
   const elapsed = Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000));
+  const queueHint =
+    pending.waitPhase !== "memory" && pending.lastProseStatus === "pending" ? ", queued" : "";
   if (pending.thinking?.trim() && !pending.text.trim()) {
-    return `Reasoning… (${elapsed}s)`;
+    return `Reasoning… (${elapsed}s${queueHint})`;
   }
   if (pending.waitPhase === "memory") {
     return `Memory update in progress… (${elapsed}s)`;
   }
-  return `Thinking… (${elapsed}s)`;
+  return `Thinking… (${elapsed}s${queueHint})`;
 }
 
 function syncPendingWaitPhases(
@@ -71,31 +85,38 @@ function syncPendingWaitPhases(
     const proseJob = jobs.find((j) => j.id === pending.jobId);
     if (!proseJob) continue;
 
+    const startedAt = stableElapsedAnchor(pending, proseJob);
+
     if (proseJob.status === "pending" && memoryBlocking) {
       if (pending.waitPhase !== "memory") {
-        next[pageId] = { ...pending, waitPhase: "memory", startedAt: Date.now(), lastProseStatus: proseJob.status };
+        next[pageId] = { ...pending, waitPhase: "memory", startedAt, lastProseStatus: proseJob.status };
         changed = true;
       }
       continue;
     }
 
     if (pending.waitPhase === "memory") {
-      next[pageId] = { ...pending, waitPhase: "thinking", startedAt: Date.now(), lastProseStatus: proseJob.status };
+      next[pageId] = { ...pending, waitPhase: "thinking", startedAt, lastProseStatus: proseJob.status };
       changed = true;
       continue;
     }
 
     if (proseJob.status === "running" && pending.lastProseStatus !== "running") {
-      next[pageId] = { ...pending, waitPhase: pending.thinking?.trim() ? "reasoning" : "thinking", startedAt: Date.now(), lastProseStatus: "running" };
+      next[pageId] = {
+        ...pending,
+        waitPhase: pending.thinking?.trim() ? "reasoning" : "thinking",
+        startedAt,
+        lastProseStatus: "running",
+      };
       changed = true;
       continue;
     }
 
     if (!pending.waitPhase) {
-      next[pageId] = { ...pending, waitPhase: "thinking", lastProseStatus: proseJob.status };
+      next[pageId] = { ...pending, waitPhase: "thinking", startedAt, lastProseStatus: proseJob.status };
       changed = true;
-    } else if (pending.lastProseStatus !== proseJob.status) {
-      next[pageId] = { ...pending, lastProseStatus: proseJob.status };
+    } else if (pending.lastProseStatus !== proseJob.status || pending.startedAt !== startedAt) {
+      next[pageId] = { ...pending, startedAt, lastProseStatus: proseJob.status };
       changed = true;
     }
   }
@@ -277,9 +298,8 @@ export default function StoryView({
   const [draft, setDraft] = useState("");
   // Keyed by agent pageId so multiple sends can be in flight at once — queued messages each get
   // their own page (and their own streamJob subscription) rather than sharing one slot.
-  // startedAt backs the "Thinking… (Ns)" placeholder shown before the first token/progress event
-  // arrives — Featherless gives no earlier signal than that, so elapsed wall-clock time is the
-  // best available substitute for "..." sitting dead.
+  // startedAt backs the "Thinking… (Ns)" placeholder — anchored to the job's server createdAt /
+  // startedAt when reattaching or polling so closing the tab doesn't reset the counter.
   const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply>>({});
   // Horde (and compress/archive) jobs can't be aborted mid-generation — the cancel route 409s
   // rather than actually stopping anything. Rather than a stop button that just fails silently,
@@ -331,7 +351,7 @@ export default function StoryView({
       const jobs = await fetchActiveJobs(storyId);
       for (const entry of unresolved) {
         const job = jobs.find((j) => j.targetTextId === entry.textId);
-        if (job) watchJob(job.id, entry.pageId, undefined, new Date(job.createdAt).getTime());
+        if (job) watchJob(job.id, entry.pageId, undefined, jobElapsedAnchor(job));
       }
     } catch (err) {
       console.error("failed to resume active jobs", err);
