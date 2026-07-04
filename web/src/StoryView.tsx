@@ -28,6 +28,76 @@ import { useStoryToggles } from "./storyToggles";
 import type { LayoutRegion } from "./api";
 import "./StoryView.css";
 
+const ARCHIVE_JOB_TYPES = new Set(["archive", "archive-name"]);
+
+interface PendingReply {
+  text: string;
+  progress?: string;
+  startedAt: number;
+  jobId: string;
+  /** Tracks queue wait vs active generation for elapsed-time labels. */
+  waitPhase?: "archive" | "thinking";
+  lastProseStatus?: string;
+}
+
+function isArchiveJobRunning(jobs: Awaited<ReturnType<typeof fetchActiveJobs>>): boolean {
+  return jobs.some((j) => ARCHIVE_JOB_TYPES.has(j.jobType) && j.status === "running");
+}
+
+function pendingStatusLabel(pending: PendingReply): string {
+  if (pending.progress) return pending.progress;
+  const elapsed = Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000));
+  if (pending.waitPhase === "archive") {
+    return `Archive in progress... (${elapsed}s)`;
+  }
+  return `Thinking… (${elapsed}s)`;
+}
+
+function syncPendingWaitPhases(
+  prev: Record<string, PendingReply>,
+  jobs: Awaited<ReturnType<typeof fetchActiveJobs>>
+): Record<string, PendingReply> {
+  const archiveBlocking = isArchiveJobRunning(jobs);
+  let changed = false;
+  const next = { ...prev };
+
+  for (const [pageId, pending] of Object.entries(prev)) {
+    if (pending.text || pending.progress) continue;
+    const proseJob = jobs.find((j) => j.id === pending.jobId);
+    if (!proseJob) continue;
+
+    if (proseJob.status === "pending" && archiveBlocking) {
+      if (pending.waitPhase !== "archive") {
+        next[pageId] = { ...pending, waitPhase: "archive", startedAt: Date.now(), lastProseStatus: proseJob.status };
+        changed = true;
+      }
+      continue;
+    }
+
+    if (pending.waitPhase === "archive") {
+      next[pageId] = { ...pending, waitPhase: "thinking", startedAt: Date.now(), lastProseStatus: proseJob.status };
+      changed = true;
+      continue;
+    }
+
+    if (proseJob.status === "running" && pending.lastProseStatus !== "running") {
+      next[pageId] = { ...pending, waitPhase: "thinking", startedAt: Date.now(), lastProseStatus: "running" };
+      changed = true;
+      continue;
+    }
+
+    if (!pending.waitPhase) {
+      next[pageId] = { ...pending, waitPhase: "thinking", lastProseStatus: proseJob.status };
+      changed = true;
+    } else if (pending.lastProseStatus !== proseJob.status) {
+      next[pageId] = { ...pending, lastProseStatus: proseJob.status };
+      changed = true;
+    }
+  }
+
+  return changed ? next : prev;
+}
+
 /** Grows with its content instead of scrolling internally — used for both the composer and
  * tap-to-edit's single edit box so neither ever shows a stale, pre-resize box on first paint.
  * Measuring in useLayoutEffect (before the browser paints) rather than useEffect (after) is what
@@ -205,7 +275,7 @@ export default function StoryView({
   // startedAt backs the "Thinking… (Ns)" placeholder shown before the first token/progress event
   // arrives — Featherless gives no earlier signal than that, so elapsed wall-clock time is the
   // best available substitute for "..." sitting dead.
-  const [pendingReplies, setPendingReplies] = useState<Record<string, { text: string; progress?: string; startedAt: number; jobId: string }>>({});
+  const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply>>({});
   // Horde (and compress/archive) jobs can't be aborted mid-generation — the cancel route 409s
   // rather than actually stopping anything. Rather than a stop button that just fails silently,
   // pageIds in here are hidden from the log entirely while the job keeps running in the
@@ -274,17 +344,36 @@ export default function StoryView({
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [entries, pendingReplies]);
 
-  // Featherless gives no signal between "request sent" and "first token" — no queue position,
-  // no phase label — so the best we can show during that gap is elapsed time. This ticks a
-  // render once a second only while something is actually in that dead zone (no text, no
-  // progress label yet), rather than running an interval unconditionally.
+  // Featherless gives no signal between "request sent" and "first token" — elapsed time fills
+  // that gap. While a prose job is queued behind an archive, poll active jobs and show a
+  // distinct label; reset the timer when prose actually starts (running or archive clears).
   const [, forceTick] = useState(0);
   useEffect(() => {
     const waiting = Object.values(pendingReplies).some((p) => !p.text && !p.progress);
     if (!waiting) return;
-    const id = setInterval(() => forceTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, [pendingReplies]);
+
+    let cancelled = false;
+
+    async function pollQueuePhase() {
+      try {
+        const jobs = await fetchActiveJobs(storyId);
+        if (cancelled) return;
+        setPendingReplies((prev) => syncPendingWaitPhases(prev, jobs));
+      } catch (err) {
+        console.error("failed to poll queue phase", err);
+      }
+    }
+
+    void pollQueuePhase();
+    const id = setInterval(() => {
+      void pollQueuePhase();
+      forceTick((n) => n + 1);
+    }, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [storyId, pendingReplies]);
 
   // True while anything is generating, from any source (a queued send, kickoff, continue, or
   // retry) — gates the actions that need a stable, fully-resolved history to act on unambiguously
@@ -620,14 +709,13 @@ export default function StoryView({
         ))}
         {pendingEntries.map((entry) => {
           const pending = pendingReplies[entry.pageId];
-          const elapsed = pending ? Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000)) : 0;
           return (
             <div key={entry.pageId} className="entry entry-agent entry-pending">
               <RoleLabel role="agent" mode={mode} />
               {pending?.text ? (
                 <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
               ) : (
-                <p className="pending-thinking">{pending?.progress ?? `Thinking… (${elapsed}s)`}</p>
+                <p className="pending-thinking">{pending ? pendingStatusLabel(pending) : "Thinking…"}</p>
               )}
               {pending?.jobId && (
                 <button

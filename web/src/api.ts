@@ -733,6 +733,8 @@ export interface ActiveJob {
   createdAt: string;
   targetTextId: string | null;
   jobType: string;
+  status: string;
+  startedAt: string | null;
 }
 
 /** In-flight jobs for a story — used to reattach to a generation still running after the story tab was closed and reopened. */
