@@ -130,6 +130,7 @@ export default function LogsView({ story }: PanelProps) {
         <table className="logs-table">
           <thead>
             <tr>
+              <th>Post #</th>
               <th>Time</th>
               <th>Role</th>
               <th>Tokens (est.)</th>
@@ -147,6 +148,7 @@ export default function LogsView({ story }: PanelProps) {
               return (
                 <Fragment key={entry.pageId}>
                   <tr className={entry.hidden ? "logs-row-hidden" : ""}>
+                    <td>{entry.icPostNumber ?? "—"}</td>
                     <td>{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}</td>
                     <td>{entry.role}</td>
                     <td>{m.tokenEstimate ?? "—"}</td>
@@ -159,7 +161,7 @@ export default function LogsView({ story }: PanelProps) {
                     <td>{entry.hidden ? "yes" : ""}</td>
                   </tr>
                   <tr className={entry.hidden ? "logs-row-hidden" : ""}>
-                    <td colSpan={6} className="logs-content-cell">
+                    <td colSpan={7} className="logs-content-cell">
                       <button
                         type="button"
                         className={`logs-content-toggle ${isExpanded ? "logs-content-expanded" : "logs-content-collapsed"}`}

@@ -347,15 +347,24 @@ export async function fetchSlots(opts?: { background?: boolean }): Promise<{ use
 export interface PromptMessage {
   role: string;
   content: string;
+  tokenEstimate: number;
+  icPostNumber: number | null;
+  cumulativeTokens: number;
+}
+
+export interface PromptPreview {
+  messages: PromptMessage[];
+  totalTokens: number;
+  usableBudget: number;
+  storyToDateTriggerAt: number;
 }
 
 export async function fetchPromptPreview(
   storyId: string,
   opts?: { background?: boolean }
-): Promise<PromptMessage[]> {
+): Promise<PromptPreview> {
   const res = await apiFetch(`/api/stories/${storyId}/prompt-preview`, {}, opts);
-  const data = (await res.json()) as { messages: PromptMessage[] };
-  return data.messages;
+  return res.json() as Promise<PromptPreview>;
 }
 
 export interface ModelConfig {
@@ -463,6 +472,7 @@ export interface LogEntry {
   genMetrics: string | null;
   genExtract: string | null;
   compressMetrics: string | null;
+  icPostNumber: number | null;
 }
 
 export type StoryPhase = "setup" | "kickoff" | "story";

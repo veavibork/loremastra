@@ -13,6 +13,7 @@ import {
   enqueuePendingStoryToDateJobs,
   enqueuePendingStoryToDateNameJobs,
   requeueStoryToDateSegment,
+  STORY_TO_DATE_TRIGGER,
 } from "../services/story-to-date.js";
 import {
   getStoryToDateSegment,
@@ -44,7 +45,7 @@ import {
   updateStoryToDateCoverageThroughPost,
 } from "../services/story-to-date-admin.js";
 import { buildStoryToDateView } from "../services/story-to-date-view.js";
-import { assembleAuthorPrompt } from "../services/history.js";
+import { buildPromptPreview } from "../services/prompt-preview.js";
 import {
   buildMemoryManifest,
   buildMemorySummary,
@@ -180,10 +181,18 @@ storiesRoute.get("/:id/prompt-preview", (c) => {
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
   const currentPageId = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
-  if (!currentPageId) return c.json({ messages: [] });
+  if (!currentPageId) {
+    const author = getAgentProfile(c.get("userId"), "author");
+    const usableBudget = author.contextLimit - author.responseLimit;
+    return c.json({
+      messages: [],
+      totalTokens: 0,
+      usableBudget,
+      storyToDateTriggerAt: Math.floor(usableBudget * STORY_TO_DATE_TRIGGER),
+    });
+  }
 
-  const messages = assembleAuthorPrompt(storyDb, c.get("userId"), logbook.id, currentPageId);
-  return c.json({ messages });
+  return c.json(buildPromptPreview(storyDb, c.get("userId"), logbook.id, currentPageId));
 });
 storiesRoute.get("/:id/story-to-date", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));

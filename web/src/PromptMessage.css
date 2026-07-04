@@ -7,10 +7,12 @@
 }
 
 .prompt-message-role {
+  display: block;
   font-size: 0.7rem;
   text-transform: uppercase;
-  opacity: 0.55;
+  opacity: 0.75;
   letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
 }
 
 .prompt-message p {
