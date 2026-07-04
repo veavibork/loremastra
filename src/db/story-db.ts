@@ -6,13 +6,15 @@ import { recoverStaleJobs } from "./job-store.js";
 import { setMemoryContentStamp } from "./page-store.js";
 import { computeTextContentStamp } from "../services/content-stamp.js";
 
-const STORIES_DIR = path.resolve(process.cwd(), "data", "stories");
+import { storiesDir, storyDbPath as storyDbPathForId } from "./data-paths.js";
 
-const openStoryDbs = new Map<string, Database.Database>();
+const STORIES_DIR = storiesDir();
 
 export function storyDbPath(storyId: string): string {
-  return path.join(STORIES_DIR, `${storyId}.sqlite`);
+  return storyDbPathForId(storyId);
 }
+
+const openStoryDbs = new Map<string, Database.Database>();
 
 /**
  * `CREATE TABLE IF NOT EXISTS` doesn't retroactively add columns to a table

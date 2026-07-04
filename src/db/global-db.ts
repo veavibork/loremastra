@@ -2,9 +2,10 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { GLOBAL_SCHEMA_SQL } from "./global-schema.js";
+import { dataDir, globalDbPath } from "./data-paths.js";
 
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const GLOBAL_DB_PATH = path.join(DATA_DIR, "global.sqlite");
+const DATA_DIR = dataDir();
+const GLOBAL_DB_PATH = globalDbPath();
 
 let db: Database.Database | null = null;
 
