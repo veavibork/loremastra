@@ -32,8 +32,10 @@ The following shorthand is used consistently throughout this document and codeba
 | **ERP** | Explicit/adult roleplay content — the primary content type LM is built to support |
 | **tag** | A keyword associated with a worldbook entry or post; the primary mechanism for lore retrieval |
 | **verbose** | The full text of a single post (~200 tokens) |
-| **compressed** | A factual distillation of a single post (~20 tokens) |
-| **archived** | A narrative summary of a sliding block of ten posts (~60 tokens) |
+| **story-to-date segment** | An Editor-generated rolling recap (`[STORY BEGINS]` / `[STORY CONTINUES]`), merged into one `[STORY TO DATE]` block in the Author prompt |
+| **Archives tab** | UI for inspecting/editing story-to-date segments and optional scene titles (tab-only; not injected into assembly) |
+
+**Retired (2026-07-04):** per-post **compression** (`gen_extract`) and non-overlapping **decad archive blocks** (`[EVENT SUMMARY]` every ten posts). Code and DB columns may remain for migration compatibility; they are not enqueued, not assembled, and are purged on story DB open. Do not reintroduce without an explicit design decision.
 
 ---
 
@@ -43,7 +45,7 @@ Loremaster is a lightweight, private roleplaying platform for a small number of 
 
 The market's weaknesses that LM directly addresses:
 
-- **Context window degradation:** Long stories break down as the context fills. Characters forget facts, flatten into caricatures, and repeat themselves. LM addresses this through structured log compression and tag-driven prompt assembly.
+- **Context window degradation:** Long stories break down as the context fills. Characters forget facts, flatten into caricatures, and repeat themselves. LM addresses this through rolling `[STORY TO DATE]` recaps, worldbook injection, and tag-driven lore retrieval.
 - **Provider inflexibility:** ERP requires uninhibited models. Model and provider selection is the primary guardrail strategy — prompt engineering plays a supporting role, not a defensive one.
 - **Schema incoherence:** Market worldbooks are freeform. LM uses a consistent shared schema across all lore entries, prompts, and tooling, which keeps the LLM's inputs predictable and structured.
 
@@ -78,7 +80,7 @@ RP creates a fundamental tension with how LLMs are trained:
 - But the user also expects the LLM to *oppose* the player character, introduce new facts, create conflict, and surprise them — which looks indistinguishable from the LLM contradicting the user, which it's trained not to do.
 - And the user expects genuine novelty — not repetition of what got a positive response last time, which is exactly what RLHF incentivizes.
 
-Compounding this: context limits are finite. At 32k tokens, a long story starts to degrade — characters contradict established facts, forget events, flanderize. Half of what the market sells is context management. LM's answer is a combination of structured schema, agentic prompting, and log compression — all three working together.
+Compounding this: context limits are finite. At 32k tokens, a long story starts to degrade — characters contradict established facts, forget events, flanderize. Half of what the market sells is context management. LM's answer is structured schema, agentic prompting, and rolling story-to-date memory — working together.
 
 ---
 
@@ -146,9 +148,9 @@ Inference-based auto-tagging was evaluated and rejected. The results were unreli
   tag at a specific entry; dropped in favor of matching everything the same way).
 - A tag must be a single word, letters only, at least three characters (`/^[A-Za-z]{3,}$/`).
 - Tags are maintained by the user in a tag cloud visible throughout the story phase.
-- When a tag is added or edited, the back end performs a retroactive grep across all existing posts and worldbook entries and stores the resulting index (which content contains that tag). The grep runs against both verbose post text (`gen_package`) and compressed lines (`gen_extract`) once compression has run (2026-07-03).
+- When a tag is added or edited, the back end performs a retroactive grep across all existing posts and worldbook entries and stores the resulting index (which content contains that tag). The grep runs against verbose post text (`gen_package`) and worldbook entry content.
 - **Tag activation at prompt time (2026-07-03):** which tags are "live" for a generation is determined by a **query**, not only by tags matched on the trigger post alone. The query is built from the latest user message plus up to two recent assistant turns (KAI-style). Word-boundary grep against the tag cloud yields the active set. The Memory panel's prompt inspector can override this set for what-if simulation via the `tags` query param on `/prompt-preview`.
-- At prompt assembly time, the active tag set drives two independent things: which archive blocks/compressed rows get promoted to verbose (via the tag index — posts whose verbose or compressed text matched the tag), and which non-CONTENT worldbook entries (ROSTER/MEMORY) get pulled into the prompt (via the tag index against entry content). CONTENT entries are always injected regardless of tags.
+- At prompt assembly time, the active tag set drives which non-CONTENT worldbook entries (ROSTER/MEMORY) get pulled into the prompt (via the tag index against entry content). CONTENT entries are always injected regardless of tags.
 - Tags whose match doesn't resolve to a worldbook entry are evaluated before tags that do, during prompt assembly. This prioritizes surface area (events, references) over known lore, since the lore is already in the worldbook.
 
 ### Tag Cloud Lifecycle
@@ -168,7 +170,7 @@ LM has three agents, each with a distinct role and prompt strategy.
 
 **Author** — Story-phase agent. Receives worldbook entries (persistent and tag-triggered), the assembled log, and the user's latest post. Prompted to treat the user's input as describing the PC's actions — not as direct user commands. Responsible for all prose generation during play.
 
-**Worker** — Background agent. Handles compression and archiving without editorializing. Prompted to return facts only, avoid redundancy with prior compressed history, and not revise or embellish. Compression uses lorepebble-proven validation (reject single-quoted fragments, too-short narrative summaries, etc.), trivial/verbatim shortcuts for short lines, and a name roster pulled from CONTENT/ROSTER/MEMORY worldbook entries plus up to three prior compressed lines as context. Archiving synthesizes from compressed member lines (with prose fallback when compress is missing) and may include a prior non-overlapping archive summary for continuity.
+**Worker** — Background agent. Generates optional scene titles for story-to-date segments (Archives tab display only) and other lightweight naming tasks. Story-to-date **content** is Editor-tier work (`story-to-date` jobs), not Worker-tier.
 
 ---
 
@@ -178,20 +180,11 @@ LM makes deliberate use of model-side tool calling and exposes its own internals
 
 ### Tool Use (Internal)
 
-Each agent's capabilities are implemented as discrete tools — functions with enforced inputs and outputs — rather than monolithic prompts. This keeps prompts scoped tightly to what's actually needed: pronoun disambiguation, for example, is only loaded into the Worker's context when a post actually contains ambiguous pronouns, not on every compression call. Tool use is what makes the three-agent architecture composable rather than each agent carrying one enormous catch-all prompt.
+Each agent's capabilities are implemented as discrete tools — functions with enforced inputs and outputs — rather than monolithic prompts where that pattern still applies. Tool use is what makes the three-agent architecture composable rather than each agent carrying one enormous catch-all prompt.
 
-The Editor's worldbook authoring is a deliberate exception to this: an earlier design had the
-Editor call a tool (e.g. `create_worldbook_entry`) mid-conversation, on its own judgment that
-enough had been established to record. In practice this proved to be the least reliable part
-of the whole tool-use approach — schema/field-casing drift and inconsistent completeness
-across otherwise-identical conversations (see docs/stub-revisions.md's superseded entry) — so
-it was replaced (2026-07-03) with plain bracket-tagged prose the back end parses
-deterministically via regex, no tool call involved. Compression and archiving still depend on
-real forced tool-calling (the Worker's `submit_summary`/`submit_archive_summary`), which has
-been reliable throughout — the problem was specific to open-ended, judgment-call extraction,
-not tool-calling as a mechanism. Phase 1 still requires the inference provider to support
-native function calling as a baseline for the Worker's role; this remains one of the deciding
-factors in scoping Phase 1 to Featherless alone (see Provider Abstraction).
+The Editor's worldbook authoring is a deliberate exception to mid-conversation tool calls: an earlier design had the Editor call a tool (e.g. `create_worldbook_entry`) on its own judgment. In practice this proved unreliable — schema/field-casing drift and inconsistent completeness across otherwise-identical conversations (see docs/stub-revisions.md) — so it was replaced (2026-07-03) with plain bracket-tagged prose the back end parses deterministically via regex, no tool call involved.
+
+**Retired (2026-07-04):** per-post compression and decad archive summarization previously used forced tool-calling (`submit_summary` / `submit_archive_summary`). That pipeline is removed; memory is `[STORY TO DATE]` Editor jobs instead. Phase 1 still benefits from providers with reliable chat completions; native function calling is no longer on the critical path for memory.
 
 ### MCP Server (Developer-Facing)
 
@@ -216,49 +209,46 @@ This is a development convenience, not a means of opening LM to third-party MCP 
 
 ---
 
-## Log Compression Pipeline
+## Story-to-Date Memory Pipeline
 
-This is the core of LM's context management. Every post exists in up to three forms: verbose, compressed, and as part of an archive block.
+This is the core of LM's context management (shipped 2026-07-04). Older history is collapsed into rolling Editor-generated recaps; recent history stays verbose.
 
 ### Forms
 
-**Verbose** — The full text of the post as generated or entered. Always preserved.
+**Verbose** — The full text of the post as generated or entered. Always preserved in the log.
 
-**Compressed** — A factual distillation of the post (~20 tokens). Generated by the worker, deferred: a post becomes eligible for compression once it is five or more posts behind the current position — **unless** the post is stale (canonical content changed but compress/extract no longer matches; see Content stamps below), in which case it re-queues immediately regardless of lag. The worker receives the target post, up to three prior compressed lines, and a name roster from worldbook CONTENT/ROSTER/MEMORY entries, with validation and retry on bad summaries.
+**Story-to-date segment** — An Editor job produces either `[STORY BEGINS]…[/STORY BEGINS]` (first segment) or `[STORY CONTINUES]…[/STORY CONTINUES]` (subsequent segments). Each segment records `[COVERAGE]N[/COVERAGE]` — the absolute in-character post number through which it summarizes. Segments are stored in `story_to_date_segment` and merged into a single `[STORY TO DATE]…[/STORY TO DATE]` system message at assembly time.
 
-**Archive block** — A narrative summary (~60 tokens) covering a non-overlapping decad of ten posts (1–10, 11–20, …). Generated by the editor. A block is created whenever a complete set of ten valid, fully-compressed posts exists with no archive block yet assigned at that window's start point. This trigger is state-based, not position-based — it handles rewrites, undos, and branches correctly because it checks for the precondition rather than counting rows. Input is full member prose (with compressed-line fallback when compress is missing); prior non-overlapping archive summaries may be included as continuity context.
+**Scene title (optional)** — After a segment fills, a Worker `archive-name` job may assign a short `[NAME]` title. **Archives tab only** — never injected into the Author prompt.
 
-### Content stamps and invalidation (2026-07-03)
+### Trigger and input
 
-Each page stores `memory_content_stamp`: a SHA-256 fingerprint of normalized canonical `gen_package`. A compress is **valid** only when the stamp matches, `gen_extract` is present, and the text is not marked broken.
+- **Trigger:** when the fully assembled Author prompt (system + worldbook + merged story-to-date + verbose tail) reaches **80%** of usable context (context limit minus response reserve).
+- **Editor input:** worldbook + verbose prose through the same **80%** cutoff; `[STORY CONTINUES]` also receives the prior merged `[STORY TO DATE]` text.
+- **Seam gate:** if coverage equals the input ceiling (mid-scene cut), one retry with step-back instructions.
 
-When canonical text changes (edit, retry, undo/redo restoring a different text version, fork truncate), the back end:
+Implementation: `src/services/story-to-date.ts`, `src/services/story-to-date-worker.ts`, `src/services/history.ts`. Local iteration harness: `scripts/story-to-date-experiment.ts` (see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md)).
 
-1. Syncs archive membership to the new canonical text id.
-2. Deletes affected archive blocks (and their pending jobs) covering the changed page.
-3. Clears/recomputes the stamp and re-queues compress if needed.
-4. Recreates eligible archive blocks once all posts in a window are validly compressed again.
+### Content stamps and invalidation
 
-Undo and redo that swap canonical text on a page trigger the same invalidation path as edit. Assembly skips archive lines with no summary or marked `broken`.
+Each page stores `memory_content_stamp`: a SHA-256 fingerprint of normalized canonical `gen_package`. Stamps update on edit/retry/undo/redo for diagnostics; **compress jobs are not enqueued** (retired).
 
-### Non-overlapping decads
+When canonical text changes inside a segment's coverage window, affected story-to-date segments (and their pending jobs) are deleted; a new segment may enqueue once the trigger threshold is met again. Fork truncate uses the same pruning rules.
 
-Archive blocks use fixed non-overlapping windows of ten posts (decads: 1–10, 11–20, 21–30, …). Each post belongs to at most one archive block. Block size (ten posts) is a tunable parameter.
+### Prompt assembly (current)
 
-### Prompt Assembly
+`assembleAuthorPrompt` (`src/services/history.ts`) builds, in order:
 
-At the time of each author call, the back end assembles the prompt iteratively within a token budget:
+1. Author system prompt
+2. All visible worldbook entries (CONTENT, ROSTER, MEMORY)
+3. Merged `[STORY TO DATE]` from ready segments
+4. Verbose posts **after** the last segment's coverage page only (kickoff page onward)
 
-1. Subtract maximum declared output length from the budget.
-2. Subtract maximum declared reasoning length (may be zero — reasoning modes are not always beneficial for RP and must be togglable per agent).
-3. Always include: core prompt, all CONTENT worldbook entries (in creation order).
-4. Include all tag-triggered ROSTER/MEMORY worldbook entries (active tags from query activation — see Tag System).
-5. Fill the most recent posts as verbose, up to 20% of the remaining budget.
-6. Fill all remaining older posts as archive blocks.
-7. Iterate from most recent to least recent archive block: if a block contains a tagged post, swap it for the individually compressed rows of that block, budget permitting. This is iterative to allow relative weighting. Tags without a matching worldbook entry evaluated before tags that have one.
-8. Iterate from most recent to least recent compressed row: if a row is tagged, swap it for its verbose form, budget permitting. Same ordering rules apply.
+There is no per-post compression tier and no decad archive tier in assembly.
 
-The result: the most recent history is always verbose. Any history relevant to the current action is promoted as far toward verbose as the budget allows. Everything else degrades gracefully from compressed to archived.
+### Retired: compression + decad archives
+
+Per-post compression (~20 tokens via Worker) and non-overlapping ten-post archive blocks (`[EVENT SUMMARY]`) were the Phase 1 design through 2026-07-03. **Retired 2026-07-04.** Legacy `archive` / `archive_member` rows and `gen_extract` columns may still exist in old DB files but are purged or ignored on open (`purgeLegacyArchives` in `src/db/story-db.ts`). Do not rebuild this path without an explicit new design.
 
 ---
 
@@ -277,10 +267,7 @@ The result: the most recent history is always verbose. Any history relevant to t
 2. User feedback is treated as a guided retry. The opening post is shown as a live preview beside the chat.
 3. User may click **Back to Setup** to return and adjust the worldbook.
 4. User clicks **Approved**. Setup posts are hidden (not deleted).
-5. The worker compresses each setup post and the kickoff post.
-6. The editor archives the setup sequence (excluding the kickoff) as a single archive block.
-7. The editor archives the kickoff post as its own archive block.
-8. Story phase begins. The live worldbook and tag cloud remain visible.
+5. Story phase begins. The live worldbook and tag cloud remain visible.
 
 ### 3. Story
 
@@ -288,28 +275,27 @@ The result: the most recent history is always verbose. Any history relevant to t
 2. The back end queues the request. **User input never goes directly to the provider** — it always creates a queue entry. The queue is processed and prioritized by the back end. This is a hard requirement to handle provider concurrency limits and avoid the bounce condition when a prior request hasn't actually been cancelled yet.
 3. The assembled prompt is sent to the author via the queue.
 4. The author's response is returned and displayed.
-5. Once a post is five or more positions behind current, the worker queues a compression job for it.
-6. Once a complete decad of ten fully-compressed posts exists without an archive block, the editor queues an archive job for it.
+5. When the assembled Author prompt crosses the story-to-date trigger threshold, the pipeline enqueues an Editor `story-to-date` job (see Story-to-Date Memory Pipeline).
 
 ---
 
 ## Chat Interface Features
 
-The following controls are available during story phase. All of them interact with the versioning, compression, and indexing pipeline — their behavior against that pipeline is documented alongside each control.
+The following controls are available during story phase. All of them interact with the versioning, memory, and indexing pipeline — their behavior is documented alongside each control.
 
 ### Post Controls
 
-**Retry** — Regenerate the last author post. The new response becomes a new version of that post. Prior versions are preserved until the post becomes eligible for compression (five or more posts behind current), at which point alternate versions are discarded and the canonical version is locked in.
+**Retry** — Regenerate the last author post. The new response becomes a new version of that post. Prior versions are preserved in the text chain until discarded by a later edit policy.
 
 **Guided retry** — Regenerate the last author post with a user-supplied direction. Logged and versioned identically to a standard retry. The guidance itself is not stored as a post.
 
-**Continue** — Generate a continuation of the last post. Logged as a new post, not appended to the existing one. Subject to normal compression lifecycle from that position.
+**Continue** — Generate a continuation of the last post. Logged as a new post, not appended to the existing one.
 
 **Guided continue** — Continue with user-supplied direction. Logged as a new post identically to a standard continue.
 
-**Undo / Redo** — Step backward and forward through post history one post at a time. Non-destructive. The log is not modified; the current position is moved. Compression and indexing operate on the canonical log regardless of where the user is currently viewing.
+**Undo / Redo** — Step backward and forward through post history one post at a time. Non-destructive. The log is not modified; the current position is moved. Memory invalidation operates on the canonical log regardless of where the user is currently viewing.
 
-**Edit** — Modify the text of any existing post, user or author. The edited version becomes a new version of that post at its original log position. Versioning and compression lifecycle are identical to retry: alternate versions persist until compression eligibility, then the canonical version locks in. Tag indexing is re-evaluated against the edited content immediately on save — a retroactive grep pass runs against the edited post and updates the index.
+**Edit** — Modify the text of any existing post, user or author. The edited version becomes a new version of that post at its original log position. Tag indexing is re-evaluated against the edited content immediately on save — a retroactive grep pass runs against the edited post and updates the index.
 
 ### Branching and Rewind
 
@@ -323,10 +309,9 @@ Branches are auto-named on creation (e.g. "Branch — Post 47 — 2026-03-15 14:
 
 These rules apply uniformly across all controls above:
 
-- **Compression eligibility** is based on a post's position relative to the current end of the canonical log, not its creation timestamp. A post that gets un-rewound, re-edited, or moved by a branch re-enters the eligibility check fresh.
-- **Compressed and archived forms are invalidated** when a post's canonical content changes (via edit, retry, or undo/redo swapping text versions). Content stamps detect staleness; the worker re-queues compression. Overlapping archive blocks containing that post are deleted and recreated once all constituent posts are validly compressed again.
-- **Tag indexing** runs retroactively on any content change and after compress completes (`gen_extract` is indexed too). An edited post, a newly canonical version, or undo/redo all trigger re-indexing for affected text.
-- **Alternate versions** (from retries, guided retries, edits) are not indexed or compressed — only the current canonical version enters the pipeline. On version lock-in, non-canonical versions are deleted.
+- **Story-to-date segments are invalidated** when canonical text changes at or before a segment's coverage page. Affected segments and their pending jobs are removed; new segments enqueue when the trigger threshold is met again.
+- **Tag indexing** runs retroactively on any content change. An edited post, a newly canonical version, or undo/redo all trigger re-indexing for affected text.
+- **Content stamps** (`memory_content_stamp`) update on canonical text change for diagnostics and manifest views; they do not enqueue compress jobs.
 
 ### Worldbook Versioning
 
@@ -361,18 +346,17 @@ Tapping a section button expands that section to occupy the main screen area. Ta
 The goal is that a user never needs to be in more than one section to accomplish a task. Lore and Story are the two sections in active use during play. Config is for pre-session tuning. Debug is for when something's wrong.
 
 **Lore**
-Two-column layout. The left column holds the Tags panel, always visible. The right column has four tabs: Memory, Worldbook, Compressed, and Archived. This gives the user a live view of the lore state at any point during play. Hidden elements are excluded from any assembled prompt; hiding a compressed line requeues the corresponding archive.
-- *Tags* — tag management; create, edit, hide (toggle), delete (toggle), filter (toggle). Tags are a single word, letters only, at least three characters. Edit, hide, and delete toggles prompt a save button to lock in the change. The filter toggle acts as a filter on each of the right column's four tabs. With a tag filter active, the Memory tab generates its prompt as if the tag had been picked up in the user's input text; the Worldbook tab shows entries the tag's grep matched; the Compressed tab shows only entries indexed for the tag; the Archived tab shows only blocks covering compressed posts indexed for the tag. There's no separate "tagged" vs. "matches by text" distinction to show — a tag's relationship to an entry is always the grep match itself, nothing is stored on the entry.
-- *Memory* — the assembled prompt inspector: shows the finalized prompt as it would be sent, with each component's source identified. The purpose is to explore the interactions of tags and compression/archives.
-- *Worldbook* — worldbook management; create, edit, hide (toggle), delete. Entry type (CONTENT/ROSTER/MEMORY) is a discrete flag; content is freeform prose with no field schema to conform to or validate against.
-- *Compressed* — compression management; edit, hide (toggle), requeue. Hydrates with the complete set of eligible index entries. Uncompressed but eligible rows are highlighted.
-- *Archived* — archive management; edit, hide (toggle), requeue. Hydrates with blocks that cover the complete set of eligible index entries. Unarchived but eligible blocks are highlighted.
+Two-column layout. The left column holds the Tags panel, always visible. The right column has tabs for Memory, Worldbook, and related lore views during play.
+- *Tags* — tag management; create, edit, hide (toggle), delete (toggle), filter (toggle).
+- *Memory* — assembled prompt inspector: shows the finalized prompt as it would be sent, with each component's source identified (worldbook, `[STORY TO DATE]`, verbose posts).
+- *Worldbook* — worldbook management; create, edit, hide (toggle), delete. Entry type (CONTENT/ROSTER/MEMORY) is a discrete flag; content is freeform prose.
 
 **Story**
-Three tabs: Saves, Logs, and Summary.
+Tabs include Saves, Logs, **Archives**, and Summary.
 - *Saves* — session/slot management; load, name, rename, and switch between active stories and branches.
-- *Logs* — recent activity telemetry: timestamps, input text, observed tags, prompt text, response text, token counts, turnaround times, error codes. Input toggle state (length and mood) is included in this view as a part of the prompt assembly record.
-- *Summary* — the rolling compressed log, most recent first: one dense line per post once compression has run on it. A read-only Phase 1 stand-in for the Compressed tab's full management (edit/hide/requeue) described under Lore below — Phase 1's flat tab bar (see UI Structure) has no Lore/Story section split yet, so this landed alongside Logs rather than there.
+- *Logs* — recent activity telemetry: timestamps, input text, observed tags, prompt text, response text, token counts, turnaround times, error codes.
+- *Archives* — **shipped UI for story-to-date segments** (2026-07-04): collapse/expand, edit/save content, requeue pending segments, optional Worker-generated scene titles, token counts. This is the management surface for `[STORY TO DATE]` memory; titles from naming jobs appear here only.
+- *Summary* — legacy read-only view of `gen_extract` lines. Compression is retired; this tab may be empty on new stories and is a candidate for removal or repurposing.
 
 **Config**
 Two tabs: Agents and Prompts.
@@ -460,7 +444,7 @@ This is the next concrete build target: taking LM from a single implicit user to
 **The Horde is not a drop-in Featherless replacement — expect real differences, not bugs to fix:**
 - No streaming. Featherless streams tokens as they generate; the Horde is async submit-then-poll only, so a Horde-backed reply appears as a single block once the job resolves, not progressively. This is confirmed, not a defect to chase.
 - No account-wide concurrency signal. Featherless's queue gating leans on a real per-account concurrency feed (see Provider Abstraction); the Horde's capacity signal is per-request (`queue_position`, `wait_time`), so it needs its own dispatch/queue handling rather than reusing the existing slot system. Expect a genuinely separate queue path for Horde-backed jobs, not a shim over the existing one.
-- Function-calling support is unconfirmed. The Worker role depends on real forced tool-calling (see Tool Use and MCP Server); whether the Horde's available text-generation workers/models support this reliably is an open question to verify before assuming compression/archiving works identically for Horde-backed stories.
+- Function-calling support is unconfirmed on Horde workers. Memory no longer depends on forced tool calls; setup worldbook extraction uses bracket-regex. Horde remains async submit-then-poll only.
 
 **Explicitly deferred within this milestone:**
 - Onboarding any specific user's own Horde worker (e.g. via KoboldCpp's built-in `--hordeconfig` mode). This milestone builds the Horde *client* integration in LM; getting a particular user's own hardware serving jobs on the Horde is a separate, later step once the client side works.

@@ -9,6 +9,9 @@ item once it's actually resolved; don't let this become a second roadmap.
 
 ## Prompts
 
+Historical compress/archive prompt work (2026-07-01–03) — **retired with story-to-date (2026-07-04)**.
+Kept for archaeology only; do not use as a reason to rebuild compression.
+
 - **Core Author prompt now exists and is wired in** (`AUTHOR_SYSTEM_PROMPT`,
   `src/services/history.ts`, 2026-07-01) — prepended in both `assembleAuthorPrompt` and
   `assembleKickoffPrompt`, verified live via `/prompt-preview` against real story data.
@@ -69,7 +72,7 @@ item once it's actually resolved; don't let this become a second roadmap.
   models yet — revisit if malformed/missing brackets turn out to be common in real use.
   This *is* the structural prerequisite loremaster.md's deferred Horde/generic-endpoint
   support (Future Phases appendix) needed — worldbook authoring no longer depends on the
-  `tools`/`tool_calls` surface at all, only compression/archiving still do.
+  `tools`/`tool_calls` surface at all.
 
 ## UI
 
@@ -86,7 +89,7 @@ item once it's actually resolved; don't let this become a second roadmap.
   item.
 - **Debug is scoped to the current story only**, not a cross-story view.
 - **Logs telemetry only covers prose (story) posts.** `gen_metrics` isn't populated for
-  compress/archive jobs, so queue-wide telemetry is incomplete.
+  background memory/naming jobs, so queue-wide telemetry is incomplete.
 
 ## Infra / provider
 
@@ -117,10 +120,10 @@ item once it's actually resolved; don't let this become a second roadmap.
   the SSE stream emits `{"type":"cancelled"}` — previously a cancelled job's stream was
   misreported as `{"type":"done"}` (same bug existed in `reconcile()`'s status check, plus a
   separate pre-existing bug there where `"queued"` never matched real `JobStatus` values;
-  both fixed alongside this). **Only `prose`/`setup`/`setup-worldbook` jobs are abortable
-  mid-flight** — `compress`/`archive` (non-streaming, bounded ≤60s/3-attempt calls via
-  `callWithForcedTool`) were deliberately left un-abortable as a scope cut; the cancel route
-  returns 409 for those if attempted while running.
+  both fixed alongside this).   **Only `prose`/`setup`/`setup-worldbook` jobs are abortable
+  mid-flight** — `story-to-date` and `archive-name` (non-streaming Editor/Worker calls) were
+  deliberately left un-abortable as a scope cut; the cancel route returns 409 for those if
+  attempted while running.
   **Still unverified: whether aborting our client fetch has any effect on Featherless's
   side.** Featherless support confirmed by email they don't support server-side request
   cancellation — closing our connection early may or may not free their concurrency slot
@@ -164,11 +167,13 @@ item once it's actually resolved; don't let this become a second roadmap.
 
 - **MemoryView UI copy still says Setting/Register/PC** in places — worldbook is now
   CONTENT/ROSTER/MEMORY. Cosmetic; deferred until Lore UI polish pass.
-- **Scene names on archive blocks** — not implemented; archives are anonymous sliding windows.
-- **Compress-time auto-tagging from summaries** — deferred; tag-gen after worldbook creation
-  remains the population path. Disable tag-gen if play-testing shows conflicts.
+- **Scene titles on story-to-date segments** — ✅ shipped 2026-07-04 (Worker `archive-name` jobs;
+  Archives tab display only).
 - **tag-gen worker** — runs after setup-worldbook extraction; may overlap with user-curated tags.
   Monitor during VM play-testing.
+
+**Retired (2026-07-04):** per-post compression, decad archive blocks, compress-time auto-tagging from
+summaries, setup/kickoff archive blocks. Do not reintroduce without explicit design.
 
 ## Data model
 
@@ -176,9 +181,6 @@ item once it's actually resolved; don't let this become a second roadmap.
   fork point's timestamp.** Fine for forks made close to the story's current state; a
   known simplification for forks made from far in the past. Adjacent to the doc's own
   deferred "worldbook deltas" idea.
-- **Setup sequence and kickoff post are never archived as their own blocks** (doc steps
-  6-7 of Kickoff) — trimmed as low-value until a Logs/Debug view exists that would
-  actually surface them.
 
 ## Evaluated and declined
 

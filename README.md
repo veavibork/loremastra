@@ -2,6 +2,8 @@
 
 A lightweight, private roleplaying platform for a small group of trusted users, built for long-form RP stories. See [loremaster.md](loremaster.md) for the full project reference (mission, architecture, terminology, and roadmap context).
 
+**Memory model (2026-07-04):** rolling `[STORY TO DATE]` Editor recaps + verbose recent posts — not per-post compression or decad archive blocks. See [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md).
+
 ## Stack
 
 - **Backend:** Node/TypeScript, [Hono](https://hono.dev/), better-sqlite3
@@ -47,7 +49,8 @@ Other useful scripts:
 | `npm run server:restart` | Restart the dev backend process |
 | `npm run server:reset-db` | Reset the local database |
 | `npm run server:fresh` | Reset the database and restart the backend |
-| `npx tsx scripts/test-memory-pipeline-smoke.ts` | Memory pipeline smoke tests (in-process + HTTP, no browser) |
+| `npx tsx scripts/test-memory-pipeline-smoke.ts` | Memory pipeline smoke tests (in-process, no browser) |
+| `npx tsx scripts/story-to-date-experiment.ts` | Iterate on `[STORY TO DATE]` prompts against synced VM data (see docs) |
 
 ## Memory diagnostics (dev)
 
@@ -57,6 +60,7 @@ While a story is open, quick health checks:
 GET  /api/stories/:id/memory/summary
 GET  /api/stories/:id/memory/tag-activation
 GET  /api/stories/:id/prompt-preview
+GET  /api/stories/:id/story-to-date
 POST /api/stories/:id/memory/backfill
 ```
 

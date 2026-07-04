@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS story_to_date_segment (
   input_ceiling_ic_post INTEGER,
   input_ceiling_page_id TEXT REFERENCES page(id),
   seq INTEGER NOT NULL,
+  name TEXT,
   hidden INTEGER NOT NULL DEFAULT 0,
   broken INTEGER NOT NULL DEFAULT 0
 );

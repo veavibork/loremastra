@@ -17,7 +17,7 @@ real sessions; act only if the named problem actually shows up.
 - **Bespoke touch-first chrome** — status-icon nav, half-transparent sidebar, touch-first interaction pattern deferred in favor of plain controls ([development.md](development.md))
 - **Cross-story Debug view** — Debug panel scoped to active story only ([stub-revisions.md](stub-revisions.md))
 - **Client error friendly titles** — human-readable explanations for raw fetch/CORS failures; revisit after real usage data ([development.md](development.md))
-- **Setup/kickoff archive blocks** — setup sequence and kickoff post never archived as their own sliding windows ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
+- **Summary tab cleanup** — legacy `gen_extract` view; compression retired; remove or repurpose ([development.md](development.md))
 
 ## Security & data
 
@@ -26,9 +26,7 @@ real sessions; act only if the named problem actually shows up.
 
 ## Memory & lore
 
-- **Compress-time auto-tagging** — auto-create tags from compressed summaries after compress runs ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
 - **MemoryView stale copy** — UI still references old Setting/Register/PC labels; cosmetic until Lore polish pass ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
-- **Mega-archive / story-so-far pass** — experiment tooling in [story-to-date-experiment.md](story-to-date-experiment.md); `[STORY BEGINS]` / `[STORY CONTINUES]` → merged `[STORY TO DATE]`; iterate via `scripts/story-to-date-experiment.ts` before pipeline integration
 - **Worldbook deltas** — story-state changes stored separately from canonical entries so events don't contaminate baseline lore ([loremaster.md](../loremaster.md) Future Phases, [stub-revisions.md](stub-revisions.md))
 - **Fork point-in-time worldbook** — forks copy latest worldbook state, not reconstructed as-of fork timestamp ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
 
@@ -62,6 +60,7 @@ Observe during real VM sessions; no build until a problem is confirmed.
 - **PC address mode** — Author uses 2nd-person default; don't switch 2nd/3rd/1st until real sessions show a need ([stub-revisions.md](stub-revisions.md))
 - **Guided retry directions** — plain-text guidance (e.g. "make it shorter") may be ignored; model behavior, not a code bug ([development.md](development.md))
 - **Fork from far back** — worldbook stays at latest state, not fork-point snapshot; watch if deep forks feel wrong ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
+- **Story-to-date quality at scale** — watch word count, seam quality, and regen behavior after edits on long stories ([story-to-date-experiment.md](story-to-date-experiment.md))
 - **Cancel vs Featherless slot** — client Stop may not free server-side concurrency; watch `used_cost` on `/account/concurrency/stream` around a cancel ([stub-revisions.md](stub-revisions.md), [featherless-notes.md](featherless-notes.md))
 - **Per-fallback sampler params** — only the primary row's temperature/sampler settings apply across the fallback chain → rebuild if wrong-model behavior shows up ([stub-revisions.md](stub-revisions.md))
 - **Featherless `creative=` tags** — `creative=roleplay` / `creative=erp` are soft, unverified signals for model discovery ([featherless-tag-taxonomy.md](featherless-tag-taxonomy.md))

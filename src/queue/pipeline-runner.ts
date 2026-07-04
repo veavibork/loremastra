@@ -45,8 +45,9 @@ import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-sto
 import type { AgentProfile } from "../config.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
-import { enqueueEligibleStoryToDateJob } from "../services/story-to-date.js";
+import { enqueueEligibleStoryToDateJob, enqueueStoryToDateNameJob } from "../services/story-to-date.js";
 import { executeStoryToDateJob } from "../services/story-to-date-worker.js";
+import { fillStoryToDateSegmentName, getStoryToDateSegment } from "../db/story-to-date-store.js";
 import { cancelPendingCompressJobs } from "../services/compression.js";
 import { nowIso } from "../db/time.js";
 import { markCompressValid } from "../services/memory-invalidation.js";
@@ -69,12 +70,13 @@ import {
   EDITOR_UPDATE_PROMPT,
   COMPRESS_SYSTEM_PROMPT,
   NAMING_PROMPT,
+  ARCHIVE_NAMING_PROMPT,
   guidedRegenerateNote,
   guidedContinueNote,
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const WORKER_JOB_TYPES: JobType[] = ["story-to-date", "story-name"];
+const WORKER_JOB_TYPES: JobType[] = ["story-to-date", "story-name", "archive-name"];
 const PROSE_JOB_TYPES: JobType[] = ["prose", "setup", "setup-worldbook"];
 
 /**
@@ -162,6 +164,7 @@ function countRunningStoryToDateJobsForUser(
 
 const STORY_NAME_MAX_ATTEMPTS = 2;
 const NAMING_MAX_TOKENS = 64;
+const ARCHIVE_NAME_MAX_ATTEMPTS = 3;
 const STORY_NAME_MAX_WORDS = 12; // generous ceiling for a 2-6 word title — catches "wrote a sentence instead" cases
 const NAME_PATTERN = /\[NAME\]([\s\S]*?)\[\/NAME\]/i;
 const NAME_OPEN_PATTERN = /\[NAME\]\s*([^\n\[]+)/i;
@@ -413,6 +416,8 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         void executeStoryToDateJobWrapper(db, story.ownerUserId, storyId, logbook.id, job.id, job.targetStoryToDateId);
       } else if (job.jobType === "story-name" && job.targetTextId) {
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId);
+      } else if (job.jobType === "archive-name" && job.targetStoryToDateId) {
+        void executeStoryToDateNameJob(db, story.ownerUserId, job.id, job.targetStoryToDateId);
       } else {
         finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
         releaseSlot(story.ownerUserId, job.id);
@@ -1093,6 +1098,55 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
   }
 }
 
+/** Names a story-to-date segment from its summary — tab display only, not prompt assembly. */
+async function executeStoryToDateNameJob(
+  db: Database.Database,
+  userId: string,
+  jobId: string,
+  segmentId: string
+): Promise<void> {
+  const startedAt = Date.now();
+  try {
+    const segment = getStoryToDateSegment(db, segmentId);
+    if (!segment?.content?.trim()) throw new Error("segment has no content to name from");
+
+    const nameMessages: ChatMessage[] = [
+      { role: "system", content: ARCHIVE_NAMING_PROMPT },
+      { role: "user", content: `Scene summary:\n${segment.content.trim()}` },
+    ];
+
+    let name: string | null = null;
+    let usedModel = "";
+    let lastError = "unknown error";
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    const workerProfile = getAgentProfile(userId, "worker");
+    for (let attempt = 1; attempt <= ARCHIVE_NAME_MAX_ATTEMPTS && !name; attempt++) {
+      try {
+        const rawText = await withModelFallback(workerProfile, (profile) => {
+          usedModel = profile.model;
+          return completeChat(profile, featherlessKey, nameMessages, { maxTokens: NAMING_MAX_TOKENS });
+        });
+        name = extractStoryName(rawText);
+        if (!name?.trim()) {
+          lastError = `no usable [NAME] block on attempt ${attempt}: "${rawText.trim().slice(0, 80)}"`;
+        }
+      } catch (err) {
+        lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    if (!name) throw new Error(`segment naming failed after ${ARCHIVE_NAME_MAX_ATTEMPTS} attempts — ${lastError}`);
+    fillStoryToDateSegmentName(db, segmentId, name);
+    finishJob(db, jobId, "done", undefined, { model: usedModel, elapsedMs: Date.now() - startedAt });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    finishJob(db, jobId, "failed", message);
+  } finally {
+    releaseSlot(userId, jobId);
+    releaseWorkerLane();
+  }
+}
+
 async function executeStoryToDateJobWrapper(
   db: Database.Database,
   userId: string,
@@ -1111,6 +1165,7 @@ async function executeStoryToDateJobWrapper(
       model: editor.model,
       elapsedMs: Date.now() - startedAt,
     });
+    enqueueStoryToDateNameJob(db, userId, segmentId);
     enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

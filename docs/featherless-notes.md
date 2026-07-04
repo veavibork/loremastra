@@ -64,12 +64,9 @@ can degrade unrelated instruction-following capabilities like structured tool us
 base Mistral-Nemo architecture supports it. The catalog flag reflects architecture support, not
 per-finetune reliability.
 
-**Practical takeaway:** the worker/compression role doesn't need an uncensored model — it's summarizing
-existing text, not generating new creative/explicit content — so there's no guardrails-philosophy
-reason to use a "Heretic" variant there. Prefer a standard instruct model with a strong tool-calling
-reputation for worker tasks (e.g., NousResearch's Hermes line is specifically tuned for function-calling
-as a first-class feature). The "guardrail via model selection" concern from loremaster.md applies to
-the Author/Editor roles generating story content, not the Worker.
+**Practical takeaway (historical):** Worker tasks no longer include per-post compression (retired
+2026-07-04). Worker now handles lightweight naming (`archive-name` scene titles). Prefer instruct
+models with reliable completions for Worker-tier jobs.
 
 ## Multi-tool-call turns can come back with a null `tool_calls[].id`
 
@@ -183,10 +180,10 @@ that honors `logit_bias`) — this is a scope decision, not a code fix, since it
 **Decision 2026-07-02:** dropped the user-configurable banned-phrase feature's original motivation
 (word suppression) as unachievable per the above. Kept one narrower use of the same "detect a
 refusal" idea: `src/services/refusal-detection.ts` catalogs the GCG paper's `test_prefixes` refusal
-list and prefix-matches it against Worker/Editor compress and archive summaries (see
-`executeCompressJob`/`executeArchiveJob` in `src/queue/pipeline-runner.ts`) — those feed the
-worldbook/memory silently, so a refusal masquerading as a summary needs to fail the job rather than
-poison stored lore. Deliberately *not* applied to Author prose or the Editor's setup replies, which
+list and prefix-matches it against background memory summaries where refusal detection is wired
+(e.g. legacy compress path in `pipeline-runner.ts`; story-to-date worker may add this later) — summaries
+feed memory silently, so a refusal masquerading as a recap needs to fail the job rather than poison
+stored lore. Deliberately *not* applied to Author prose or the Editor's setup replies, which
 stay untouched and visible to the user via the existing manual Stop/Retry controls — watching a
 refusal play out there is itself useful signal for judging a model's prudishness.
 

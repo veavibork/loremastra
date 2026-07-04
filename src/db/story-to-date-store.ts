@@ -14,6 +14,7 @@ export interface StoryToDateSegmentRow {
   inputCeilingIcPost: number | null;
   inputCeilingPageId: string | null;
   seq: number;
+  name: string | null;
   hidden: boolean;
   broken: boolean;
 }
@@ -29,6 +30,7 @@ interface RawSegmentRow {
   input_ceiling_ic_post: number | null;
   input_ceiling_page_id: string | null;
   seq: number;
+  name: string | null;
   hidden: number;
   broken: number;
 }
@@ -45,6 +47,7 @@ function mapRow(row: RawSegmentRow): StoryToDateSegmentRow {
     inputCeilingIcPost: row.input_ceiling_ic_post,
     inputCeilingPageId: row.input_ceiling_page_id,
     seq: row.seq,
+    name: row.name ?? null,
     hidden: !!row.hidden,
     broken: !!row.broken,
   };
@@ -114,6 +117,21 @@ export function fillStoryToDateSegment(
     input.inputCeilingPageId,
     id
   );
+}
+
+export function fillStoryToDateSegmentName(db: Database.Database, id: string, name: string): boolean {
+  const result = db
+    .prepare(`UPDATE story_to_date_segment SET name = ? WHERE id = ? AND (name IS NULL OR name = '')`)
+    .run(name.trim(), id);
+  return result.changes > 0;
+}
+
+export function setStoryToDateSegmentName(db: Database.Database, id: string, name: string): void {
+  db.prepare(`UPDATE story_to_date_segment SET name = ? WHERE id = ?`).run(name.trim(), id);
+}
+
+export function setStoryToDateSegmentContent(db: Database.Database, id: string, content: string): void {
+  db.prepare(`UPDATE story_to_date_segment SET content = ? WHERE id = ?`).run(content.trim(), id);
 }
 
 export function markStoryToDateSegmentBroken(db: Database.Database, id: string): void {

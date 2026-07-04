@@ -11,9 +11,14 @@ import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../d
 import {
   enqueueEligibleStoryToDateJob,
   enqueuePendingStoryToDateJobs,
+  enqueuePendingStoryToDateNameJobs,
   requeueStoryToDateSegment,
 } from "../services/story-to-date.js";
-import { getStoryToDateSegment } from "../db/story-to-date-store.js";
+import {
+  getStoryToDateSegment,
+  setStoryToDateSegmentContent,
+  setStoryToDateSegmentName,
+} from "../db/story-to-date-store.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
 import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from "../db/job-store.js";
 import { getPage, setPageHidden } from "../db/page-store.js";
@@ -204,6 +209,25 @@ storiesRoute.post("/:id/story-to-date/:segmentId/requeue", (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
+});
+
+storiesRoute.post("/:id/story-to-date/backfill-names", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+  enqueuePendingStoryToDateNameJobs(storyDb, c.get("userId"), logbook.id);
+  return c.json({ view: buildStoryToDateView(storyDb, logbook.id) });
+});
+
+storiesRoute.patch("/:id/story-to-date/:segmentId", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { content?: string; name?: string };
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const segment = getStoryToDateSegment(storyDb, c.req.param("segmentId"));
+  if (!segment) return c.json({ error: "segment not found" }, 404);
+  if (typeof body.content === "string") setStoryToDateSegmentContent(storyDb, segment.id, body.content);
+  if (typeof body.name === "string") setStoryToDateSegmentName(storyDb, segment.id, body.name);
+  const logbook = getBookByType(storyDb, "logbook")!;
+  return c.json({ view: buildStoryToDateView(storyDb, logbook.id) });
 });
 
 /** Compact memory health — story-to-date coverage, no per-post dump. */

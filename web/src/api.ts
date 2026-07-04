@@ -538,22 +538,56 @@ export interface StoryToDateSegment {
   id: string;
   kind: "begins" | "continues";
   seq: number;
+  createdAt: string;
   content: string | null;
+  name: string | null;
   coverageThroughIcPost: number | null;
   coveragePageId: string | null;
   hidden: boolean;
   broken: boolean;
+  status: "ready" | "pending" | "broken";
+  tokenCount: number | null;
   jobActive: boolean;
+  nameJobActive: boolean;
 }
 
 export interface StoryToDatePage {
   segments: StoryToDateSegment[];
   mergedCoverageThroughPost: number | null;
+  total: number;
+  withContent: number;
+  pending: number;
+  broken: number;
 }
 
-export async function fetchStoryToDate(storyId: string): Promise<StoryToDatePage> {
-  const res = await apiFetch(`/api/stories/${storyId}/story-to-date`);
+export async function fetchStoryToDate(
+  storyId: string,
+  options: { background?: boolean } = {}
+): Promise<StoryToDatePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date`, {}, { background: options.background });
   return res.json() as Promise<StoryToDatePage>;
+}
+
+export async function backfillStoryToDateNames(storyId: string): Promise<StoryToDatePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date/backfill-names`, { method: "POST" });
+  const data = (await res.json()) as { view: StoryToDatePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
+}
+
+export async function updateStoryToDateSegment(
+  storyId: string,
+  segmentId: string,
+  patch: { content?: string; name?: string }
+): Promise<StoryToDatePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date/${segmentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = (await res.json()) as { view: StoryToDatePage; error?: string };
+  if (data.error) throw new Error(data.error);
+  return data.view;
 }
 
 export async function enqueueStoryToDate(storyId: string): Promise<StoryToDatePage> {

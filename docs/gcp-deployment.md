@@ -172,20 +172,23 @@ Caddy doesn't need a restart for frontend changes — it serves `web/dist` direc
 
 ### Verify memory pipeline after deploy
 
-From your laptop (replace host, story id, session header):
+Story-to-date memory replaces decad archives. After deploy, confirm segments and assembly:
 
 ```
 curl -s https://your-domain.example.com/api/stories/<id>/memory/summary \
   -H "X-Loremaster-Session: <session>"
-curl -s https://your-domain.example.com/api/stories/<id>/memory/tag-activation \
+curl -s https://your-domain.example.com/api/stories/<id>/story-to-date \
+  -H "X-Loremaster-Session: <session>"
+curl -s https://your-domain.example.com/api/stories/<id>/prompt-preview \
   -H "X-Loremaster-Session: <session>"
 ```
 
-On the VM, run smoke tests against the checkout (uses ephemeral server — does not need the live service):
+On the VM:
 
 ```
 cd /opt/loremaster && npx tsx scripts/test-memory-pipeline-smoke.ts
 ```
 
-Existing stories opened after deploy get `memory_content_stamp` backfilled automatically on first
-`getStoryDb()` open (posts that already had `gen_extract` adopt stamps without mass recompress).
+Existing stories get `story_to_date_segment` schema via migrations on first `getStoryDb()` open.
+Legacy `archive` rows are purged automatically. Content stamps backfill on open for diagnostics only
+(compress jobs are not enqueued).

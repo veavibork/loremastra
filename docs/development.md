@@ -8,12 +8,10 @@ a minimal real UI) and **Phase 1 Complete** (everything loremaster.md scopes to 
 Future Phases appendix). Still building one step at a time — this exists so "push on to something else"
 has a target, not so we jump ahead of confirming each step.
 
-**Current status (2026-07-03): Vertical Slice reached. Milestones A-E and G done. Milestone F
-(Security) is partially done** — per-user login, session claim, and encrypted API keys are built;
-encryption at rest for story content remains deliberately deferred, not a blocker. **Memory pipeline
-reliability (KAI-style restoration)** landed 2026-07-03 — see "Memory pipeline" below and
-`loremaster.md` Log Compression Pipeline. Everything below this line reflects that state; see each
-milestone's own section for what "done" actually covers and what's explicitly still missing within it.
+**Current status (2026-07-04):** Vertical Slice reached. Milestones A–E and G done. **Story-to-date memory**
+replaced per-post compression and decad archive blocks in production — see "Story-to-date memory
+(2026-07-04)" below. Milestone F (Security) is partially done — per-user login, session claim, and
+encrypted API keys are built; encryption at rest for story content remains deliberately deferred.
 
 ## Done so far (proven, not full-featured)
 
@@ -21,21 +19,12 @@ milestone's own section for what "done" actually covers and what's explicitly st
 - Job queue: durable job table, cost-based concurrency slots, timeouts, stale-job recovery on restart,
   handshake+poll+SSE client protocol (no more silent-hang class of bugs).
 - Tags: mutable tag cloud, retroactive grep indexing (both directions — new content vs. existing tags).
-  **2026-07-03:** tag index matches both `genPackage` and `genExtract`; prompt assembly activates tags
-  from a **query** (latest user message + ~2 recent assistant turns), not only the trigger post.
-- Compression: 5-turn-lag trigger; lorepebble-proven worker path with validation/retry/fallback,
-  trivial/verbatim shortcuts, prior compressed lines + worldbook name roster as context. **Content
-  stamps** (`page.memory_content_stamp`) tie each compress to canonical `gen_package`; stale posts
-  bypass the lag window and re-queue immediately.
+  Tag activation from query (latest user message + ~2 assistant turns). **2026-07-04:** assembly no
+  longer promotes compress/archive tiers; tags drive worldbook ROSTER/MEMORY injection only.
 - Real Featherless integration: streaming author calls, forced tool-calling, model catalog + tag-rating
   scaffold for role-based model discovery.
 - Minimal React UI: single story, post a message, watch it stream in.
-- Archive tier + real tiered/tag-driven prompt assembly (`assembleAuthorPrompt`, steps 5-8 of the doc's
-  algorithm) — verified end-to-end 2026-07-01: two overlapping 10-post archive blocks formed correctly,
-  editor-generated narrative summaries, ownership computed and assigned correctly across overlapping blocks.
-  **2026-07-03:** archive invalidation on canonical text change (delete + recreate overlapping blocks);
-  archive worker uses compressed lines with prose fallback and prior non-overlapping archive summary as
-  continuity context.
+- **Retired 2026-07-04:** archive tier + decad prompt assembly (see Story-to-date memory above).
 - Worldbook + Tags UI (Milestone B) — verified end-to-end 2026-07-01: `worldbook_entry` table keyed to
   `page.id` (reuses existing page/text versioning — edits are `createRetryText`, giving version history
   for free; singleton enforcement for Setting/Register/PC via partial unique indexes, not just app-layer
@@ -46,11 +35,7 @@ milestone's own section for what "done" actually covers and what's explicitly st
   Register/PC always appear, and a tagged NPC entry (Halia) was correctly pulled into a real generation
   when the trigger post mentioned her.
 
-Caught and fixed one real bug in the process: archive jobs were hardcoded to `slotCost: 1`, but the
-editor uses the same large model as the author (cost 4 on the real Featherless account) — a live 429
-surfaced it immediately when two archive jobs tried to run "concurrently" under our own (wrong) local
-accounting. Fixed by hardcoding to 4 to match; the real fix (read `concurrency_cost` from the model
-catalog instead of hardcoding per job type) is still open — see docs/featherless-notes.md.
+Caught and fixed one real bug in the process (historical, pre story-to-date): archive jobs were hardcoded to `slotCost: 1` — fixed via `concurrencyCost` from agent profiles; see docs/featherless-notes.md.
 
 Also fixed along the way: the CORS `Access-Control-Allow-Methods` header (both the global one in
 `src/index.ts` and the one in `stories.ts`) was missing `PATCH`, which would have silently broken the
@@ -62,38 +47,46 @@ way it does for Location and Character. Pulled the actual field lists from lorep
 (Setup Assistant card) instead, per explicit instruction — Creature: identity, how they think, speech,
 wants, disposition, do-not; Faction: identity, how they appear, stance toward the PC, leader.
 
-## Memory pipeline (KAI-style restoration) — ✅ done (2026-07-03)
+## Story-to-date memory (2026-07-04) — ✅ done
 
-Ported lorepebble-proven memory behavior into the refactored Loremaster stack without reverting the
-purpose-built UI or overlapping archive geometry. Confirmed via in-process + ephemeral-HTTP smoke tests
-(`scripts/test-memory-pipeline-smoke.ts` — no browser automation).
+Replaced the KAI-style compress + decad archive pipeline with rolling `[STORY TO DATE]` Editor segments.
+Confirmed via smoke tests and live VM deploy.
 
-**Invalidation (content stamps):** each page stores a SHA-256 of normalized canonical `gen_package`.
-Compress is valid only when stamp matches and `gen_extract` exists. Edit, retry, undo, redo, and fork
-truncate all invalidate overlapping archives (delete + recreate) and re-queue compress (stale posts skip
-the 5-post lag). `onCanonicalTextChanged` is wired from HTTP routes and undo/redo.
+**Trigger:** assembled Author prompt ≥ 80% usable context → `story-to-date` Editor job (`begins` or
+`continues`). **Assembly:** system → worldbook → merged `[STORY TO DATE]` → verbose tail after last
+coverage page only (`src/services/history.ts`).
 
-**Compress worker:** `src/services/compress-worker.ts` — trivial/verbatim shortcuts, validation with
-retry hints, narrative fallback, 3 prior compressed lines + CONTENT/ROSTER/MEMORY name roster in prompt.
-Wired in `pipeline-runner.ts`; re-indexes tags on `gen_extract` after success.
+**Invalidation:** edits/undo/redo/fork inside a segment's coverage window delete that segment (and
+later seq) and cancel pending jobs. Legacy `archive` rows purged on DB open (`purgeLegacyArchives`).
 
-**Tag retrieval:** `src/services/tag-retrieval.ts` — query activation from latest user message + ~2
-recent assistant turns; tag index greps both verbose and compressed text.
+**Archives tab:** collapse/expand, edit/save segment content, requeue, token counts, optional Worker
+scene titles (`archive-name` on `target_story_to_date_id` — tab display only).
 
-**Archive worker:** prose fallback when compress missing; prior completed archive summary when the prior
-block ends strictly before the current block start (overlapping blocks correctly omit the overlapping
-prior).
+**Retired (do not reintroduce casually):** per-post compress jobs, decad `[EVENT SUMMARY]` blocks,
+tag-driven compress/archive promotion in assembly, setup/kickoff archive blocks.
 
-**Dev ops:** MCP tools (`get_memory_manifest`, `get_memory_summary`, `preview_tag_activation`,
-`get_prompt_preview`, `backfill_memory`, `reindex_tags`, `enqueue_memory_jobs`) and HTTP routes under
-`/api/stories/:id/memory/*` — see `loremaster.md` MCP section.
+Harness for prompt iteration: `scripts/story-to-date-experiment.ts`, [story-to-date-experiment.md](story-to-date-experiment.md).
 
-**Still deferred:** scene names on archives, compress-time auto-tagging from summaries, MemoryView stale
-copy ("Setting/Register/PC"), tag-gen disable if it conflicts in play-testing.
+---
+
+## Memory pipeline (KAI-style restoration) — superseded 2026-07-04
+
+The following shipped 2026-07-03 and was **retired** when story-to-date landed. Kept here as history only.
+
+- Per-post compression (5-post lag, `gen_extract`, Worker forced tool calls)
+- Decad archive blocks (10-post windows, `[EVENT SUMMARY]`, Editor archive jobs)
+- Archive invalidation on edit; compress worker with name roster; tag grep on `gen_extract`
+
+Content stamps (`page.memory_content_stamp`) remain for diagnostics/manifest; compress is not enqueued.
+Tag activation and worldbook grep against verbose posts remain live.
+
+**Still deferred (unchanged):** MemoryView stale copy, tag-gen conflicts in play-testing.
+
+---
 
 ## Path to Vertical Slice
 
-**A. Archive tier + real prompt assembly** — ✅ done.
+**A. Archive tier + real prompt assembly** — ✅ done (superseded 2026-07-04 by story-to-date; see above).
 
 **B. Worldbook + Tags UI** — ✅ done.
 
@@ -391,15 +384,8 @@ removed from `src/prompts.ts` and the prompt catalog entirely — no replacement
   Phase 1 (see the "reused prompt-inspector component" note earlier in this doc) that never earned its
   keep as a second surface — retired. `PromptInspectorView.tsx` deleted; its shared `.prompt-message`
   CSS survives as `PromptMessage.css`, now imported directly by `MemoryView.tsx`.
-- New Story > Summary tab (`SummaryView.tsx`) shows the rolling compressed log — one line per post's
-  `text.gen_extract` once compression has run on it, most recent first. No new endpoint: `LogEntry`
-  (`src/services/log-view.ts` and its frontend mirror in `web/src/api.ts`) just grew a `genExtract`
-  field, reusing the existing `GET /:id/log`. Initially shipped without polling and looked broken —
-  compress jobs land in the background with nothing to trigger a local refetch, so a tab opened before
-  a job finished stayed stuck on that first (often empty) snapshot forever, same class of problem
-  `WorldbookView`'s existing 3s poll already solves for live worldbook extraction. Fixed by giving
-  `fetchLog` the same optional `{ background }` opt `fetchJobs`/`fetchWorldbook`/`fetchTags` already
-  take, and polling `SummaryView` every 3s the same way.
+- New Story > Summary tab (`SummaryView.tsx`) — **legacy:** showed `gen_extract` per post; compression
+  retired 2026-07-04. Candidate for removal. Archives tab now manages story-to-date segments.
 - `DEFAULT_LAYOUT_CONFIG` (`src/services/layout.ts`) updated to match (Preview removed, Summary added
   after Logs). Since a layout config had already been persisted to `data/global.sqlite` from an earlier
   session (the active row wins over the code default — see `GET /api/layout`), that row was updated

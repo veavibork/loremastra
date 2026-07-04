@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { createJob } from "../db/job-store.js";
+import { createJob, hasActiveJobForStoryToDate } from "../db/job-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import {
   createStoryToDateSegment,
@@ -147,4 +147,28 @@ export function requeueStoryToDateSegment(db: Database.Database, userId: string,
     priority: 5,
     slotCost: editor.concurrencyCost,
   });
+}
+
+/** Queue a Worker naming job for a segment that has content but no title yet. */
+export function enqueueStoryToDateNameJob(db: Database.Database, userId: string, segmentId: string): boolean {
+  const seg = getStoryToDateSegment(db, segmentId);
+  if (!seg?.content?.trim() || seg.broken) return false;
+  if (seg.name?.trim()) return false;
+  if (hasActiveJobForStoryToDate(db, segmentId, "archive-name")) return false;
+  const worker = getAgentProfile(userId, "worker");
+  createJob(db, {
+    targetStoryToDateId: segmentId,
+    jobType: "archive-name",
+    priority: -1,
+    slotCost: worker.concurrencyCost,
+  });
+  return true;
+}
+
+export function enqueuePendingStoryToDateNameJobs(db: Database.Database, userId: string, logbookId: string): number {
+  let n = 0;
+  for (const seg of listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true })) {
+    if (enqueueStoryToDateNameJob(db, userId, seg.id)) n++;
+  }
+  return n;
 }

@@ -1,95 +1,258 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  backfillStoryToDateNames,
   enqueueStoryToDate,
   fetchStoryToDate,
   requeueStoryToDateSegment,
+  updateStoryToDateSegment,
   type StoryToDatePage,
   type StoryToDateSegment,
 } from "./api";
 import type { PanelProps } from "./panel-types";
 import "./ArchivesView.css";
 
+const POLL_MS = 3000;
+
+function applyPage(
+  setSegments: (s: StoryToDateSegment[]) => void,
+  setStats: (s: Omit<StoryToDatePage, "segments">) => void,
+  page: StoryToDatePage
+) {
+  setSegments(page.segments);
+  setStats({
+    mergedCoverageThroughPost: page.mergedCoverageThroughPost,
+    total: page.total,
+    withContent: page.withContent,
+    pending: page.pending,
+    broken: page.broken,
+  });
+}
+
+function segmentLabel(seg: StoryToDateSegment): string {
+  if (seg.name?.trim()) return seg.name;
+  const kind = seg.kind === "begins" ? "Story begins" : "Story continues";
+  if (seg.coverageThroughIcPost != null) {
+    return `${kind} · through post ${seg.coverageThroughIcPost}`;
+  }
+  return `${kind} · seq ${seg.seq}`;
+}
+
+/**
+ * [STORY TO DATE] segments — collapse/expand, edit, and optional scene titles (Archives tab only).
+ */
 export default function ArchivesView({ story }: PanelProps) {
   const [segments, setSegments] = useState<StoryToDateSegment[]>([]);
-  const [coverage, setCoverage] = useState<number | null>(null);
+  const [stats, setStats] = useState({
+    mergedCoverageThroughPost: null as number | null,
+    total: 0,
+    withContent: 0,
+    pending: 0,
+    broken: 0,
+  });
+  const [includeHidden, setIncludeHidden] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
 
-  const reload = useCallback(async () => {
-    if (!story?.id) return;
-    try {
-      const page: StoryToDatePage = await fetchStoryToDate(story.id);
-      setSegments(page.segments);
-      setCoverage(page.mergedCoverageThroughPost);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [story?.id]);
+  const refresh = useCallback(
+    async (background = false) => {
+      if (!story) return;
+      const page = await fetchStoryToDate(story.id, { background });
+      applyPage(setSegments, setStats, page);
+    },
+    [story]
+  );
 
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    if (!story) return;
+    void (async () => {
+      try {
+        const page = await backfillStoryToDateNames(story.id);
+        applyPage(setSegments, setStats, page);
+      } catch {
+        await refresh();
+      }
+    })();
+    const interval = setInterval(() => void refresh(true), POLL_MS);
+    return () => clearInterval(interval);
+  }, [story, refresh]);
 
-  async function runAction(key: string, fn: () => Promise<unknown>) {
-    setBusy(key);
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function runAction(key: string, fn: () => Promise<StoryToDatePage>) {
+    setBusyKey(key);
     setError(null);
     try {
-      await fn();
-      await reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const page = await fn();
+      applyPage(setSegments, setStats, page);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(null);
+      setBusyKey(null);
     }
+  }
+
+  function startEdit(seg: StoryToDateSegment) {
+    setEditingId(seg.id);
+    setEditDraft(seg.content ?? "");
+    setExpanded((prev) => new Set(prev).add(seg.id));
+  }
+
+  async function saveEdit(segmentId: string) {
+    if (!story) return;
+    await runAction(segmentId, () => updateStoryToDateSegment(story.id, segmentId, { content: editDraft }));
+    setEditingId(null);
   }
 
   if (!story) return <div className="archives-view">No active story.</div>;
 
+  const visible = includeHidden ? segments : segments.filter((s) => !s.hidden);
+
   return (
     <div className="archives-view">
       <div className="archives-header">
-        <h2>Story to date</h2>
-        <button type="button" disabled={!!busy} onClick={() => void runAction("enqueue", () => enqueueStoryToDate(story.id))}>
-          Queue job
-        </button>
+        <h2>Archives</h2>
+        <div className="archives-header-actions">
+          <button
+            type="button"
+            disabled={!!busyKey}
+            onClick={() => void runAction("enqueue", () => enqueueStoryToDate(story.id))}
+          >
+            Queue job
+          </button>
+          <label className="archives-hidden-toggle">
+            <input
+              type="checkbox"
+              checked={includeHidden}
+              onChange={(e) => setIncludeHidden(e.target.checked)}
+            />
+            Show hidden
+          </label>
+        </div>
       </div>
 
       {error && <p className="archives-error">{error}</p>}
-      {coverage != null && (
-        <p className="archives-count">Coverage through IC post {coverage}</p>
+      {stats.total === 0 && (
+        <p className="archives-empty">No [STORY TO DATE] segments yet — queue a job or keep playing.</p>
       )}
-      {segments.length === 0 && <p className="archives-empty">No [STORY TO DATE] segments yet.</p>}
+      {stats.total > 0 && (
+        <p className="archives-count">
+          {stats.withContent} of {stats.total} segments ready
+          {stats.pending > 0 && ` — ${stats.pending} pending`}
+          {stats.broken > 0 && ` — ${stats.broken} broken`}
+          {stats.mergedCoverageThroughPost != null && ` · coverage through post ${stats.mergedCoverageThroughPost}`}
+          {!includeHidden && " · in-character only"}
+        </p>
+      )}
 
       <div className="archives-list">
-        {segments.map((seg) => (
-          <article key={seg.id} className="archive-card">
-            <header>
-              <strong>
-                [{seg.kind}] seq {seg.seq}
-              </strong>
-              {seg.broken && <span> broken</span>}
-              {seg.jobActive && <span> job active</span>}
-            </header>
-            {seg.coverageThroughIcPost != null && (
-              <p>Coverage: post {seg.coverageThroughIcPost}</p>
-            )}
-            {seg.content ? (
-              <p className="archive-summary">{seg.content.slice(0, 400)}{seg.content.length > 400 ? "…" : ""}</p>
-            ) : (
-              <p className="archive-summary">(pending)</p>
-            )}
-            {!seg.content?.trim() && !seg.jobActive && (
-              <button
-                type="button"
-                disabled={!!busy}
-                onClick={() => void runAction(seg.id, () => requeueStoryToDateSegment(story.id, seg.id))}
-              >
-                Requeue
-              </button>
-            )}
-          </article>
-        ))}
+        {visible.map((seg) => {
+          const isExpanded = expanded.has(seg.id);
+          const statusLabel =
+            seg.status === "ready"
+              ? "ready"
+              : seg.status === "broken"
+                ? "broken"
+                : seg.jobActive
+                  ? "generating"
+                  : "pending";
+          const showRequeue = seg.status === "pending" && !seg.jobActive;
+          const showEdit = seg.status === "ready";
+
+          return (
+            <article
+              key={seg.id}
+              className={`archive-card archive-${seg.status}${seg.hidden ? " archive-row-hidden" : ""}`}
+            >
+              <header className="archive-card-header">
+                <button type="button" className="archive-toggle" onClick={() => toggleExpanded(seg.id)}>
+                  <span className="archive-range">{segmentLabel(seg)}</span>
+                  <span className="archive-meta">
+                    [{seg.kind}] seq {seg.seq}
+                    {seg.coverageThroughIcPost != null && ` · through post ${seg.coverageThroughIcPost}`}
+                    {seg.tokenCount != null && ` · ~${seg.tokenCount.toLocaleString()} tok`}
+                    {seg.createdAt && ` · ${new Date(seg.createdAt).toLocaleString()}`}
+                    {seg.nameJobActive && " · naming…"}
+                    {seg.jobActive && " · generating…"}
+                    {seg.hidden && " · hidden"}
+                  </span>
+                </button>
+                <span className={`archive-status archive-status-${seg.status}`}>{statusLabel}</span>
+              </header>
+
+              <div className="archive-actions">
+                {showRequeue && (
+                  <button
+                    type="button"
+                    disabled={busyKey === seg.id}
+                    onClick={() => void runAction(seg.id, () => requeueStoryToDateSegment(story.id, seg.id))}
+                  >
+                    Requeue
+                  </button>
+                )}
+                {showEdit && (
+                  <button type="button" disabled={busyKey === seg.id} onClick={() => startEdit(seg)}>
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {isExpanded && (
+                <div className="archive-body">
+                  {editingId === seg.id ? (
+                    <>
+                      <textarea
+                        className="archive-edit"
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value)}
+                        rows={8}
+                      />
+                      <div className="archive-edit-actions">
+                        <button
+                          type="button"
+                          onClick={() => void saveEdit(seg.id)}
+                          disabled={busyKey === seg.id}
+                        >
+                          Save
+                        </button>
+                        <button type="button" onClick={() => setEditingId(null)}>
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className={`archive-summary${seg.content ? "" : " archive-pending"}`}>
+                      {seg.content ?? "— pending story-to-date job —"}
+                    </p>
+                  )}
+                  {seg.coveragePageId && (
+                    <p className="archive-ids">
+                      <span>Coverage page {seg.coveragePageId.slice(0, 8)}…</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!isExpanded && seg.content && (
+                <p className="archive-preview">
+                  {seg.content.length > 160 ? `${seg.content.slice(0, 160)}…` : seg.content}
+                </p>
+              )}
+              {!isExpanded && !seg.content && (
+                <p className="archive-preview archive-pending">— pending —</p>
+              )}
+            </article>
+          );
+        })}
       </div>
     </div>
   );

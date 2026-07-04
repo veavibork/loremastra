@@ -166,6 +166,18 @@ function dropTagTablesIfExist(db: Database.Database): void {
   db.exec(`DROP TABLE IF EXISTS tag_index; DROP TABLE IF EXISTS tags;`);
 }
 
+/** Decad archive blocks are retired — drop rows and orphan archive jobs on every open (idempotent). */
+function purgeLegacyArchives(db: Database.Database): void {
+  db.exec(`
+    UPDATE jobs SET status = 'cancelled', finished_at = datetime('now'),
+      error = COALESCE(error, 'legacy archive purge')
+    WHERE job_type IN ('archive', 'archive-name') AND status IN ('pending', 'running');
+    DELETE FROM jobs WHERE job_type IN ('archive', 'archive-name');
+    DELETE FROM archive_member;
+    DELETE FROM archive;
+  `);
+}
+
 export function closeStoryDb(storyId: string): void {
   const db = openStoryDbs.get(storyId);
   if (!db) return;
@@ -208,7 +220,9 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "text", "compress_metrics", "TEXT");
   ensureColumn(db, "page", "memory_content_stamp", "TEXT");
   ensureColumn(db, "jobs", "target_story_to_date_id", "TEXT REFERENCES story_to_date_segment(id)");
+  ensureColumn(db, "story_to_date_segment", "name", "TEXT");
   finishJobTypeCheckMigration(db);
+  purgeLegacyArchives(db);
   backfillSelectedForks(db);
   backfillMemoryContentStamps(db);
   if (!options?.skipRecovery) recoverStaleJobs(db);
