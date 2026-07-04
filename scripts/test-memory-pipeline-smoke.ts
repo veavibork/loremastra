@@ -97,12 +97,12 @@ function runInProcessSmoke(): void {
   enqueueEligibleArchiveBlocks(db, USER_ID, logbook.id);
 
   const archivesBefore = listArchivesForBook(db, logbook.id);
-  assert(archivesBefore.length >= 3, "three overlapping archive blocks for 20 posts with prose");
+  assert(archivesBefore.length >= 2, "two non-overlapping archive blocks for 20 posts with prose");
 
   const firstArchive = archivesBefore[0]!;
   fillArchiveSummary(db, firstArchive.id, "Earlier: the party explored the Dragon's lair.");
-  const thirdArchive = archivesBefore[2]!;
-  const archivePrompt = buildArchiveUserPrompt(db, thirdArchive.id);
+  const secondArchive = archivesBefore[1]!;
+  const archivePrompt = buildArchiveUserPrompt(db, secondArchive.id);
   assert(archivePrompt.includes("Messages to archive"), "archive prompt uses full prose blob");
   assert(archivePrompt.includes('"role"'), "archive prompt JSON includes role labels");
   assert(archivePrompt.includes("Earlier story summary"), "non-overlapping prior archive included in prompt");

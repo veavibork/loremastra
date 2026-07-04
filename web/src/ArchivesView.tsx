@@ -6,8 +6,7 @@ import "./ArchivesView.css";
 const POLL_MS = 3000;
 
 /**
- * Scene-wide archive blocks (~10-post windows, 50% overlap) — the tier the Author reads
- * once posts scroll out of the verbose window. Most recent block first.
+ * Scene-wide archive blocks (non-overlapping decads of ~10 posts) — older history in [EVENT SUMMARY] form.
  */
 export default function ArchivesView({ story }: PanelProps) {
   const [archives, setArchives] = useState<ArchiveEntry[]>([]);

@@ -6,14 +6,14 @@ import {
   addArchiveMember,
   setArchiveMemberOwner,
   listArchivesForBook,
-  type ArchiveRow,
+  listMemberTextIds,
 } from "../db/archive-store.js";
 import { createJob, hasActiveJobForArchive } from "../db/job-store.js";
 import { getAgentProfile } from "./agent-config.js";
 
-// Doc + lorepebble-proven design: overlapping 10-post windows, 50% overlap.
+// Non-overlapping decads: posts 1–10, 11–20, 21–30, … (Proposal A — no tag-promotion overlap needed).
 const ARCHIVE_BLOCK_SIZE = 10;
-const ARCHIVE_BLOCK_STEP = 5;
+const ARCHIVE_BLOCK_STEP = 10;
 
 /**
  * State-based, not position-based: a block is created whenever a complete window of
@@ -66,37 +66,18 @@ function createArchiveJob(db: Database.Database, userId: string, archiveId: stri
 }
 
 /**
- * Each post is "owned" by exactly one of the (possibly several) overlapping
- * blocks it belongs to — the one whose midpoint it's closest to, ties going
- * to the more recent block. Ownership decides which single archive
- * represents a post when the log collapses it during prompt assembly.
+ * With non-overlapping blocks each post belongs to at most one archive — mark all members owner.
  */
 function recomputeArchiveOwnership(db: Database.Database, logbookId: string, pages: PageRow[]): void {
   const positionOf = new Map(pages.map((p, i) => [p.id, i]));
-  const blocks = listArchivesForBook(db, logbookId)
-    .map((archive) => {
-      const startIdx = positionOf.get(archive.startPageId);
-      const endIdx = positionOf.get(archive.endPageId);
-      if (startIdx == null || endIdx == null) return null;
-      return { archive, startIdx, endIdx, midpoint: (startIdx + endIdx) / 2 };
-    })
-    .filter((b): b is { archive: ArchiveRow; startIdx: number; endIdx: number; midpoint: number } => b !== null);
 
-  for (const page of pages) {
-    const idx = positionOf.get(page.id)!;
-    const candidates = blocks.filter((b) => idx >= b.startIdx && idx <= b.endIdx);
-    if (candidates.length === 0) continue;
+  for (const archive of listArchivesForBook(db, logbookId)) {
+    const startIdx = positionOf.get(archive.startPageId);
+    const endIdx = positionOf.get(archive.endPageId);
+    if (startIdx == null || endIdx == null) continue;
 
-    candidates.sort((a, b) => {
-      const distanceDiff = Math.abs(idx - a.midpoint) - Math.abs(idx - b.midpoint);
-      if (distanceDiff !== 0) return distanceDiff;
-      return b.startIdx - a.startIdx;
-    });
-
-    const text = page.selectedTextId ? getText(db, page.selectedTextId) : null;
-    if (!text) continue;
-    for (const candidate of candidates) {
-      setArchiveMemberOwner(db, candidate.archive.id, text.id, candidate === candidates[0]);
+    for (const textId of listMemberTextIds(db, archive.id)) {
+      setArchiveMemberOwner(db, archive.id, textId, true);
     }
   }
 }

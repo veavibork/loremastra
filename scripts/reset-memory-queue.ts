@@ -1,5 +1,5 @@
 /**
- * Clear stale memory artifacts and re-enqueue compress + archive pipeline.
+ * Clear archive blocks and re-enqueue archive jobs (compression disabled).
  *
  * Run while the app is up (or restart after) so the pipeline runner drains the queue.
  *
