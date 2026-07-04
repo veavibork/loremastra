@@ -8,25 +8,21 @@ import { unlinkSync } from "node:fs";
 import { getGlobalDb } from "../src/db/global-db.js";
 import { getStoryDb, closeStoryDb } from "../src/db/story-db.js";
 import { createStory, deleteStory, getStory } from "../src/db/story-store.js";
-import { createBook, getBookByType, getTagScopeBookId } from "../src/db/book-store.js";
+import { createBook, getBookByType } from "../src/db/book-store.js";
 import { createPageWithText, createRetryText } from "../src/db/content-store.js";
-import { getPage, listChronologicalPages, findHeadPageId } from "../src/db/page-store.js";
+import { getPage, findHeadPageId } from "../src/db/page-store.js";
 import { getText } from "../src/db/text-store.js";
-import { createTag } from "../src/db/tag-store.js";
 import { createWorldbookEntry } from "../src/db/worldbook-store.js";
 import { listArchivesForBook, fillArchiveSummary } from "../src/db/archive-store.js";
 import { setStoryPhase, setKickoffPageId } from "../src/db/story-state-store.js";
 import { recordHistoryEvent, undoHistory } from "../src/db/history-store.js";
 import { enqueueEligibleArchiveBlocks } from "../src/services/archive.js";
 import { onCanonicalTextChanged, postNeedsCompress } from "../src/services/memory-invalidation.js";
-import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../src/services/tag-index.js";
 import { assembleAuthorPrompt } from "../src/services/history.js";
-import { activateTagsFromQuery, buildTagQueryText } from "../src/services/tag-retrieval.js";
 import { buildArchiveUserPrompt } from "../src/services/archive-worker.js";
 import {
   backfillContentStamps,
   buildMemoryManifest,
-  reindexAllMemoryTags,
 } from "../src/services/memory-manifest.js";
 import { newId } from "../src/uuid.js";
 
@@ -58,15 +54,11 @@ function runInProcessSmoke(): void {
     entryType: "content",
     content: "PC: Lex. Mid-forties, solid build.\nA fantasy realm where ancient Dragons guard mountain passes.",
   });
-  const rosterEntry = createWorldbookEntry(db, {
+  createWorldbookEntry(db, {
     bookId: worldbook.id,
     entryType: "roster",
     content: "Dragon — an ancient wyrm, scales like burnished copper, speaks in riddles.",
   });
-  indexTextAgainstAllTags(db, getTagScopeBookId(db, worldbook.id), rosterEntry.currentTextId);
-
-  const dragonTag = createTag(db, { bookId: gameBook.id, name: "Dragon" });
-  reindexTagAcrossBook(db, dragonTag.id);
 
   let prevId: string | null = null;
   const pageIds: string[] = [];
@@ -87,7 +79,6 @@ function runInProcessSmoke(): void {
     });
     prevId = page.id;
     pageIds.push(page.id);
-    indexTextAgainstAllTags(db, gameBook.id, text.id);
   }
 
   const kickoffPageId = pageIds[0]!;
@@ -109,10 +100,6 @@ function runInProcessSmoke(): void {
   assert(archivePrompt.includes("PC: Lex"), "archive prompt includes CONTENT PC line");
 
   const headId = findHeadPageId(db, logbook.id)!;
-  const pages = listChronologicalPages(db, logbook.id).filter((p) => !p.hidden);
-  const query = buildTagQueryText(db, pages);
-  const activeTags = activateTagsFromQuery(db, gameBook.id, query);
-  assert(activeTags.includes(dragonTag.id), "KAI-style query activates Dragon tag");
 
   const messages = assembleAuthorPrompt(db, USER_ID, logbook.id, headId);
   const blob = JSON.stringify(messages);
@@ -153,8 +140,6 @@ function runInProcessSmoke(): void {
   const stamps = backfillContentStamps(db);
   assert(stamps.stamped + stamps.skipped === 20, "backfill stamps walks all posts");
 
-  reindexAllMemoryTags(db, logbook.id);
-
   const filePath = story.filePath;
   closeStoryDb(storyId);
   deleteStory(globalDb, storyId);
@@ -177,7 +162,6 @@ async function runExistingSmokes(): Promise<void> {
   const { execSync } = await import("node:child_process");
   execSync("npx tsx scripts/test-memory-pipeline-http.ts", { stdio: "inherit", cwd: process.cwd() });
   execSync("npx tsx scripts/test-memory-invalidation.ts", { stdio: "inherit", cwd: process.cwd() });
-  execSync("npx tsx scripts/test-tag-compress-smoke.ts", { stdio: "inherit", cwd: process.cwd() });
 }
 
 async function main(): Promise<void> {

@@ -2,6 +2,22 @@
   padding: 0.5rem 0;
 }
 
+.logs-section {
+  margin-bottom: 1.5rem;
+}
+
+.logs-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  opacity: 0.85;
+}
+
+.logs-slots-bar {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
 .logs-table {
   width: 100%;
   border-collapse: collapse;
@@ -52,4 +68,36 @@
 
 .logs-row-hidden {
   opacity: 0.45;
+}
+
+.logs-job-pending {
+  opacity: 0.6;
+}
+
+.logs-job-running {
+  color: #7ec8e3;
+}
+
+.logs-job-failed {
+  color: #ff9b9b;
+}
+
+.logs-job-model {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono, monospace);
+  font-size: 0.75rem;
+}
+
+.logs-job-response {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-job-response-error {
+  color: #ff9b9b;
 }

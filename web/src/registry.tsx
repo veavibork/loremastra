@@ -1,12 +1,9 @@
 import type { ComponentType } from "react";
-import TagsView from "./TagsView";
 import WorldbookView from "./WorldbookView";
 import StoryPanel from "./StoryPanel";
 import SavesView from "./SavesView";
 import LogsView from "./LogsView";
-import SummaryView from "./SummaryView";
 import ArchivesView from "./ArchivesView";
-import DebugView from "./DebugView";
 import AgentsView from "./AgentsView";
 import MemoryView from "./MemoryView";
 import PromptsView from "./PromptsView";
@@ -23,14 +20,11 @@ const REGISTRY: Record<string, ComponentType<PanelProps>> = {
   "story:play": StoryPanel,
   "story:saves": SavesView,
   "story:logs": LogsView,
-  "story:summary": SummaryView,
   "story:archives": ArchivesView,
-  "lore:tags": TagsView,
   "lore:worldbook": WorldbookView,
   "lore:memory": MemoryView,
   "config:agents": AgentsView,
   "config:prompts": PromptsView,
-  "debug:": DebugView,
   "settings:": SettingsView,
 };
 

@@ -8,13 +8,12 @@ import { createStory, listStories, getStory, renameStory, deleteStory, DEFAULT_S
 import { getStoryStats } from "../services/story-stats.js";
 import { createBook, getBookByType, getTagScopeBookId } from "../db/book-store.js";
 import { findHeadPageId, collectAncestorIds, listChronologicalPages } from "../db/page-store.js";
-import { indexTextAgainstAllTags, reindexTagAcrossBook } from "../services/tag-index.js";
+import { indexTextAgainstAllTags } from "../services/tag-index.js";
 import { enqueueEligibleArchiveBlocks } from "../services/archive.js";
 import { createPageWithText, createRetryText } from "../db/content-store.js";
 import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from "../db/job-store.js";
 import { getPage, setPageHidden } from "../db/page-store.js";
 import { getText } from "../db/text-store.js";
-import { createTag, getTag, listTags, renameTag, setTagHidden } from "../db/tag-store.js";
 import {
   createWorldbookEntry,
   listWorldbookEntries,
@@ -29,14 +28,13 @@ import { forkStory } from "../services/fork.js";
 import { onCanonicalTextChangedForStory } from "../services/memory-invalidation.js";
 import { trackStoryDb, untrackStoryDb, setJobGuidance, requestJobCancel } from "../queue/pipeline-runner.js";
 import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
-import { buildLogView, buildSummaryPage } from "../services/log-view.js";
+import { buildLogView } from "../services/log-view.js";
 import { buildArchiveView } from "../services/archive-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
 import {
   buildMemoryManifest,
   buildMemorySummary,
   enqueueMemoryPipeline,
-  previewTagActivation,
   runMemoryBackfill,
 } from "../services/memory-manifest.js";
 import { EDITOR_SETUP_OPENING } from "../prompts.js";
@@ -159,36 +157,8 @@ storiesRoute.get("/:id/log", (c) => {
   return c.json({ entries: buildLogView(storyDb, logbook.id) });
 });
 
-/** Compressed summaries for the Summary tab — paginated, most-recent-first. */
-storiesRoute.get("/:id/summaries", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10) || 0);
-  const limit = Math.max(1, parseInt(c.req.query("limit") ?? "10000", 10) || 10_000);
-  const includeHidden = c.req.query("includeHidden") === "true";
-  const compressedOnly = c.req.query("compressedOnly") === "true";
-
-  return c.json(buildSummaryPage(storyDb, logbook.id, { offset, limit, includeHidden, compressedOnly }));
-});
-
-/** Scene archive blocks for the Archives tab — most recent window first. */
-storiesRoute.get("/:id/archives", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  const includeHidden = c.req.query("includeHidden") === "true";
-  return c.json(buildArchiveView(storyDb, logbook.id, { includeHidden }));
-});
-
 /**
  * The assembled Author prompt at the current position — read-only, no inference call.
- * Backs Config > Preview (no `tags` query param: real trigger-post tag matches, an
- * accurate "what would the Author see right now") and Lore > Memory (always passes
- * `tags`, even empty: a what-if simulator independent of actual game state, starting
- * from the zero-match baseline).
  */
 storiesRoute.get("/:id/prompt-preview", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
@@ -198,11 +168,16 @@ storiesRoute.get("/:id/prompt-preview", (c) => {
   const currentPageId = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
   if (!currentPageId) return c.json({ messages: [] });
 
-  const tagsParam = c.req.query("tags");
-  const overrideTagIds = tagsParam !== undefined ? tagsParam.split(",").filter(Boolean) : undefined;
-
-  const messages = assembleAuthorPrompt(storyDb, c.get("userId"), logbook.id, currentPageId, overrideTagIds);
+  const messages = assembleAuthorPrompt(storyDb, c.get("userId"), logbook.id, currentPageId);
   return c.json({ messages });
+});
+storiesRoute.get("/:id/archives", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+
+  const includeHidden = c.req.query("includeHidden") === "true";
+  return c.json(buildArchiveView(storyDb, logbook.id, { includeHidden }));
 });
 
 /** Compact memory health — stale compress counts, archive gaps, no per-post dump. */
@@ -219,15 +194,6 @@ storiesRoute.get("/:id/memory/manifest", (c) => {
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
   return c.json(buildMemoryManifest(storyDb, logbook.id));
-});
-
-/** KAI-style tag activation preview at current position (or ?fromPageId=). */
-storiesRoute.get("/:id/memory/tag-activation", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-  const fromPageId = c.req.query("fromPageId") ?? undefined;
-  return c.json(previewTagActivation(storyDb, logbook.id, fromPageId));
 });
 
 /** Repair stamps, optionally reindex tags and enqueue compress/archive jobs. */
@@ -604,49 +570,6 @@ storiesRoute.post("/:id/ooc/start-session", (c) => {
   setOocSessionStartPageId(storyDb, boundaryPageId);
 
   return c.json({ ok: true });
-});
-
-storiesRoute.get("/:id/tags", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-  return c.json({ tags: listTags(storyDb, getTagScopeBookId(storyDb, logbook.id)) });
-});
-
-storiesRoute.post("/:id/tags", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { name?: string };
-  const name = body.name ?? "";
-
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const logbook = getBookByType(storyDb, "logbook");
-  if (!logbook) return c.json({ error: "logbook not found" }, 404);
-
-  try {
-    const tag = createTag(storyDb, { bookId: getTagScopeBookId(storyDb, logbook.id), name });
-    reindexTagAcrossBook(storyDb, tag.id);
-    return c.json({ tag: getTag(storyDb, tag.id) ?? tag });
-  } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
-  }
-});
-
-storiesRoute.patch("/:id/tags/:tagId", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { name?: string; hidden?: boolean };
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
-  const tagId = c.req.param("tagId");
-
-  try {
-    if (typeof body.name === "string") {
-      const tag = renameTag(storyDb, tagId, body.name);
-      reindexTagAcrossBook(storyDb, tag.id);
-    }
-    if (typeof body.hidden === "boolean") {
-      setTagHidden(storyDb, tagId, body.hidden);
-    }
-    return c.json({ ok: true });
-  } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
-  }
 });
 
 storiesRoute.get("/:id/worldbook", (c) => {

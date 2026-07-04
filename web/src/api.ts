@@ -315,9 +315,8 @@ export interface PromptMessage {
   content: string;
 }
 
-export async function fetchPromptPreview(storyId: string, overrideTagIds?: string[]): Promise<PromptMessage[]> {
-  const query = overrideTagIds !== undefined ? `?tags=${overrideTagIds.join(",")}` : "";
-  const res = await apiFetch(`/api/stories/${storyId}/prompt-preview${query}`);
+export async function fetchPromptPreview(storyId: string): Promise<PromptMessage[]> {
+  const res = await apiFetch(`/api/stories/${storyId}/prompt-preview`);
   const data = (await res.json()) as { messages: PromptMessage[] };
   return data.messages;
 }
@@ -499,27 +498,6 @@ export async function fetchLog(storyId: string, opts?: { background?: boolean })
   return data.entries;
 }
 
-export interface SummaryPage {
-  entries: LogEntry[];
-  total: number;
-  offset: number;
-  limit: number;
-  hasMore: boolean;
-}
-
-export async function fetchSummaries(
-  storyId: string,
-  options: { offset?: number; limit?: number; includeHidden?: boolean; background?: boolean } = {}
-): Promise<SummaryPage> {
-  const params = new URLSearchParams();
-  if (options.offset != null) params.set("offset", String(options.offset));
-  if (options.limit != null) params.set("limit", String(options.limit));
-  if (options.includeHidden) params.set("includeHidden", "true");
-  const qs = params.toString();
-  const res = await apiFetch(`/api/stories/${storyId}/summaries${qs ? `?${qs}` : ""}`, {}, { background: options.background });
-  return res.json() as Promise<SummaryPage>;
-}
-
 export interface ArchiveEntry {
   id: string;
   createdAt: string;
@@ -665,15 +643,6 @@ export interface WorldbookEntry {
   currentTextId: string;
 }
 
-export interface Tag {
-  id: string;
-  bookId: string;
-  name: string;
-  hidden: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export async function fetchWorldbook(storyId: string, opts?: { background?: boolean }): Promise<WorldbookEntry[]> {
   const res = await apiFetch(`/api/stories/${storyId}/worldbook`, {}, opts);
   const data = (await res.json()) as { entries: WorldbookEntry[] };
@@ -706,37 +675,6 @@ export async function updateWorldbookEntry(
   });
   const data = (await res.json()) as { ok?: boolean; error?: string };
   if (!data.ok) throw new Error(data.error ?? "failed to update worldbook entry");
-}
-
-export async function fetchTags(storyId: string, opts?: { background?: boolean }): Promise<Tag[]> {
-  const res = await apiFetch(`/api/stories/${storyId}/tags`, {}, opts);
-  const data = (await res.json()) as { tags: Tag[] };
-  return data.tags;
-}
-
-export async function createTag(storyId: string, name: string): Promise<Tag> {
-  const res = await apiFetch(`/api/stories/${storyId}/tags`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
-  const data = (await res.json()) as { tag?: Tag; error?: string };
-  if (!data.tag) throw new Error(data.error ?? "failed to create tag");
-  return data.tag;
-}
-
-export async function updateTag(
-  storyId: string,
-  tagId: string,
-  input: { name?: string; hidden?: boolean }
-): Promise<void> {
-  const res = await apiFetch(`/api/stories/${storyId}/tags/${tagId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  const data = (await res.json()) as { ok?: boolean; error?: string };
-  if (!data.ok) throw new Error(data.error ?? "failed to update tag");
 }
 
 export type JobStreamEvent =

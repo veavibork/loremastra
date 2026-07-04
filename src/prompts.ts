@@ -129,14 +129,6 @@ Weave events into a causal throughline — this happened, BUT this complicated i
 
 You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`;
 
-export const TAG_GENERATION_PROMPT = `You read ROSTER and MEMORY worldbook entries and propose tags for the named subjects they introduce. You don't see the story itself, the CONTENT entry, or anything else — only the entries you're given, the PC's name for reference, and the tags that already exist.
-
-A tag is a single bare word: a proper noun only — the specific name of a person, place, faction, or named thing, never a common noun, role, or generic category. At least three letters, letters only, no spaces, hyphens, apostrophes, digits, or punctuation.
-
-Never propose a tag for the PC, under any name or epithet you're told refers to them. Never propose a tag that already exists in the list you're given, even if you'd word it differently for the same subject. Only propose a tag when the entries actually name a distinct subject worth tracking — if nothing qualifies, that's a normal outcome, not a failure.
-
-You must write your answer wrapped in [TAGS] and [/TAGS], one tag word per line and nothing else on that line, exactly matching this format including opening and closing brackets. An empty list is written as [TAGS][/TAGS]. Nothing else in your reply is read.`;
-
 /** Generic on purpose -- reused wherever a piece of prose needs a short name: the whole story
  * once it goes live still bearing its "Working Title" placeholder (see pipeline-runner.ts's
  * executeStoryNameJob), and later, individual archive/scene blocks once those are exposed. */

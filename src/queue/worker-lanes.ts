@@ -41,7 +41,7 @@ export function releaseProseLane(): void {
   proseActive = Math.max(0, proseActive - 1);
 }
 
-/** Worker (compress/archive/tag-gen/story-name) lane — never overlaps active prose. */
+/** Worker (compress/archive/story-name) lane — never overlaps active prose. */
 export function tryAcquireWorkerLane(): boolean {
   if (isProsePreempting()) return false;
   if (workerActive >= workerThreadLimit) return false;

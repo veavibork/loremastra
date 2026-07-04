@@ -67,13 +67,6 @@ async function main(): Promise<void> {
       })).status === 200,
       "POST worldbook roster"
     );
-    assert(
-      (await api(base, `/api/stories/${storyId}/tags`, {
-        method: "POST",
-        body: JSON.stringify({ name: "Dragon" }),
-      })).status === 200,
-      "POST tag Dragon"
-    );
 
     const kickoff = await api(base, `/api/stories/${storyId}/kickoff`, { method: "POST" });
     assert(kickoff.status === 200, "POST kickoff");
@@ -115,7 +108,7 @@ async function main(): Promise<void> {
 
     const preview = await api(base, `/api/stories/${storyId}/prompt-preview`);
     assert(preview.status === 200, "GET prompt-preview");
-    assert(JSON.stringify(preview.body).includes("Dragon"), "prompt-preview includes Dragon tag context");
+    assert(JSON.stringify(preview.body).includes("Dragon"), "prompt-preview includes worldbook roster");
 
     const editMid = await api(base, `/api/stories/${storyId}/posts/${kickoffPageId}/edit`, {
       method: "POST",
@@ -133,13 +126,9 @@ async function main(): Promise<void> {
     assert(memSummary.status === 200, "GET memory/summary");
     assert((memSummary.body as { postCount: number }).postCount > 0, "memory summary has posts");
 
-    const tagAct = await api(base, `/api/stories/${storyId}/memory/tag-activation`);
-    assert(tagAct.status === 200, "GET memory/tag-activation");
-    assert(JSON.stringify(tagAct.body).includes("Dragon"), "tag-activation finds Dragon");
-
     const backfill = await api(base, `/api/stories/${storyId}/memory/backfill`, {
       method: "POST",
-      body: JSON.stringify({ reindexTags: true, enqueueJobs: false }),
+      body: JSON.stringify({ enqueueJobs: false }),
     });
     assert(backfill.status === 200, "POST memory/backfill");
 

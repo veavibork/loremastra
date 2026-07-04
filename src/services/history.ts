@@ -31,19 +31,11 @@ export function formatEventSummary(summary: string): string {
   return `[EVENT SUMMARY]\n${summary.trim()}\n[/EVENT SUMMARY]`;
 }
 
-/**
- * Proposal A assembly (2026-07-03): full worldbook, recent verbose prose only in chat
- * roles, older history via [EVENT SUMMARY] archive blocks oldest-first. Per-post compress
- * lines are never injected — they poison register when masquerading as user/assistant turns.
- *
- * `overrideTagIds` is retained for the Memory inspector API but no longer affects assembly.
- */
 export function assembleAuthorPrompt(
   db: Database.Database,
   userId: string,
   logbookId: string,
-  fromPageId: string | null,
-  _overrideTagIds?: string[]
+  fromPageId: string | null
 ): ChatMessage[] {
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden);
   const cutoffIdx = fromPageId ? pages.findIndex((p) => p.id === fromPageId) : pages.length - 1;

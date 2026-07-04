@@ -22,8 +22,6 @@ import { getStoryDb, closeStoryDb } from "../db/story-db.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { getBookByType } from "../db/book-store.js";
 import { listWorldbookEntries } from "../db/worldbook-store.js";
-import { listTags } from "../db/tag-store.js";
-import { listTextIdsForTag } from "../db/tag-index-store.js";
 import { listRecentJobs } from "../db/job-store.js";
 import { getQueueStatus } from "../queue/slots.js";
 import { buildLogView } from "../services/log-view.js";
@@ -33,8 +31,6 @@ import {
   buildMemoryManifest,
   buildMemorySummary,
   enqueueMemoryPipeline,
-  previewTagActivation,
-  reindexAllMemoryTags,
   runMemoryBackfill,
 } from "../services/memory-manifest.js";
 import { findHeadPageId } from "../db/page-store.js";
@@ -97,24 +93,6 @@ server.registerTool(
       const worldbook = getBookByType(db, "worldbook");
       if (!worldbook) return textResult({ error: "no worldbook book for this story" });
       return textResult(listWorldbookEntries(db, worldbook.id, { includeHidden: true }));
-    })
-);
-
-server.registerTool(
-  "get_tags",
-  {
-    description: "Get the tag cloud for a story, including how many posts each tag currently matches.",
-    inputSchema: { storyId: z.string() },
-  },
-  async ({ storyId }) =>
-    withStoryDb(storyId, (db) => {
-      const logbook = getBookByType(db, "logbook");
-      if (!logbook) return textResult({ error: "no logbook for this story" });
-      const tags = listTags(db, getBookByType(db, "game")?.id ?? logbook.id).map((tag) => ({
-        ...tag,
-        matchedTextCount: listTextIdsForTag(db, tag.id).length,
-      }));
-      return textResult(tags);
     })
 );
 
@@ -190,27 +168,12 @@ server.registerTool(
 );
 
 server.registerTool(
-  "preview_tag_activation",
-  {
-    description:
-      "KAI-style tag activation preview: which tags would fire from the latest user message + recent assistant context at the current (or given) page.",
-    inputSchema: { storyId: z.string(), fromPageId: z.string().optional() },
-  },
-  async ({ storyId, fromPageId }) =>
-    withStoryDb(storyId, (db) => {
-      const logbook = getBookByType(db, "logbook");
-      if (!logbook) return textResult({ error: "no logbook for this story" });
-      return textResult(previewTagActivation(db, logbook.id, fromPageId));
-    })
-);
-
-server.registerTool(
   "get_prompt_preview",
   {
     description: "Assembled Author prompt at the current position (or given page) — read-only, no inference call.",
-    inputSchema: { storyId: z.string(), fromPageId: z.string().optional(), tagIds: z.array(z.string()).optional() },
+    inputSchema: { storyId: z.string(), fromPageId: z.string().optional() },
   },
-  async ({ storyId, fromPageId, tagIds }) => {
+  async ({ storyId, fromPageId }) => {
     const story = getStory(getGlobalDb(), storyId);
     if (!story) return textResult({ error: "story not found" });
 
@@ -220,27 +183,12 @@ server.registerTool(
       const pageId =
         fromPageId ?? getStoryState(db).currentPageId ?? findHeadPageId(db, logbook.id);
       if (!pageId) return textResult({ messages: [] });
-      const overrideTagIds = tagIds !== undefined ? tagIds : undefined;
       return textResult({
         fromPageId: pageId,
-        messages: assembleAuthorPrompt(db, story.ownerUserId, logbook.id, pageId, overrideTagIds),
+        messages: assembleAuthorPrompt(db, story.ownerUserId, logbook.id, pageId),
       });
     });
   }
-);
-
-server.registerTool(
-  "reindex_tags",
-  {
-    description: "Re-grep every tag against every post in the story (after tag rename or direct DB edits).",
-    inputSchema: { storyId: z.string() },
-  },
-  async ({ storyId }) =>
-    withStoryDb(storyId, (db) => {
-      const logbook = getBookByType(db, "logbook");
-      if (!logbook) return textResult({ error: "no logbook for this story" });
-      return textResult(reindexAllMemoryTags(db, logbook.id));
-    })
 );
 
 server.registerTool(
