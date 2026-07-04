@@ -57,16 +57,17 @@ function main(): void {
     responseLimit: editor.responseLimit,
   });
 
-  assert(corpus.includedPosts.every((p) => !p.hidden), "Editor corpus excludes hidden posts");
-  assert(corpus.includedPosts.length > 0, "Editor corpus has visible posts");
+  assert(corpus.posts.length > 0, "Editor corpus has visible posts on chain");
+  assert(corpus.posts.every((p) => !p.hidden), "Editor corpus excludes hidden posts");
+  assert(corpus.includedPosts.every((p) => !p.hidden), "Editor input slice excludes hidden posts");
 
-  for (const post of corpus.includedPosts) {
+  for (const post of corpus.posts) {
     const chainEntry = chain.find((e) => e.pageId === post.pageId);
-    assert(!!chainEntry && !chainEntry.hidden, `included post ${post.icPostNumber} is visible on chain`);
+    assert(!!chainEntry && !chainEntry.hidden, `corpus post ${post.icPostNumber} is visible on chain`);
     assert(post.icPostNumber === chainEntry!.postNumber, `corpus post # matches absolute index (${post.icPostNumber})`);
   }
 
-  const formatted = formatCorpusForEditor(corpus);
+  const formatted = formatCorpusForEditor(corpus, corpus.includedPosts.length ? corpus.includedPosts : corpus.posts.slice(0, 20));
   assert(!/\(hidden\)/i.test(formatted), "formatted corpus has no hidden markers");
   assert(!/--- post \d+ \(.*hidden/i.test(formatted), "formatted corpus has no hidden post blocks");
 
@@ -77,6 +78,10 @@ function main(): void {
   if (hiddenCount > 0 && postLabels.length >= 2) {
     const hasGap = postLabels.some((n, i) => i > 0 && n - postLabels[i - 1]! > 1);
     assert(hasGap, "corpus post numbers gap over hidden slots");
+  } else if (hiddenCount > 0) {
+    const visiblePosts = corpus.posts.map((p) => p.icPostNumber);
+    const hasGap = visiblePosts.some((n, i) => i > 0 && n - visiblePosts[i - 1]! > 1);
+    assert(hasGap, "full corpus post list gaps over hidden slots");
   }
 
   const headId = findHeadPageId(db, logbook.id);

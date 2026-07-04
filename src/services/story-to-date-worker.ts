@@ -19,6 +19,7 @@ import {
   type VerbosePost,
 } from "./story-to-date-corpus.js";
 import { STORY_TO_DATE_INPUT_CUTOFF } from "./story-to-date.js";
+import { buildChainPostIndex } from "./post-index.js";
 
 const MAX_ATTEMPTS = 2;
 
@@ -147,13 +148,28 @@ export async function executeStoryToDateJob(
         lastError = "missing block or coverage";
         continue;
       }
+      if (corpus.includedPosts.length === 0) {
+        lastError = "no log prose in editor input";
+        continue;
+      }
       if (corpus.inputCeilingPost != null && candidate.coverageThroughPost > corpus.inputCeilingPost) {
         lastError = `coverage ${candidate.coverageThroughPost} exceeds ceiling ${corpus.inputCeilingPost}`;
         continue;
       }
+      const chainEntry = buildChainPostIndex(db, logbookId).find(
+        (e) => e.postNumber === candidate.coverageThroughPost
+      );
+      if (!chainEntry) {
+        lastError = `coverage post ${candidate.coverageThroughPost} not on chain`;
+        continue;
+      }
+      if (chainEntry.hidden) {
+        lastError = `coverage post ${candidate.coverageThroughPost} lands on hidden OOC turn`;
+        continue;
+      }
       const coveragePost = findPostByIcNumber(corpus.includedPosts, candidate.coverageThroughPost);
       if (!coveragePost) {
-        lastError = `coverage post ${candidate.coverageThroughPost} not in input`;
+        lastError = `coverage post ${candidate.coverageThroughPost} not in input (ceiling ${corpus.inputCeilingPost ?? "?"})`;
         continue;
       }
       if (kind === "continues" && priorSegments.length) {

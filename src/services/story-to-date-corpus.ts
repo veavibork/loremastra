@@ -108,18 +108,18 @@ export function buildStoryCorpus(
   const usableBudget = options.contextLimit - options.responseLimit;
   const systemTokens = estimateTokens(AUTHOR_SYSTEM_PROMPT);
 
-  const allPages = listChronologicalPages(db, logbookId);
-  const cutoffIdx = options.fromPageId ? allPages.findIndex((p) => p.id === options.fromPageId) : allPages.length - 1;
-  const maxPostNumber =
-    cutoffIdx >= 0
-      ? (resolveChainPostNumber(db, logbookId, allPages[cutoffIdx]!.id) ?? 0)
-      : countChainPosts(db, logbookId);
+  const chain = buildChainPostIndex(db, logbookId);
+  let maxPostNumber = chain.length ? chain[chain.length - 1]!.postNumber : 0;
+  if (options.fromPageId) {
+    const fromPost = resolveChainPostNumber(db, logbookId, options.fromPageId);
+    if (fromPost != null) maxPostNumber = fromPost;
+  }
 
   const kickoffPageId = getStoryState(db).kickoffPageId;
   if (!kickoffPageId) {
     throw new Error("story has no kickoff page — STORY BEGINS requires in-character log");
   }
-  if (allPages.findIndex((p) => p.id === kickoffPageId) < 0) {
+  if (!chain.some((e) => e.pageId === kickoffPageId)) {
     throw new Error("kickoff page not found on active chain");
   }
 
