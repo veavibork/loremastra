@@ -136,6 +136,11 @@ export const NAMING_PROMPT = `You read a piece of fiction and come up with a sho
 
 You must write your answer wrapped in [NAME] and [/NAME], exactly matching this format including opening and closing brackets. Nothing else in your reply is read.`;
 
+/** Archive blocks receive a scene summary, not raw prose — same [NAME] output shape. */
+export const ARCHIVE_NAMING_PROMPT = `You name a scene from a story. You receive a short plot summary (not the full prose). Reply with a short, evocative scene title — two to six words — that captures tone and hook without spelling out the plot. No subtitle, no colon-and-tagline construction, no surrounding quotation marks.
+
+You must write your answer wrapped in [NAME] and [/NAME], exactly matching this format including opening and closing brackets. Nothing else in your reply is read.`;
+
 export const EDITOR_UPDATE_PROMPT = `You are the Editor, talking shop about a story in progress.
 
 Your job is collaborative worldbuilding, not an interview. Ask one or two focused questions per turn. If they don't know what they want, offer two or three concrete options shaped to what they've said so far.

@@ -71,6 +71,7 @@ import {
   COMPRESS_SYSTEM_PROMPT,
   ARCHIVE_SYSTEM_PROMPT,
   NAMING_PROMPT,
+  ARCHIVE_NAMING_PROMPT,
   guidedRegenerateNote,
   guidedContinueNote,
 } from "../prompts.js";
@@ -163,12 +164,40 @@ function countRunningArchiveJobsForUser(
 }
 
 const STORY_NAME_MAX_ATTEMPTS = 2;
+const ARCHIVE_NAME_MAX_ATTEMPTS = 3;
+const NAMING_MAX_TOKENS = 64;
 const STORY_NAME_MAX_WORDS = 12; // generous ceiling for a 2-6 word title — catches "wrote a sentence instead" cases
-const NAME_PATTERN = /\[NAME\]([\s\S]*?)\[\/NAME\]/;
+const NAME_PATTERN = /\[NAME\]([\s\S]*?)\[\/NAME\]/i;
+const NAME_OPEN_PATTERN = /\[NAME\]\s*([^\n\[]+)/i;
 
 function extractStoryName(text: string): string | null {
-  const match = NAME_PATTERN.exec(text);
-  const content = match?.[1]?.trim().replace(/^["'“‘]+|["'”’]+$/g, "");
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  let content: string | null = null;
+  const closed = NAME_PATTERN.exec(trimmed);
+  if (closed?.[1]) {
+    content = closed[1].trim();
+  } else {
+    const open = NAME_OPEN_PATTERN.exec(trimmed);
+    if (open?.[1]) content = open[1].trim();
+  }
+
+  if (!content) {
+    const firstLine = trimmed.split(/\n/).map((l) => l.trim()).find(Boolean) ?? "";
+    const cleaned = firstLine
+      .replace(/^(?:title|name|scene)\s*:\s*/i, "")
+      .replace(/^\[NAME\]\s*/i, "")
+      .replace(/^\*+|\*+$/g, "")
+      .replace(/^["'`""'']+|["'`""'']+$/g, "")
+      .trim();
+    if (cleaned && !/[\[\]]/.test(cleaned) && withinWordLimit(cleaned, STORY_NAME_MAX_WORDS)) {
+      content = cleaned;
+    }
+  }
+
+  if (!content) return null;
+  content = content.replace(/^["'`""'']+|["'`""'']+$/g, "").trim();
   if (!content || !withinWordLimit(content, STORY_NAME_MAX_WORDS)) return null;
   return content;
 }
@@ -1027,7 +1056,7 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
       try {
         const rawText = await withModelFallback(getAgentProfile(userId, "worker"), (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, featherlessKey, nameMessages);
+          return completeChat(profile, featherlessKey, nameMessages, { maxTokens: NAMING_MAX_TOKENS });
         });
         const candidate = extractStoryName(rawText);
         if (candidate) name = candidate;
@@ -1066,8 +1095,8 @@ async function executeArchiveNameJob(
     if (!archive?.summary?.trim()) throw new Error("archive has no summary to name from");
 
     const nameMessages: ChatMessage[] = [
-      { role: "system", content: NAMING_PROMPT },
-      { role: "user", content: archive.summary },
+      { role: "system", content: ARCHIVE_NAMING_PROMPT },
+      { role: "user", content: `Scene summary:\n${archive.summary.trim()}` },
     ];
 
     let name: string | null = null;
@@ -1075,20 +1104,22 @@ async function executeArchiveNameJob(
     let lastError = "unknown error";
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     const workerProfile = getAgentProfile(userId, "worker");
-    for (let attempt = 1; attempt <= STORY_NAME_MAX_ATTEMPTS && !name; attempt++) {
+    for (let attempt = 1; attempt <= ARCHIVE_NAME_MAX_ATTEMPTS && !name; attempt++) {
       try {
         const rawText = await withModelFallback(workerProfile, (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, featherlessKey, nameMessages);
+          return completeChat(profile, featherlessKey, nameMessages, { maxTokens: NAMING_MAX_TOKENS });
         });
         name = extractStoryName(rawText);
-        if (!name?.trim()) lastError = `missing [NAME] block on attempt ${attempt}`;
+        if (!name?.trim()) {
+          lastError = `no usable [NAME] block on attempt ${attempt}: "${rawText.trim().slice(0, 80)}"`;
+        }
       } catch (err) {
         lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
 
-    if (!name) throw new Error(`archive naming failed after ${STORY_NAME_MAX_ATTEMPTS} attempts — ${lastError}`);
+    if (!name) throw new Error(`archive naming failed after ${ARCHIVE_NAME_MAX_ATTEMPTS} attempts — ${lastError}`);
     fillArchiveName(db, targetArchiveId, name);
     finishJob(db, jobId, "done", undefined, { model: usedModel, elapsedMs: Date.now() - startedAt });
   } catch (err) {

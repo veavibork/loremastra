@@ -342,7 +342,7 @@ export async function completeChat(
   profile: AgentProfile,
   apiKey: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; signal?: AbortSignal; chatTemplateKwargs?: Record<string, unknown> }
+  options?: { timeoutMs?: number; signal?: AbortSignal; chatTemplateKwargs?: Record<string, unknown>; maxTokens?: number }
 ): Promise<string> {
   if (!apiKey) {
     throw new Error("No Featherless API key configured — set one in the Agents tab");
@@ -363,7 +363,7 @@ export async function completeChat(
         model: profile.model,
         messages,
         temperature: profile.temperature,
-        max_tokens: profile.responseLimit,
+        max_tokens: options?.maxTokens ?? profile.responseLimit,
         stream: false,
         ...samplerParams(profile),
         ...(options?.chatTemplateKwargs ? { chat_template_kwargs: options.chatTemplateKwargs } : {}),
