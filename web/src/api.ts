@@ -520,6 +520,38 @@ export async function fetchSummaries(
   return res.json() as Promise<SummaryPage>;
 }
 
+export interface ArchiveEntry {
+  id: string;
+  createdAt: string;
+  summary: string | null;
+  hidden: boolean;
+  broken: boolean;
+  memberCount: number;
+  startIndex: number;
+  endIndex: number;
+  startPageId: string;
+  endPageId: string;
+}
+
+export interface ArchivePage {
+  archives: ArchiveEntry[];
+  total: number;
+  withSummary: number;
+  pending: number;
+  broken: number;
+}
+
+export async function fetchArchives(
+  storyId: string,
+  options: { includeHidden?: boolean; background?: boolean } = {}
+): Promise<ArchivePage> {
+  const params = new URLSearchParams();
+  if (options.includeHidden) params.set("includeHidden", "true");
+  const qs = params.toString();
+  const res = await apiFetch(`/api/stories/${storyId}/archives${qs ? `?${qs}` : ""}`, {}, { background: options.background });
+  return res.json() as Promise<ArchivePage>;
+}
+
 export async function postMessage(
   storyId: string,
   content: string

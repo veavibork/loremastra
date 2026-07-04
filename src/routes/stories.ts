@@ -31,6 +31,7 @@ import { onCanonicalTextChangedForStory } from "../services/memory-invalidation.
 import { trackStoryDb, untrackStoryDb, setJobGuidance, requestJobCancel } from "../queue/pipeline-runner.js";
 import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
 import { buildLogView, buildSummaryPage } from "../services/log-view.js";
+import { buildArchiveView } from "../services/archive-view.js";
 import { assembleAuthorPrompt } from "../services/history.js";
 import {
   buildMemoryManifest,
@@ -171,6 +172,16 @@ storiesRoute.get("/:id/summaries", (c) => {
   const compressedOnly = c.req.query("compressedOnly") === "true";
 
   return c.json(buildSummaryPage(storyDb, logbook.id, { offset, limit, includeHidden, compressedOnly }));
+});
+
+/** Scene archive blocks for the Archives tab — most recent window first. */
+storiesRoute.get("/:id/archives", (c) => {
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  const logbook = getBookByType(storyDb, "logbook");
+  if (!logbook) return c.json({ error: "logbook not found" }, 404);
+
+  const includeHidden = c.req.query("includeHidden") === "true";
+  return c.json(buildArchiveView(storyDb, logbook.id, { includeHidden }));
 });
 
 /**

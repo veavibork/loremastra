@@ -22,6 +22,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
     { id: "story:saves", label: "Saves" },
     { id: "story:logs", label: "Logs" },
     { id: "story:summary", label: "Summary" },
+    { id: "story:archives", label: "Archives" },
     { id: "lore:tags", label: "Tags" },
     { id: "lore:worldbook", label: "Worldbook" },
     { id: "lore:memory", label: "Memory" },
@@ -31,3 +32,25 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
     { id: "settings:", label: "Settings" },
   ],
 };
+
+/** Inject tabs added to DEFAULT_LAYOUT_CONFIG into older saved layouts (read-only merge). */
+export function mergeLayoutWithDefaults(config: LayoutConfigData): LayoutConfigData {
+  const existingIds = new Set(config.tabs.map((t) => t.id));
+  const missing = DEFAULT_LAYOUT_CONFIG.tabs.filter((t) => !existingIds.has(t.id));
+  if (missing.length === 0) return config;
+
+  const tabs = [...config.tabs];
+  for (const tab of missing) {
+    const defaultIdx = DEFAULT_LAYOUT_CONFIG.tabs.findIndex((t) => t.id === tab.id);
+    let insertAt = tabs.length;
+    for (let i = defaultIdx - 1; i >= 0; i--) {
+      const anchorIdx = tabs.findIndex((t) => t.id === DEFAULT_LAYOUT_CONFIG.tabs[i]!.id);
+      if (anchorIdx >= 0) {
+        insertAt = anchorIdx + 1;
+        break;
+      }
+    }
+    tabs.splice(insertAt, 0, tab);
+  }
+  return { tabs };
+}
