@@ -89,6 +89,9 @@ export default function ApiKeysSection() {
   return (
     <section className="api-keys-section">
       <h3>API Keys</h3>
+      <p className="api-keys-hint">
+        Featherless-backed model configs need a Featherless key here. Jobs using Featherless will fail until one is set.
+      </p>
       <KeyRow
         label="Featherless"
         masked={account.featherlessKeyMasked}

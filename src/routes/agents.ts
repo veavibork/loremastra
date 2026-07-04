@@ -11,6 +11,7 @@ import {
 } from "../db/model-config-store.js";
 import { getAgentProfile } from "../services/agent-config.js";
 import { listModels } from "../inference/featherless-models.js";
+import { getHfTagsForModel } from "../inference/hf-model-tags.js";
 import { listTextModels } from "../inference/horde.js";
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from "../db/user-store.js";
 
@@ -21,6 +22,7 @@ export interface CatalogModel {
   contextLength?: number;
   concurrencyCost?: number;
   toolUse?: boolean;
+  hfTags?: string[];
 }
 
 // Provider-dispatching model catalog lookup, used by Config > Agents' "Fetch models" action.
@@ -32,11 +34,19 @@ agentsRoute.get("/models", async (c) => {
     const apiKey = getDecryptedFeatherlessKey(db, userId);
     if (!apiKey) return c.json({ error: "No Featherless API key configured — set one in the Agents tab" }, 400);
     const models = await listModels(apiKey, { perPage: 200 });
+    const configs = listModelConfigs(db, userId).filter((c) => c.provider === "featherless");
+    for (const m of models) {
+      if (m.concurrencyCost == null) continue;
+      for (const cfg of configs.filter((c) => c.model === m.id && c.concurrencyCost !== m.concurrencyCost)) {
+        updateModelConfig(db, cfg.id, { concurrencyCost: m.concurrencyCost });
+      }
+    }
     const catalog: CatalogModel[] = models.map((m) => ({
       id: m.id,
       contextLength: m.contextLength,
       concurrencyCost: m.concurrencyCost,
       toolUse: m.toolUse,
+      hfTags: getHfTagsForModel(m.id),
     }));
     return c.json({ models: catalog });
   }

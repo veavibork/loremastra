@@ -22,6 +22,10 @@ import {
 import EntryContent from "./EntryContent";
 import { RoleLabel } from "./playTabSettings";
 import { toast } from "./toast";
+import ButtonContainerRow from "./ButtonContainerRow";
+import { DEFAULT_INPUT_BAR } from "./layoutUtils";
+import { useStoryToggles } from "./storyToggles";
+import type { LayoutRegion } from "./api";
 import "./StoryView.css";
 
 /** Grows with its content instead of scrolling internally — used for both the composer and
@@ -177,11 +181,15 @@ export default function StoryView({
   storyId,
   phase,
   onKickedOff,
+  inputBar,
 }: {
   storyId: string;
   phase: StoryPhase;
   onKickedOff?: () => void;
+  inputBar?: LayoutRegion;
 }) {
+  const toggles = useStoryToggles(storyId);
+  const toolbarContainers = inputBar?.containers?.length ? inputBar.containers : DEFAULT_INPUT_BAR.containers;
   const [mode, setMode] = useState<"guide" | "play">(
     () => loadPersistedMode(storyId) ?? (phase === "setup" ? "guide" : "play")
   );
@@ -361,7 +369,11 @@ export default function StoryView({
     setError(null);
 
     try {
-      const { jobId, agentPageId } = mode === "guide" ? await postSetupMessage(storyId, content) : await postMessage(storyId, content);
+      const genOpts = mode === "play" ? toggles.generationOptions() : undefined;
+      const { jobId, agentPageId } =
+        mode === "guide"
+          ? await postSetupMessage(storyId, content)
+          : await postMessage(storyId, content, genOpts);
       await refresh();
       watchJob(jobId, agentPageId);
     } catch (err) {
@@ -391,7 +403,8 @@ export default function StoryView({
     setStarting(true);
     setError(null);
     try {
-      const { jobId, agentPageId } = await continuePost(storyId, guidance);
+      const genOpts = mode === "play" ? toggles.generationOptions() : undefined;
+      const { jobId, agentPageId } = await continuePost(storyId, guidance, genOpts);
       await refresh();
       watchJob(jobId, agentPageId);
     } catch (err) {
@@ -405,7 +418,8 @@ export default function StoryView({
     setStarting(true);
     setError(null);
     try {
-      const { jobId } = await retryPost(storyId, pageId, guidance);
+      const genOpts = mode === "play" ? toggles.generationOptions() : undefined;
+      const { jobId } = await retryPost(storyId, pageId, guidance, genOpts);
       watchJob(jobId, pageId);
     } catch (err) {
       console.error(err);
@@ -651,14 +665,6 @@ export default function StoryView({
       )}
 
       <div className="play-toolbar">
-        <div className="mode-toggle">
-          <button type="button" className={mode === "guide" ? "active" : ""} onClick={() => void handleEnterOoc()} disabled={busy || !!editingPageId}>
-            OOC
-          </button>
-          <button type="button" className={mode === "play" ? "active" : ""} onClick={() => setMode("play")} disabled={busy || !!editingPageId}>
-            IC
-          </button>
-        </div>
         {editingPageId ? (
           <>
             <button type="button" onClick={() => void saveEdit()}>Save</button>
@@ -667,32 +673,82 @@ export default function StoryView({
             <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleDeleteKey}>Del</button>
           </>
         ) : (
-          <>
-            <button type="button" onClick={handleUndo} disabled={busy || !position?.canUndo}>
-              ↶ Undo
-            </button>
-            <button type="button" onClick={handleRedo} disabled={busy || !position?.canRedo}>
-              ↷ Redo
-            </button>
-            <button
-              type="button"
-              onClick={() => lastEntry && handleRetryClick(lastEntry.pageId)}
-              disabled={busy || !canRetry}
-            >
-              Retry
-            </button>
-            <button type="button" onClick={handleContinueClick} disabled={busy}>
-              Continue
-            </button>
-          </>
-        )}
-        {mode === "guide" && phase === "setup" && (
-          <button type="button" onClick={() => void handleKickoff()} disabled={busy || !!editingPageId}>
-            Kickoff →
-          </button>
-        )}
-        {position && !position.atHead && (
-          <span className="rewind-note">Viewing an earlier point — new posts will branch from here.</span>
+          <ButtonContainerRow
+            storageScope="input"
+            containers={toolbarContainers}
+            resolveLabel={(id, fallback) => {
+              if (id === "toggle.length") return `Length: ${toggles.labels.length}`;
+              if (id === "toggle.mood") return `Mood: ${toggles.labels.mood}`;
+              if (id === "toggle.param") return `Param: ${toggles.labels.param}`;
+              if (id === "toggle.model") return `Model: ${toggles.labels.model}`;
+              if (id === "toggle.effort") return `Effort: ${toggles.labels.effort}`;
+              return fallback ?? id;
+            }}
+            getButtonProps={(id) => {
+              if (busy && !id.startsWith("mode.")) {
+                // mode switches disabled when busy; toggles too
+              }
+              if (id === "mode.ooc") {
+                return {
+                  onClick: () => void handleEnterOoc(),
+                  active: mode === "guide",
+                  disabled: busy || !!editingPageId,
+                  className: mode === "guide" ? "active" : undefined,
+                };
+              }
+              if (id === "mode.ic") {
+                return {
+                  onClick: () => setMode("play"),
+                  active: mode === "play",
+                  disabled: busy || !!editingPageId,
+                  className: mode === "play" ? "active" : undefined,
+                };
+              }
+              if (id === "action.undo") {
+                return { onClick: () => void handleUndo(), disabled: busy || !position?.canUndo };
+              }
+              if (id === "action.redo") {
+                return { onClick: () => void handleRedo(), disabled: busy || !position?.canRedo };
+              }
+              if (id === "action.retry") {
+                return {
+                  onClick: () => lastEntry && handleRetryClick(lastEntry.pageId),
+                  disabled: busy || !canRetry,
+                };
+              }
+              if (id === "action.continue") {
+                return { onClick: handleContinueClick, disabled: busy };
+              }
+              if (id === "toggle.length") {
+                return { onClick: toggles.cycleLength, disabled: busy || mode !== "play" };
+              }
+              if (id === "toggle.mood") {
+                return { onClick: toggles.cycleMood, disabled: busy || mode !== "play" };
+              }
+              if (id === "toggle.param") {
+                return { onClick: toggles.cycleParam, disabled: busy || mode !== "play" };
+              }
+              if (id === "toggle.model") {
+                return { onClick: toggles.cycleModel, disabled: busy || mode !== "play" };
+              }
+              if (id === "toggle.effort") {
+                return { onClick: toggles.cycleEffort, disabled: busy || mode !== "play" };
+              }
+              return null;
+            }}
+            trailing={
+              <>
+                {mode === "guide" && phase === "setup" && (
+                  <button type="button" onClick={() => void handleKickoff()} disabled={busy || !!editingPageId}>
+                    Kickoff →
+                  </button>
+                )}
+                {position && !position.atHead && (
+                  <span className="rewind-note">Viewing an earlier point — new posts will branch from here.</span>
+                )}
+              </>
+            }
+          />
         )}
       </div>
 

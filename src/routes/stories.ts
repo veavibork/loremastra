@@ -25,7 +25,8 @@ import { recordHistoryEvent, undoHistory, redoHistory, canUndoHistory, canRedoHi
 import { finalizeSetup } from "../services/kickoff.js";
 import { forkStory } from "../services/fork.js";
 import { onCanonicalTextChangedForStory } from "../services/memory-invalidation.js";
-import { trackStoryDb, untrackStoryDb, setJobGuidance, requestJobCancel } from "../queue/pipeline-runner.js";
+import { trackStoryDb, untrackStoryDb, setJobGuidance, setJobGenerationOptions, requestJobCancel } from "../queue/pipeline-runner.js";
+import type { GenerationOptions } from "../services/settings-space-registry.js";
 import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from "../queue/job-events.js";
 import { buildLogView } from "../services/log-view.js";
 import { buildArchiveView } from "../services/archive-view.js";
@@ -223,7 +224,10 @@ storiesRoute.get("/:id/phase", (c) => {
 });
 
 storiesRoute.post("/:id/messages", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { content?: string };
+  const body = (await c.req.json().catch(() => ({}))) as {
+    content?: string;
+    generationOptions?: GenerationOptions;
+  };
   const content = body.content ?? "";
   if (!content.trim()) return c.json({ error: "content is required" }, 400);
 
@@ -260,6 +264,7 @@ storiesRoute.post("/:id/messages", async (c) => {
     slotCost: getAgentProfile(c.get("userId"), "author").concurrencyCost,
     priority: 10,
   });
+  if (body.generationOptions) setJobGenerationOptions(job.id, body.generationOptions);
   enqueueEligibleArchiveBlocks(storyDb, c.get("userId"), logbook.id);
 
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id });
@@ -278,7 +283,7 @@ storiesRoute.post("/:id/messages", async (c) => {
  * setup page is.
  */
 storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { guidance?: string };
+  const body = (await c.req.json().catch(() => ({}))) as { guidance?: string; generationOptions?: GenerationOptions };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const pageId = c.req.param("pageId");
 
@@ -305,6 +310,7 @@ storiesRoute.post("/:id/posts/:pageId/retry", async (c) => {
     priority: 10,
   });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "regenerate");
+  if (!isSetupPage && body.generationOptions) setJobGenerationOptions(job.id, body.generationOptions);
 
   return c.json({ jobId: job.id, pageId, textId: newText.id });
 });
@@ -345,7 +351,7 @@ storiesRoute.post("/:id/posts/:pageId/edit", async (c) => {
  * POST /:id/posts/:pageId/retry) gets this right in both cases.
  */
 storiesRoute.post("/:id/continue", async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { guidance?: string };
+  const body = (await c.req.json().catch(() => ({}))) as { guidance?: string; generationOptions?: GenerationOptions };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const phase = getStoryState(storyDb).phase;
   if (phase !== "setup" && phase !== "story") {
@@ -369,6 +375,7 @@ storiesRoute.post("/:id/continue", async (c) => {
     priority: 10,
   });
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), "continue");
+  if (!isSetupContinuation && body.generationOptions) setJobGenerationOptions(job.id, body.generationOptions);
 
   return c.json({ agentPageId: page.id, jobId: job.id });
 });

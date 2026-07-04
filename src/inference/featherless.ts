@@ -70,6 +70,31 @@ export class JobCancelledError extends Error {
 // or delisted model id) — unambiguously "this model id doesn't work," so it belongs here too.
 const MODEL_UNAVAILABLE_STATUS_CODES = new Set([400, 403, 404, 503]);
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const TRANSIENT_RETRY_DELAYS_MS = [5000, 15000];
+
+/** Same-model backoff for Featherless 500/503 before cross-model fallback kicks in. */
+export async function withTransientRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (!(err instanceof FeatherlessError) || (err.status !== 500 && err.status !== 503)) {
+        throw err;
+      }
+      if (attempt >= TRANSIENT_RETRY_DELAYS_MS.length) throw err;
+      await sleep(TRANSIENT_RETRY_DELAYS_MS[attempt]!);
+    }
+  }
+  throw lastError;
+}
+
+
 /**
  * A reasoning model's chat template leaves it up to the model, per turn, to decide whether/how
  * to open its own `<think>` block. Under higher temperature, the very first sampled token can
@@ -106,7 +131,9 @@ export async function withModelFallback<T>(
       // model_configs row (see model-config-store.ts), and the actual stats/token recording
       // inside streamInference/completeChat/callWithTools reads profile.configId to
       // know which row to credit.
-      return await attempt({ ...profile, model: candidates[i], configId: candidateConfigIds[i] });
+      return await withTransientRetry(() =>
+        attempt({ ...profile, model: candidates[i], configId: candidateConfigIds[i] })
+      );
     } catch (err) {
       lastError = err;
       const isLast = i === candidates.length - 1;
@@ -144,6 +171,7 @@ export interface StreamOptions {
   signal?: AbortSignal;
   /** Aborts if no chunk (including the initial response) arrives within this window. Resets on every chunk, so long-but-active generations aren't cut off. */
   idleTimeoutMs?: number;
+  chatTemplateKwargs?: Record<string, unknown>;
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 45_000;
@@ -212,6 +240,7 @@ export async function streamInference(
         max_tokens: profile.responseLimit,
         stream: true,
         ...samplerParams(profile),
+        ...(options?.chatTemplateKwargs ? { chat_template_kwargs: options.chatTemplateKwargs } : {}),
       }),
       signal: timeout.signal,
     });
@@ -313,7 +342,7 @@ export async function completeChat(
   profile: AgentProfile,
   apiKey: string,
   messages: ChatMessage[],
-  options?: { timeoutMs?: number; signal?: AbortSignal }
+  options?: { timeoutMs?: number; signal?: AbortSignal; chatTemplateKwargs?: Record<string, unknown> }
 ): Promise<string> {
   if (!apiKey) {
     throw new Error("No Featherless API key configured — set one in the Agents tab");
@@ -337,6 +366,7 @@ export async function completeChat(
         max_tokens: profile.responseLimit,
         stream: false,
         ...samplerParams(profile),
+        ...(options?.chatTemplateKwargs ? { chat_template_kwargs: options.chatTemplateKwargs } : {}),
       }),
       signal: timeout.signal,
     });

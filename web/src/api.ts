@@ -209,15 +209,37 @@ export interface Story {
   stats?: StoryStats;
 }
 
-export interface LayoutTab {
-  /** Registry key the tab resolves to (e.g. "story:play") — also its stable identity for open-tab persistence. */
+export type LayoutJustify = "left" | "center" | "right";
+
+export interface LayoutButton {
   id: string;
-  label: string;
+  label?: string;
+}
+
+export interface LayoutContainer {
+  id: string;
+  label?: string;
+  visible: boolean;
+  showButton: boolean;
+  showLabel: boolean;
+  justify: LayoutJustify;
+  buttons: LayoutButton[];
+}
+
+export interface LayoutRegion {
+  containers: LayoutContainer[];
 }
 
 export interface LayoutConfigData {
-  /** Flat and ordered — this order is exactly the tab bar's render order, no implied grouping/nesting. */
-  tabs: LayoutTab[];
+  version: 2;
+  nav: LayoutRegion;
+  inputBar: LayoutRegion;
+}
+
+/** @deprecated v1 — server migrates on load. */
+export interface LayoutTab {
+  id: string;
+  label: string;
 }
 
 export interface LayoutConfigResponse {
@@ -282,6 +304,16 @@ export interface Job {
   error: string | null;
   model: string | null;
   tokenEstimate: number | null;
+  elapsedMs: number | null;
+}
+
+export interface GenerationOptions {
+  responseLimit?: number;
+  moodFragment?: string;
+  paramOverrides?: Record<string, number | undefined>;
+  modelOverride?: string;
+  configIdOverride?: string;
+  effort?: { enableThinking?: boolean; thinkingBudget?: number };
 }
 
 export interface PromptCatalogEntry {
@@ -502,6 +534,7 @@ export interface ArchiveEntry {
   id: string;
   createdAt: string;
   summary: string | null;
+  name: string | null;
   hidden: boolean;
   broken: boolean;
   memberCount: number;
@@ -532,12 +565,13 @@ export async function fetchArchives(
 
 export async function postMessage(
   storyId: string,
-  content: string
+  content: string,
+  generationOptions?: GenerationOptions
 ): Promise<{ jobId: string; agentPageId: string }> {
   const res = await apiFetch(`/api/stories/${storyId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, generationOptions }),
   });
   return res.json();
 }
@@ -545,12 +579,13 @@ export async function postMessage(
 export async function retryPost(
   storyId: string,
   pageId: string,
-  guidance?: string
+  guidance?: string,
+  generationOptions?: GenerationOptions
 ): Promise<{ jobId: string; textId: string }> {
   const res = await apiFetch(`/api/stories/${storyId}/posts/${pageId}/retry`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ guidance }),
+    body: JSON.stringify({ guidance, generationOptions }),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
@@ -569,12 +604,13 @@ export async function editPost(storyId: string, pageId: string, content: string)
 
 export async function continuePost(
   storyId: string,
-  guidance?: string
+  guidance?: string,
+  generationOptions?: GenerationOptions
 ): Promise<{ agentPageId: string; jobId: string }> {
   const res = await apiFetch(`/api/stories/${storyId}/continue`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ guidance }),
+    body: JSON.stringify({ guidance, generationOptions }),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);

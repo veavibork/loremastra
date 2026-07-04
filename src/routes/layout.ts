@@ -8,7 +8,7 @@ import {
   updateLayoutConfigJson,
   setActiveLayoutConfig,
 } from "../db/layout-config-store.js";
-import { DEFAULT_LAYOUT_CONFIG, mergeLayoutWithDefaults } from "../services/layout.js";
+import { DEFAULT_LAYOUT_CONFIG, normalizeLayoutConfig } from "../services/layout.js";
 
 export const layoutRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -17,7 +17,7 @@ layoutRoute.get("/", (c) => {
   const db = getGlobalDb();
   const active = getActiveLayoutConfig(db, c.get("userId"));
   if (active) {
-    const config = mergeLayoutWithDefaults(JSON.parse(active.configJson));
+    const config = normalizeLayoutConfig(JSON.parse(active.configJson));
     return c.json({ id: active.id, name: active.name, config });
   }
   return c.json({ id: null, name: "Default", config: DEFAULT_LAYOUT_CONFIG });

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { LayoutConfigData } from "./api";
+import ButtonContainerRow from "./ButtonContainerRow";
+import { flattenNavTabs } from "./layoutUtils";
 import { resolvePanel } from "./registry";
 import type { PanelProps } from "./panel-types";
 import "./Nav.css";
@@ -7,16 +9,8 @@ import "./Nav.css";
 const OPEN_TABS_STORAGE_KEY = "loremaster.openTabs";
 const MIN_COLUMN_PERCENT = 12;
 
-/**
- * Click a tab to open it as a column, click again to close it — any number of tabs can be
- * open side by side, with a draggable handle between adjacent columns to trade width between
- * them. Deliberately not the old single-active section/tab model: this is for fast
- * side-by-side comparison while evaluating current state, not normal single-panel navigation.
- * Widths reset to an equal split whenever the set of open tabs changes rather than trying to
- * preserve a dragged ratio across additions/removals — simpler, and good enough for now.
- */
 export default function Nav({ config, panelProps }: { config: LayoutConfigData; panelProps: PanelProps }) {
-  const allTabs = config.tabs;
+  const allTabs = flattenNavTabs(config);
 
   const [openIds, setOpenIds] = useState<string[]>(() => {
     try {
@@ -66,16 +60,15 @@ export default function Nav({ config, panelProps }: { config: LayoutConfigData; 
   return (
     <div className="nav-shell">
       <nav className="nav-tabbar">
-        {allTabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={openIds.includes(tab.id) ? "active" : ""}
-            onClick={() => toggleTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
+        <ButtonContainerRow
+          storageScope="nav"
+          containers={config.nav.containers}
+          resolveLabel={(id, fallback) => fallback ?? allTabs.find((t) => t.id === id)?.label ?? id}
+          getButtonProps={(id) => ({
+            onClick: () => toggleTab(id),
+            active: openIds.includes(id),
+          })}
+        />
       </nav>
 
       <div className="nav-columns" ref={rowRef}>
@@ -93,7 +86,7 @@ export default function Nav({ config, panelProps }: { config: LayoutConfigData; 
                   </button>
                 </div>
                 <div className="nav-column-body">
-                  {Panel ? <Panel {...panelProps} /> : <p>Nothing configured here yet.</p>}
+                  {Panel ? <Panel {...panelProps} inputBar={config.inputBar} /> : <p>Nothing configured here yet.</p>}
                 </div>
               </div>
               {i < openIds.length - 1 && (

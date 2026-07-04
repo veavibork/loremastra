@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS archive (
   start_page_id TEXT NOT NULL REFERENCES page(id),
   end_page_id TEXT NOT NULL REFERENCES page(id),
   summary TEXT,
+  name TEXT,
   hidden INTEGER NOT NULL DEFAULT 0,
   broken INTEGER NOT NULL DEFAULT 0
 );
@@ -132,7 +133,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at TEXT NOT NULL,
   target_text_id TEXT REFERENCES text(id),
   target_archive_id TEXT REFERENCES archive(id),
-  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook','tag-gen','story-name')),
+  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook','tag-gen','story-name','archive-name')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
   priority INTEGER NOT NULL DEFAULT 0,
   slot_cost INTEGER NOT NULL DEFAULT 1,
@@ -141,7 +142,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   error TEXT,
   cancel_requested INTEGER NOT NULL DEFAULT 0,
   model TEXT,
-  token_estimate INTEGER
+  token_estimate INTEGER,
+  elapsed_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_text ON jobs(target_text_id);

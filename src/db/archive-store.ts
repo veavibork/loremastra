@@ -9,6 +9,7 @@ export interface ArchiveRow {
   startPageId: string;
   endPageId: string;
   summary: string | null;
+  name: string | null;
   hidden: boolean;
   broken: boolean;
 }
@@ -20,6 +21,7 @@ interface RawArchiveRow {
   start_page_id: string;
   end_page_id: string;
   summary: string | null;
+  name: string | null;
   hidden: number;
   broken: number;
 }
@@ -32,6 +34,7 @@ function mapArchiveRow(row: RawArchiveRow): ArchiveRow {
     startPageId: row.start_page_id,
     endPageId: row.end_page_id,
     summary: row.summary,
+    name: row.name ?? null,
     hidden: !!row.hidden,
     broken: !!row.broken,
   };
@@ -71,6 +74,11 @@ export function fillArchiveSummary(db: Database.Database, id: string, summary: s
 
 export function setArchiveHidden(db: Database.Database, id: string, hidden: boolean): void {
   db.prepare(`UPDATE archive SET hidden = ? WHERE id = ?`).run(hidden ? 1 : 0, id);
+}
+
+export function fillArchiveName(db: Database.Database, id: string, name: string): boolean {
+  const result = db.prepare(`UPDATE archive SET name = ? WHERE id = ? AND (name IS NULL OR name = '')`).run(name, id);
+  return result.changes > 0;
 }
 
 /** broken = invalidated (a constituent post changed) — needs regeneration. */

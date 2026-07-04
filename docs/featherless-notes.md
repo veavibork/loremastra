@@ -210,8 +210,8 @@ like their dataset exports).
 
 ## TODOs surfaced by this investigation
 
-- [ ] Read `concurrency_cost` from the models catalog instead of hardcoding `slotCost: 4` / `slotCost: 1` in `createJob` calls.
+- [ ] Read `concurrency_cost` from the models catalog instead of hardcoding `slotCost: 4` / `slotCost: 1` in `createJob` calls. — partially done: `getAgentProfile().concurrencyCost` + catalog refresh on Agents fetch syncs stored rows.
 - [x] Swap `WORKER_MODEL` away from the Heretic variant to a tool-calling-reputable standard instruct model. — done, `NousResearch/Hermes-3-Llama-3.1-8B`.
-- [ ] Replace `src/queue/slots.ts`'s local counter with the real `/account/concurrency` feed — confirmed 2026-07-02 that aborted requests keep occupying their Featherless-side slot for the full original duration, so local/real slot counts actively drift on every abort today, not just hypothetically.
+- [x] Replace `src/queue/slots.ts`'s local counter with the real `/account/concurrency` feed — done 2026-07-03 hybrid (`concurrency-feed.ts` + per-job reservations); fallback cap remains when feed unhealthy.
 - [x] Ranked-choice model fallback on 400/403/404/503 — done 2026-07-01, `withModelFallback` in `src/inference/featherless.ts`, configurable per-agent via Config > Agents.
-- [ ] Same-model retry-after-backoff for 500/503 (distinct from *falling back to a different model*, which is now handled) — still open.
+- [x] Same-model retry-after-backoff for 500/503 — done 2026-07-04, `withTransientRetry` in `src/inference/featherless.ts`.

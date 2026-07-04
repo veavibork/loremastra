@@ -27,8 +27,12 @@ function formatWorldbookEntry(entry: WorldbookEntry): string {
   return `[${entry.entryType.toUpperCase()}]\n${entry.content}`;
 }
 
-export function formatEventSummary(summary: string): string {
-  return `[EVENT SUMMARY]\n${summary.trim()}\n[/EVENT SUMMARY]`;
+export function formatEventSummary(summary: string, sceneName?: string | null): string {
+  const trimmed = summary.trim();
+  if (sceneName?.trim()) {
+    return `[EVENT SUMMARY: ${sceneName.trim()}]\n${trimmed}\n[/EVENT SUMMARY]`;
+  }
+  return `[EVENT SUMMARY]\n${trimmed}\n[/EVENT SUMMARY]`;
 }
 
 export function assembleAuthorPrompt(
@@ -97,7 +101,7 @@ export function assembleAuthorPrompt(
     const coversUncovered = memberIds.some((id) => !verboseTextIds.has(id));
     if (!coversUncovered) continue;
 
-    const content = formatEventSummary(archive.summary!);
+    const content = formatEventSummary(archive.summary!, archive.name);
     const cost = estimateTokens(content);
     if (cost > remaining) break;
 

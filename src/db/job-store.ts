@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 
-export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name";
+export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name" | "archive-name";
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
 export interface JobRow {
@@ -21,6 +21,7 @@ export interface JobRow {
   model: string | null;
   tokenEstimate: number | null;
   hordeRequestId: string | null;
+  elapsedMs: number | null;
 }
 
 interface RawJobRow {
@@ -39,6 +40,7 @@ interface RawJobRow {
   model: string | null;
   token_estimate: number | null;
   horde_request_id: string | null;
+  elapsed_ms: number | null;
 }
 
 function mapJobRow(row: RawJobRow): JobRow {
@@ -58,6 +60,7 @@ function mapJobRow(row: RawJobRow): JobRow {
     model: row.model,
     tokenEstimate: row.token_estimate,
     hordeRequestId: row.horde_request_id,
+    elapsedMs: row.elapsed_ms ?? null,
   };
 }
 
@@ -192,14 +195,17 @@ export function finishJob(
   id: string,
   status: "done" | "failed",
   error?: string,
-  meta?: { model?: string; tokenEstimate?: number }
+  meta?: { model?: string; tokenEstimate?: number; elapsedMs?: number }
 ): void {
-  db.prepare(`UPDATE jobs SET status = ?, finished_at = ?, error = ?, model = COALESCE(?, model), token_estimate = COALESCE(?, token_estimate) WHERE id = ?`).run(
+  db.prepare(
+    `UPDATE jobs SET status = ?, finished_at = ?, error = ?, model = COALESCE(?, model), token_estimate = COALESCE(?, token_estimate), elapsed_ms = COALESCE(?, elapsed_ms) WHERE id = ?`
+  ).run(
     status,
     nowIso(),
     error ?? null,
     meta?.model ?? null,
     meta?.tokenEstimate ?? null,
+    meta?.elapsedMs ?? null,
     id
   );
 }

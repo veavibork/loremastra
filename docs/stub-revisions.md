@@ -1,11 +1,11 @@
 # Stub & revision tracker
 
 Living list of things that are deliberately incomplete, stubbed, or flagged as needing a
-second pass — as distinct from `roadmap.md`, which tracks milestone completion. An item
-lands here when it's real but not final: a placeholder UI, a simplification with a known
-gap, or a design question that needs more information (usually real play-testing) before
-it can be resolved. Remove an item once it's actually resolved; don't let this become a
-second roadmap.
+second pass — as distinct from `roadmap.md` (high-level open backlog) and
+`development.md` (detailed milestone history). An item lands here when it's real but not
+final: a placeholder UI, a simplification with a known gap, or a design question that
+needs more information (usually real play-testing) before it can be resolved. Remove an
+item once it's actually resolved; don't let this become a second roadmap.
 
 ## Prompts
 
@@ -100,14 +100,9 @@ second roadmap.
   on top of.
 - **Agent slot costs are hardcoded**, not read from Featherless's real per-model
   `concurrency_cost` field (`docs/featherless-notes.md` TODOs).
-- **`src/queue/slots.ts` is a local in-memory counter**, not backed by Featherless's real
-  concurrency feed — can drift from ground truth. Two real account-wide endpoints exist to
-  fix this properly: `GET /account/concurrency` (one-shot snapshot) and
-  `GET /account/concurrency/stream` (SSE, one event on connect then every 2s — `limit`,
-  `used_cost`, `request_count`, per-request `requests[]` with id/cost/model/start
-  time/elapsed). Not yet wired in — see this file's "Job cancellation" entry below for what
-  led here; **next session's task is redesigning `tryAcquireSlots`/`releaseSlots` to gate on
-  this real feed instead of the local counter.**
+- **`src/queue/slots.ts` is a hybrid in-memory reservation + Featherless SSE feed**
+  (`concurrency-feed.ts`) — gates on live `used_cost` when healthy, falls back to local
+  cap of 4 when the feed is down or the user has no key.
 - **Job cancellation is now real** (2026-07-03) — `requestCancel`/`cancelJob` in
   `src/db/job-store.ts` used to be dead code with no HTTP route, no SSE event, and no UI
   button. Now: `POST /:id/jobs/:jobId/cancel` (`src/routes/stories.ts`) marks a still-`pending`

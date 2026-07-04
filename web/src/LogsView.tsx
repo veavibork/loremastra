@@ -18,6 +18,11 @@ function parseMetrics(raw: string | null): { elapsedMs?: number; tokenEstimate?:
   }
 }
 
+function jobElapsed(job: Job): string {
+  if (job.elapsedMs != null) return `${(job.elapsedMs / 1000).toFixed(1)}s`;
+  return turnaround(job);
+}
+
 function turnaround(job: Job): string {
   if (!job.startedAt) return "—";
   const end = job.finishedAt ? new Date(job.finishedAt) : new Date();
@@ -110,7 +115,7 @@ export default function LogsView({ story }: PanelProps) {
                 <td>{job.tokenEstimate ?? "—"}</td>
                 <td>{job.priority}</td>
                 <td>{job.slotCost}</td>
-                <td>{turnaround(job)}</td>
+                <td>{jobElapsed(job)}</td>
                 <td className={`logs-job-response ${job.status === "failed" ? "logs-job-response-error" : ""}`}>
                   {jobResponse(job)}
                 </td>

@@ -67,5 +67,6 @@ See [loremaster.md](loremaster.md) (MCP Server section) for the full MCP tool li
 - `src/` — backend (routes, services, db, queue)
 - `web/` — frontend
 - `scripts/` — one-off/dev scripts (DB init, user creation, dev server management)
-- `docs/roadmap.md` — active planning and milestone tracking
+- `docs/roadmap.md` — high-level backlog (open items only)
+- `docs/development.md` — detailed milestone history and implementation notes
 - `loremaster.md` — project mission, architecture, and terminology reference

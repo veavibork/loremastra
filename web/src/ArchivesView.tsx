@@ -72,7 +72,9 @@ export default function ArchivesView({ story }: PanelProps) {
       <div className="archives-list">
         {archives.map((archive) => {
           const isExpanded = expanded.has(archive.id);
-          const rangeLabel = `posts ${archive.startIndex + 1}–${archive.endIndex + 1}`;
+          const rangeLabel = archive.name?.trim()
+            ? archive.name
+            : `posts ${archive.startIndex + 1}–${archive.endIndex + 1}`;
           const status = archive.broken ? "broken" : archive.summary ? "ready" : "pending";
           return (
             <article
@@ -83,6 +85,7 @@ export default function ArchivesView({ story }: PanelProps) {
                 <button type="button" className="archive-toggle" onClick={() => toggleExpanded(archive.id)}>
                   <span className="archive-range">{rangeLabel}</span>
                   <span className="archive-meta">
+                    {archive.name ? `${archive.startIndex + 1}–${archive.endIndex + 1} · ` : ""}
                     {archive.memberCount} posts · {new Date(archive.createdAt).toLocaleString()}
                     {archive.broken && " · broken"}
                     {archive.hidden && " · hidden"}

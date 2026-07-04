@@ -15,7 +15,7 @@ import { getPage, listChronologicalPages, setPageHidden, type PageRow } from "..
 import { createPageWithText } from "../db/content-store.js";
 import { getBookByType } from "../db/book-store.js";
 import { listContentEntries, listWorldbookEntries } from "../db/worldbook-store.js";
-import { fillArchiveSummary, getArchive } from "../db/archive-store.js";
+import { fillArchiveSummary, fillArchiveName, getArchive } from "../db/archive-store.js";
 import { getStoryState } from "../db/story-state-store.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { getStory, renameStory, DEFAULT_STORY_NAME } from "../db/story-store.js";
@@ -62,6 +62,7 @@ import {
   validateCompressSummary,
 } from "../services/compress-worker.js";
 import { getAgentProfile } from "../services/agent-config.js";
+import type { GenerationOptions } from "../services/settings-space-registry.js";
 import { matchesRefusalPrefix } from "../services/refusal-detection.js";
 import {
   EDITOR_SETUP_PROMPT,
@@ -75,7 +76,7 @@ import {
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const WORKER_JOB_TYPES: JobType[] = ["archive", "story-name"];
+const WORKER_JOB_TYPES: JobType[] = ["archive", "story-name", "archive-name"];
 const PROSE_JOB_TYPES: JobType[] = ["prose", "setup", "setup-worldbook"];
 
 /**
@@ -88,6 +89,37 @@ type GuidanceIntent = "regenerate" | "continue";
 const jobGuidance = new Map<string, { text: string; intent: GuidanceIntent }>();
 export function setJobGuidance(jobId: string, guidance: string, intent: GuidanceIntent): void {
   jobGuidance.set(jobId, { text: guidance, intent });
+}
+
+const jobGenerationOptions = new Map<string, GenerationOptions>();
+export function setJobGenerationOptions(jobId: string, options: GenerationOptions): void {
+  jobGenerationOptions.set(jobId, options);
+}
+
+function applyGenerationOptions(
+  profile: AgentProfile,
+  options?: GenerationOptions
+): { profile: AgentProfile; moodFragment?: string; chatTemplateKwargs?: Record<string, unknown> } {
+  if (!options) return { profile };
+  let merged: AgentProfile = { ...profile };
+  if (options.responseLimit !== undefined) merged.responseLimit = options.responseLimit;
+  if (options.modelOverride) {
+    merged.model = options.modelOverride;
+    if (options.configIdOverride) merged.configId = options.configIdOverride;
+  }
+  if (options.paramOverrides) merged = { ...merged, ...options.paramOverrides };
+  const chatTemplateKwargs: Record<string, unknown> = {};
+  if (options.effort?.enableThinking !== undefined) {
+    chatTemplateKwargs.enable_thinking = options.effort.enableThinking;
+  }
+  if (options.effort?.thinkingBudget !== undefined) {
+    chatTemplateKwargs.thinking_budget = options.effort.thinkingBudget;
+  }
+  return {
+    profile: merged,
+    moodFragment: options.moodFragment?.trim() || undefined,
+    chatTemplateKwargs: Object.keys(chatTemplateKwargs).length ? chatTemplateKwargs : undefined,
+  };
 }
 const COMPRESS_MAX_ATTEMPTS = 3;
 const COMPRESS_MAX_WORDS = 60; // generous ceiling — a real ~20-token summary is well under this; catches "ignored the prompt and kept writing" cases
@@ -167,7 +199,8 @@ async function streamWithFallback(
   apiKey: string,
   messages: ChatMessage[],
   jobId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  chatTemplateKwargs?: Record<string, unknown>
 ): Promise<{ text: string; model: string }> {
   let reply = "";
   let usedModel = profile.model;
@@ -196,7 +229,7 @@ async function streamWithFallback(
               },
               onError: reject,
             },
-            { signal }
+            { signal, chatTemplateKwargs }
           );
         });
         return;
@@ -342,6 +375,8 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         void executeArchiveJob(db, story.ownerUserId, job.id, job.targetArchiveId);
       } else if (job.jobType === "story-name" && job.targetTextId) {
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId);
+      } else if (job.jobType === "archive-name" && job.targetArchiveId) {
+        void executeArchiveNameJob(db, story.ownerUserId, job.id, job.targetArchiveId);
       } else {
         finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
         releaseSlot(story.ownerUserId, job.id);
@@ -457,22 +492,34 @@ async function executeProseJob(
   const startedAt = Date.now();
   try {
     const { history, targetPage } = buildProseHistory(db, userId, jobId, targetTextId);
+    const genOptions = jobGenerationOptions.get(jobId);
+    jobGenerationOptions.delete(jobId);
+    const { profile, moodFragment, chatTemplateKwargs } = applyGenerationOptions(
+      getAgentProfile(userId, "author"),
+      genOptions
+    );
+    let finalHistory = history;
+    if (moodFragment) {
+      finalHistory = [...history, { role: "system", content: moodFragment }];
+    }
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     const { text: fullText, model } = await streamWithFallback(
-      getAgentProfile(userId, "author"),
+      profile,
       featherlessKey,
-      history,
+      finalHistory,
       jobId,
-      signal
+      signal,
+      chatTemplateKwargs
     );
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —
     // not a real tokenizer, good enough for the Logs telemetry view's ballpark numbers.
     const tokenEstimate = Math.ceil(fullText.length / 4);
-    const metrics = { elapsedMs: Date.now() - startedAt, tokenEstimate };
+    const metrics: Record<string, unknown> = { elapsedMs: Date.now() - startedAt, tokenEstimate };
+    if (genOptions) metrics.toggles = genOptions;
     fillTextGeneration(db, targetTextId, { genPackage: fullText, genMetrics: JSON.stringify(metrics) });
     maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
-    finishJob(db, jobId, "done", undefined, { model, tokenEstimate });
+    finishJob(db, jobId, "done", undefined, { model, tokenEstimate, elapsedMs: Date.now() - startedAt });
     publishDone(jobId, fullText);
   } catch (err) {
     if (err instanceof JobCancelledError) {
@@ -921,7 +968,7 @@ async function executeCompressJob(
       markCompressValid(db, targetPage.id, targetTextId);
       enqueueEligibleArchiveBlocks(db, userId, targetPage.bookId);
     }
-    finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate });
+    finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate, elapsedMs: Date.now() - startedAt });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
@@ -962,6 +1009,7 @@ function maybeQueueStoryNameJob(db: Database.Database, userId: string, storyId: 
  * before it happened. Same [NAME]-wrapped, Worker-tier shape; see NAMING_PROMPT's doc comment.
  */
 async function executeStoryNameJob(db: Database.Database, userId: string, jobId: string, targetTextId: string, storyId: string): Promise<void> {
+  const startedAt = Date.now();
   try {
     const targetText = getText(db, targetTextId);
     if (!targetText?.genPackage) throw new Error("nothing to name from");
@@ -996,7 +1044,53 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
       renameStory(globalDb, storyId, name);
     }
 
-    finishJob(db, jobId, "done", undefined, { model: usedModel });
+    finishJob(db, jobId, "done", undefined, { model: usedModel, elapsedMs: Date.now() - startedAt });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    finishJob(db, jobId, "failed", message);
+  } finally {
+    releaseSlot(userId, jobId);
+    releaseWorkerLane();
+  }
+}
+
+async function executeArchiveNameJob(
+  db: Database.Database,
+  userId: string,
+  jobId: string,
+  targetArchiveId: string
+): Promise<void> {
+  const startedAt = Date.now();
+  try {
+    const archive = getArchive(db, targetArchiveId);
+    if (!archive?.summary?.trim()) throw new Error("archive has no summary to name from");
+
+    const nameMessages: ChatMessage[] = [
+      { role: "system", content: NAMING_PROMPT },
+      { role: "user", content: archive.summary },
+    ];
+
+    let name: string | null = null;
+    let usedModel = "";
+    let lastError = "unknown error";
+    const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    const workerProfile = getAgentProfile(userId, "worker");
+    for (let attempt = 1; attempt <= STORY_NAME_MAX_ATTEMPTS && !name; attempt++) {
+      try {
+        const rawText = await withModelFallback(workerProfile, (profile) => {
+          usedModel = profile.model;
+          return completeChat(profile, featherlessKey, nameMessages);
+        });
+        name = extractStoryName(rawText);
+        if (!name?.trim()) lastError = `missing [NAME] block on attempt ${attempt}`;
+      } catch (err) {
+        lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    if (!name) throw new Error(`archive naming failed after ${STORY_NAME_MAX_ATTEMPTS} attempts — ${lastError}`);
+    fillArchiveName(db, targetArchiveId, name);
+    finishJob(db, jobId, "done", undefined, { model: usedModel, elapsedMs: Date.now() - startedAt });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
@@ -1016,6 +1110,7 @@ async function executeArchiveJob(
   jobId: string,
   targetArchiveId: string
 ): Promise<void> {
+  const startedAt = Date.now();
   let logbookId: string | null = null;
   try {
     const archive = getArchive(db, targetArchiveId);
@@ -1083,7 +1178,18 @@ async function executeArchiveJob(
 
     summary = finalizeArchiveSummary(db, summary);
     fillArchiveSummary(db, targetArchiveId, summary);
-    finishJob(db, jobId, "done", undefined, { model: usedModel, tokenEstimate: Math.ceil(summary.length / 4) });
+    const elapsedMs = Date.now() - startedAt;
+    finishJob(db, jobId, "done", undefined, {
+      model: usedModel,
+      tokenEstimate: Math.ceil(summary.length / 4),
+      elapsedMs,
+    });
+    createJob(db, {
+      targetArchiveId,
+      jobType: "archive-name",
+      slotCost: getAgentProfile(userId, "worker").concurrencyCost,
+      priority: -1,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);

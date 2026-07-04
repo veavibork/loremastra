@@ -13,6 +13,13 @@ import { applyGlobalCssSettings, GLOBAL_CSS_SPACE, type GlobalCssSettings } from
 import { DEFAULT_PLAY_TAB_SETTINGS, PLAY_TAB_SPACE, useSetPlayTabSettings, type PlayTabSettings } from "./playTabSettings";
 import "./SettingsView.css";
 
+import {
+  TOGGLE_LENGTH_SPACE,
+  TOGGLE_MOOD_SPACE,
+  TOGGLE_PARAM_SPACE,
+  TOGGLE_EFFORT_SPACE,
+} from "./storyToggles";
+
 const BANNED_PHRASES_SPACE = "banned-phrases";
 
 export default function SettingsView() {
@@ -20,6 +27,10 @@ export default function SettingsView() {
   const [bannedPhrases, setBannedPhrases] = useState<string[] | null>(null);
   const [globalCss, setGlobalCss] = useState<GlobalCssSettings | null>(null);
   const [playTab, setPlayTab] = useState<PlayTabSettings | null>(null);
+  const [toggleLength, setToggleLength] = useState<number[] | null>(null);
+  const [toggleMood, setToggleMood] = useState<unknown[] | null>(null);
+  const [toggleParam, setToggleParam] = useState<unknown[] | null>(null);
+  const [toggleEffort, setToggleEffort] = useState<unknown[] | null>(null);
   const setLivePlayTabSettings = useSetPlayTabSettings();
 
   useEffect(() => {
@@ -29,6 +40,10 @@ export default function SettingsView() {
     void fetchSettingsSpace<Partial<PlayTabSettings>>(PLAY_TAB_SPACE).then((saved) =>
       setPlayTab({ ...DEFAULT_PLAY_TAB_SETTINGS, ...saved })
     );
+    void fetchSettingsSpace<number[]>(TOGGLE_LENGTH_SPACE).then(setToggleLength);
+    void fetchSettingsSpace<unknown[]>(TOGGLE_MOOD_SPACE).then(setToggleMood);
+    void fetchSettingsSpace<unknown[]>(TOGGLE_PARAM_SPACE).then(setToggleParam);
+    void fetchSettingsSpace<unknown[]>(TOGGLE_EFFORT_SPACE).then(setToggleEffort);
   }, []);
 
   // Live edits to Global CSS / Play tab apply immediately (see each section's onChange below);
@@ -49,7 +64,7 @@ export default function SettingsView() {
     };
   }, [setLivePlayTabSettings]);
 
-  if (!bannedPhrases || !globalCss || !playTab || !layout) {
+  if (!bannedPhrases || !globalCss || !playTab || !layout || toggleLength === null || toggleMood === null || toggleParam === null || toggleEffort === null) {
     return (
       <div className="settings-view">
         <h2>Settings</h2>
@@ -122,13 +137,75 @@ export default function SettingsView() {
       },
     },
     {
+      key: TOGGLE_LENGTH_SPACE,
+      title: "Toggle — length steps",
+      description: "Token counts cycled by the input bar Length toggle (Author responseLimit override).",
+      value: toggleLength as unknown as JsonData,
+      onSave: async (value) => {
+        const saved = await saveSettingsSpace(TOGGLE_LENGTH_SPACE, value);
+        setToggleLength(saved as number[]);
+        return saved as unknown as JsonData;
+      },
+      onRevert: async () => {
+        const reverted = await revertSettingsSpace<number[]>(TOGGLE_LENGTH_SPACE);
+        setToggleLength(reverted);
+        return reverted as unknown as JsonData;
+      },
+    },
+    {
+      key: TOGGLE_MOOD_SPACE,
+      title: "Toggle — mood presets",
+      description: "Named prompt fragments appended when the Mood toggle is active.",
+      value: toggleMood as unknown as JsonData,
+      onSave: async (value) => {
+        const saved = await saveSettingsSpace(TOGGLE_MOOD_SPACE, value);
+        setToggleMood(saved as unknown[]);
+        return saved as unknown as JsonData;
+      },
+      onRevert: async () => {
+        const reverted = await revertSettingsSpace<unknown[]>(TOGGLE_MOOD_SPACE);
+        setToggleMood(reverted);
+        return reverted as unknown as JsonData;
+      },
+    },
+    {
+      key: TOGGLE_PARAM_SPACE,
+      title: "Toggle — param presets",
+      description: "Sampler overrides merged atop the Author profile when Param toggle is active.",
+      value: toggleParam as unknown as JsonData,
+      onSave: async (value) => {
+        const saved = await saveSettingsSpace(TOGGLE_PARAM_SPACE, value);
+        setToggleParam(saved as unknown[]);
+        return saved as unknown as JsonData;
+      },
+      onRevert: async () => {
+        const reverted = await revertSettingsSpace<unknown[]>(TOGGLE_PARAM_SPACE);
+        setToggleParam(reverted);
+        return reverted as unknown as JsonData;
+      },
+    },
+    {
+      key: TOGGLE_EFFORT_SPACE,
+      title: "Toggle — effort presets",
+      description: "Reasoning/thinking kwargs passed when Effort toggle is active (model-dependent).",
+      value: toggleEffort as unknown as JsonData,
+      onSave: async (value) => {
+        const saved = await saveSettingsSpace(TOGGLE_EFFORT_SPACE, value);
+        setToggleEffort(saved as unknown[]);
+        return saved as unknown as JsonData;
+      },
+      onRevert: async () => {
+        const reverted = await revertSettingsSpace<unknown[]>(TOGGLE_EFFORT_SPACE);
+        setToggleEffort(reverted);
+        return reverted as unknown as JsonData;
+      },
+    },
+    {
       key: "layout",
       title: "Layout",
       description:
-        "A flat, ordered list of tabs — this order is exactly the tab bar's render order, top to bottom in " +
-        "this list, left to right in the bar. No nested containers/grouping at this time. Config-driven but " +
-        "read-only — no drag-and-drop editor yet, so reordering is a direct JSON edit, per loremaster.md's UI " +
-        "Structure section. No one-step undo here (unlike the other three spaces).",
+        "Nav tab bar and story input bar layout (v2): nested button containers with visibility, " +
+        "justify, and optional collapse controls. JSON edit only — drag-and-drop deferred.",
       value: layout as unknown as JsonData,
       onSave: async (value) => {
         const res = await updateLayout(value as unknown as LayoutConfigData);

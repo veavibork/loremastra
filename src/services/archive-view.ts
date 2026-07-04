@@ -6,6 +6,7 @@ export interface ArchiveViewEntry {
   id: string;
   createdAt: string;
   summary: string | null;
+  name: string | null;
   hidden: boolean;
   broken: boolean;
   memberCount: number;
@@ -43,6 +44,7 @@ export function buildArchiveView(
         id: archive.id,
         createdAt: archive.createdAt,
         summary: archive.summary,
+        name: archive.name,
         hidden: archive.hidden,
         broken: archive.broken,
         memberCount: listMemberTextIds(db, archive.id).length,

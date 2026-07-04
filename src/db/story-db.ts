@@ -132,7 +132,7 @@ function backfillMemoryContentStamps(db: Database.Database): void {
  */
 function migrateJobTypeCheck(db: Database.Database): void {
   const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'`).get() as { sql: string } | undefined;
-  if (!row || row.sql.includes("'tag-gen'")) return;
+  if (!row || row.sql.includes("'archive-name'")) return;
   db.exec(`ALTER TABLE jobs RENAME TO jobs_pre_tag_gen_migration`);
   // The renamed table may itself predate one of these three (e.g. a story DB last opened
   // before Horde support existed won't have horde_request_id yet) -- back-fill them here too,
@@ -141,6 +141,7 @@ function migrateJobTypeCheck(db: Database.Database): void {
   ensureColumn(db, "jobs_pre_tag_gen_migration", "model", "TEXT");
   ensureColumn(db, "jobs_pre_tag_gen_migration", "token_estimate", "INTEGER");
   ensureColumn(db, "jobs_pre_tag_gen_migration", "horde_request_id", "TEXT");
+  ensureColumn(db, "jobs_pre_tag_gen_migration", "elapsed_ms", "INTEGER");
 }
 
 /** Second half of migrateJobTypeCheck -- see its doc comment. Must run after the ensureColumn
@@ -152,8 +153,8 @@ function finishJobTypeCheckMigration(db: Database.Database): void {
     .get();
   if (!exists) return;
   db.exec(`
-    INSERT INTO jobs (id, created_at, target_text_id, target_archive_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id)
-    SELECT id, created_at, target_text_id, target_archive_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id
+    INSERT INTO jobs (id, created_at, target_text_id, target_archive_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id, elapsed_ms)
+    SELECT id, created_at, target_text_id, target_archive_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id, elapsed_ms
     FROM jobs_pre_tag_gen_migration;
     DROP TABLE jobs_pre_tag_gen_migration;
   `);
@@ -200,6 +201,8 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "jobs", "model", "TEXT");
   ensureColumn(db, "jobs", "token_estimate", "INTEGER");
   ensureColumn(db, "jobs", "horde_request_id", "TEXT");
+  ensureColumn(db, "jobs", "elapsed_ms", "INTEGER");
+  ensureColumn(db, "archive", "name", "TEXT");
   ensureColumn(db, "text", "compress_metrics", "TEXT");
   ensureColumn(db, "page", "memory_content_stamp", "TEXT");
   finishJobTypeCheckMigration(db);

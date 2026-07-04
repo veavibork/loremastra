@@ -1,4 +1,4 @@
-import type { Story, StoryPhase } from "./api";
+import type { LayoutRegion, Story, StoryPhase } from "./api";
 
 /** Common props every registry-resolved panel receives — not every panel uses all of them, but a uniform shape keeps the registry simple (config-driven: which panel renders is data, not a hardcoded switch). */
 export interface PanelProps {
@@ -6,4 +6,5 @@ export interface PanelProps {
   phase: StoryPhase | null;
   onStoryChange: (story: Story) => void;
   onPhaseChange: (phase: StoryPhase) => void;
+  inputBar?: LayoutRegion;
 }
