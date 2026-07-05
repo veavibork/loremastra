@@ -49,6 +49,7 @@ import {
   JobCancelledError,
   shouldPrefillReasoning,
   proseStreamUsesReasoningTrace,
+  looksLikeLeakedReasoningArtifact,
   REASONING_ASSISTANT_PREFILL,
   isReasoningModel,
   streamIdleTimeoutMs,
@@ -220,6 +221,9 @@ function extractStoryName(text: string): string | null {
 
 const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2;
 
+/** Chars to accumulate before testing looksLikeLeakedReasoningArtifact — comfortably more than "article". */
+const REASONING_LEAK_PEEK_CHARS = 16;
+
 /**
  * Streams a reply with model fallback, treating an empty-but-error-free completion as a
  * retriable failure rather than a valid (if useless) result. Providers sometimes signal
@@ -311,6 +315,9 @@ async function streamWithFallback(
       const splitter = new ReasoningStreamSplitter({ startsInThinking: false });
       reply = "";
       let sawReasoning = false;
+      let reasoningLeakDetected = false;
+      /** Held back until resolveReasoningPeek decides — see looksLikeLeakedReasoningArtifact. */
+      let reasoningAsAnswerPeek: string | null = "";
       const emitThinking = (text: string) => {
         sawReasoning = true;
         publishThinking(jobId, text);
@@ -319,10 +326,34 @@ async function streamWithFallback(
         reply += text;
         publishToken(jobId, text);
       };
-      /** Effort Off: Featherless may still emit delta.reasoning — treat it as IC prose, not trace. */
+      const resolveReasoningPeek = () => {
+        if (reasoningAsAnswerPeek === null) return;
+        const peeked = reasoningAsAnswerPeek;
+        reasoningAsAnswerPeek = null;
+        if (looksLikeLeakedReasoningArtifact(peeked)) {
+          reasoningLeakDetected = true;
+        } else {
+          emitAnswer(peeked);
+        }
+      };
+      /**
+       * Effort Off: Featherless may still emit delta.reasoning — treat it as IC prose, not trace,
+       * but hold back the first few characters so looksLikeLeakedReasoningArtifact can screen out
+       * the leaked-channel case before any of it is shown or stored (docs/reasoning-stream-research.md,
+       * 2026-07-05).
+       */
+      const emitReasoningAsAnswer = (text: string) => {
+        if (reasoningLeakDetected) return;
+        if (reasoningAsAnswerPeek === null) {
+          emitAnswer(text);
+          return;
+        }
+        reasoningAsAnswerPeek += text;
+        if (reasoningAsAnswerPeek.length >= REASONING_LEAK_PEEK_CHARS) resolveReasoningPeek();
+      };
       const emitReasoningDelta = (text: string) => {
         if (useReasoningTrace) emitThinking(text);
-        else emitAnswer(text);
+        else emitReasoningAsAnswer(text);
       };
       try {
         await new Promise<void>((resolve, reject) => {
@@ -337,8 +368,17 @@ async function streamWithFallback(
               onReasoningToken: emitReasoningDelta,
               onDone: () => {
                 splitter.flush(emitReasoningDelta, emitAnswer);
-                if (reply.trim()) resolve();
-                else if (sawReasoning && useReasoningTrace) {
+                resolveReasoningPeek();
+                if (reasoningLeakDetected) {
+                  reject(
+                    new FeatherlessError(
+                      503,
+                      `${candidate.model} returned a leaked reasoning-channel artifact instead of prose`
+                    )
+                  );
+                } else if (reply.trim()) {
+                  resolve();
+                } else if (sawReasoning && useReasoningTrace) {
                   reject(
                     new FeatherlessError(
                       503,
@@ -363,7 +403,9 @@ async function streamWithFallback(
         if (err instanceof JobCancelledError) throw err;
         const isEmptyCompletion =
           err instanceof FeatherlessError &&
-          (err.message.includes("empty completion") || err.message.includes("no answer content"));
+          (err.message.includes("empty completion") ||
+            err.message.includes("no answer content") ||
+            err.message.includes("leaked reasoning-channel"));
         if (!isEmptyCompletion || attempt === EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE) throw err;
       }
     }

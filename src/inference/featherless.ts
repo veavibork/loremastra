@@ -134,6 +134,21 @@ export function shouldPrefillReasoning(model: string, chatTemplateKwargs?: Recor
 }
 
 /**
+ * Confirmed live 2026-07-05 (docs/reasoning-stream-research.md): when Effort Off routes
+ * `delta.reasoning` into the prose channel (see `proseStreamUsesReasoningTrace` above), that
+ * channel is unreliable on DeepSeek-V4-Pro — sometimes genuine misrouted prose (the case the
+ * routing was built for), but sometimes meta-commentary degrading into multilingual token salad.
+ * Every one of 13 confirmed-bad production replies started with this literal artifact, glued
+ * directly onto whatever followed with no separating space in several cases (`articleWell,`,
+ * `articleCircle`) — consistent with a leaked internal channel/role token, though unconfirmed at
+ * the wire level. Not observed leading any known-good reply. Used to reject an attempt outright
+ * (treated the same as an empty completion, see streamWithFallback) rather than show or store it.
+ */
+export function looksLikeLeakedReasoningArtifact(text: string): boolean {
+  return /^\s*article/i.test(text);
+}
+
+/**
  * Ranked-choice model fallback (loremaster.md's Provider Abstraction section): tries
  * profile.model first, then each of profile.fallbackModels in order, but only when the
  * failure looks like "this model isn't available" — anything else (bad API key, empty
