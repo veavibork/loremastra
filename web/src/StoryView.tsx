@@ -191,16 +191,6 @@ function syncPendingWaitPhases(
   return changed ? next : prev;
 }
 
-function findScrollableAncestor(el: HTMLElement): HTMLElement | null {
-  let node = el.parentElement;
-  while (node) {
-    const overflowY = getComputedStyle(node).overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") return node;
-    node = node.parentElement;
-  }
-  return null;
-}
-
 /** Grows with its content instead of scrolling internally — used for both the composer and
  * tap-to-edit's single edit box so neither ever shows a stale, pre-resize box on first paint.
  * Measuring in useLayoutEffect (before the browser paints) rather than useEffect (after) is what
@@ -209,7 +199,14 @@ function findScrollableAncestor(el: HTMLElement): HTMLElement | null {
  * `initialHeight`, when given, is applied via the ref callback (fires during commit, before any
  * effect) rather than the default browser intrinsic (one row) — StoryView seeds this from the
  * tapped post's own rendered height at the moment it's tapped into edit mode, so the box doesn't
- * visibly shrink to one line and then regrow once its own layout effect corrects it. */
+ * visibly shrink to one line and then regrow once its own layout effect corrects it.
+ *
+ * `protectScrollRef`, when given, names the scroll container whose position this box's own
+ * collapse-and-remeasure (below) must not disturb — `.log` for both call sites, even though it's
+ * only an *ancestor* of the edit box, not of the composer (a flex sibling whose height changes
+ * shift .log's clientHeight through their shared parent either way). An ancestor-walk from this
+ * element wouldn't find a sibling, so the caller passes the ref explicitly instead of this
+ * component guessing. */
 function AutoGrowTextarea({
   value,
   onChange,
@@ -220,6 +217,7 @@ function AutoGrowTextarea({
   disabled,
   autoFocus,
   initialHeight,
+  protectScrollRef,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -230,6 +228,7 @@ function AutoGrowTextarea({
   disabled?: boolean;
   autoFocus?: boolean;
   initialHeight?: number;
+  protectScrollRef?: React.RefObject<HTMLElement | null>;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -239,12 +238,13 @@ function AutoGrowTextarea({
     const resize = () => {
       // Collapsing to "auto" below is necessary to detect shrinking content (scrollHeight never
       // shrinks on its own), but reading el.scrollHeight forces a real synchronous layout with
-      // the box collapsed to one row — if the nearest scrollable ancestor is scrolled at/near its
-      // bottom, that transient shrink can make the browser clamp its scrollTop, and restoring the
-      // real height a line later does not undo that clamp (browsers only clamp scrollTop down on
-      // shrink, never push it back up on regrow). Save/restore around the collapse to prevent it.
-      const scrollParent = findScrollableAncestor(el);
-      const prevScrollTop = scrollParent?.scrollTop;
+      // the box collapsed to one row — if protectScrollRef's container is scrolled at/near its
+      // bottom, that transient shrink (of this box, or of a flex sibling's clientHeight through a
+      // shared parent) can make the browser clamp its scrollTop, and restoring the real height a
+      // line later does not undo that clamp (browsers only clamp scrollTop down on shrink, never
+      // push it back up on regrow). Save/restore around the collapse to prevent it.
+      const scrollTarget = protectScrollRef?.current;
+      const prevScrollTop = scrollTarget?.scrollTop;
 
       // scrollHeight reflects whatever's rendered inside the box, including a wrapped
       // placeholder — for the composer's long instructional placeholder that inflated an
@@ -256,8 +256,8 @@ function AutoGrowTextarea({
       el.style.height = `${el.scrollHeight}px`;
       el.placeholder = placeholder;
 
-      if (scrollParent && prevScrollTop !== undefined) {
-        scrollParent.scrollTop = prevScrollTop;
+      if (scrollTarget && prevScrollTop !== undefined) {
+        scrollTarget.scrollTop = prevScrollTop;
       }
     };
     resize();
@@ -265,7 +265,7 @@ function AutoGrowTextarea({
     // this first measurement) that the value-keyed effect above has no other reason to rerun for.
     const raf = requestAnimationFrame(resize);
     return () => cancelAnimationFrame(raf);
-  }, [value]);
+  }, [value, protectScrollRef]);
 
   return (
     <textarea
@@ -919,6 +919,7 @@ export default function StoryView({
                     }
                   }}
                   initialHeight={editInitialHeight}
+                  protectScrollRef={logRef}
                 />
               </>
             ) : (
@@ -1106,6 +1107,7 @@ export default function StoryView({
                 : "Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
           }
           disabled={!!editingPageId}
+          protectScrollRef={logRef}
         />
         <button type="submit" disabled={!!editingPageId || !draft.trim()}>
           Send
