@@ -31,7 +31,16 @@ import {
 } from "./worker-lanes.js";
 import { tryAcquireHordeSlot, releaseHordeSlot } from "./horde-slots.js";
 import { ensureConcurrencyFeedForUser } from "./concurrency-feed.js";
-import { publishToken, publishThinking, publishStreamReset, publishProgress, publishDone, publishError, publishCancelled } from "./job-events.js";
+import {
+  publishToken,
+  publishThinking,
+  publishStreamReset,
+  publishProgress,
+  publishDone,
+  publishError,
+  publishCancelled,
+  getJobBuffer,
+} from "./job-events.js";
 import {
   streamInference,
   completeChat,
@@ -231,6 +240,45 @@ const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2;
  * EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE retries before handing off to the next fallback
  * candidate (if any).
  */
+/** Tracks which fallback candidate is actively streaming for a job — read on user cancel to finish telemetry. */
+const streamingModels = new Map<string, string>();
+
+/**
+ * User hit Stop. If final content had started streaming, commit the partial reply as a normal
+ * completion; otherwise discard the in-flight turn (thinking-only / prefill).
+ */
+function handleStreamingCancel(
+  db: Database.Database,
+  jobId: string,
+  targetTextId: string,
+  startedAt: number,
+  options?: {
+    genOptions?: GenerationOptions;
+    onPartialCommit?: (partial: string) => void;
+  }
+): void {
+  const partial = getJobBuffer(jobId)?.text?.trim();
+  if (partial) {
+    const model = streamingModels.get(jobId) ?? "unknown";
+    streamingModels.delete(jobId);
+    const tokenEstimate = Math.ceil(partial.length / 4);
+    const metrics: Record<string, unknown> = {
+      elapsedMs: Date.now() - startedAt,
+      tokenEstimate,
+      truncated: true,
+    };
+    if (options?.genOptions) metrics.toggles = options.genOptions;
+    fillTextGeneration(db, targetTextId, { genPackage: partial, genMetrics: JSON.stringify(metrics) });
+    options?.onPartialCommit?.(partial);
+    finishJob(db, jobId, "done", undefined, { model, tokenEstimate, elapsedMs: Date.now() - startedAt });
+    publishDone(jobId, partial);
+  } else {
+    streamingModels.delete(jobId);
+    cancelJob(db, jobId);
+    publishCancelled(jobId);
+  }
+}
+
 async function streamWithFallback(
   profile: AgentProfile,
   apiKey: string,
@@ -245,6 +293,7 @@ async function streamWithFallback(
   let isFirstStream = true;
   await withModelFallback(profile, async (candidate) => {
     usedModel = candidate.model;
+    streamingModels.set(jobId, candidate.model);
     const useReasoningTrace = proseStreamUsesReasoningTrace(candidate.model, chatTemplateKwargs);
     const usePrefill =
       prefillAssistant ||
@@ -577,9 +626,13 @@ async function executeProseJob(
   storyId: string
 ): Promise<void> {
   const startedAt = Date.now();
+  let genOptions: GenerationOptions | undefined;
+  let targetPage: PageRow | undefined;
   try {
-    const { history, targetPage } = buildProseHistory(db, userId, jobId, targetTextId);
-    const genOptions = jobGenerationOptions.get(jobId);
+    const built = buildProseHistory(db, userId, jobId, targetTextId);
+    targetPage = built.targetPage;
+    const { history } = built;
+    genOptions = jobGenerationOptions.get(jobId);
     jobGenerationOptions.delete(jobId);
     const { profile, moodFragment, chatTemplateKwargs } = applyGenerationOptions(
       getAgentProfile(userId, "author"),
@@ -617,14 +670,22 @@ async function executeProseJob(
     publishDone(jobId, fullText);
   } catch (err) {
     if (err instanceof JobCancelledError) {
-      cancelJob(db, jobId);
-      publishCancelled(jobId);
+      handleStreamingCancel(db, jobId, targetTextId, startedAt, {
+        genOptions,
+        onPartialCommit: () => {
+          if (!targetPage) return;
+          maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId);
+          const logbook = getBookByType(db, "logbook");
+          if (logbook) maybeEnqueueStoryToDateJob(db, userId, storyId, logbook.id);
+        },
+      });
     } else {
       const message = err instanceof Error ? err.message : String(err);
       finishJob(db, jobId, "failed", message);
       publishError(jobId, message);
     }
   } finally {
+    streamingModels.delete(jobId);
     releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
     releaseProseLane();
@@ -805,6 +866,9 @@ async function executeSetupJob(
   targetTextId: string,
   signal: AbortSignal
 ): Promise<void> {
+  const startedAt = Date.now();
+  let isUpdateSession = false;
+  let worldbookId: string | undefined;
   try {
     const targetText = getText(db, targetTextId);
     if (!targetText) throw new Error("target text no longer exists");
@@ -813,9 +877,10 @@ async function executeSetupJob(
 
     const worldbook = getBookByType(db, "worldbook");
     if (!worldbook) throw new Error("worldbook not found");
+    worldbookId = worldbook.id;
 
     const { oocSessionStartPageId } = getStoryState(db);
-    const isUpdateSession = !!resolveIcStartPageId(db, targetPage.bookId);
+    isUpdateSession = !!resolveIcStartPageId(db, targetPage.bookId);
 
     let conversation: ChatMessage[];
     const editorMessages: ChatMessage[] = [];
@@ -885,14 +950,24 @@ async function executeSetupJob(
     publishDone(jobId, reply, followUp);
   } catch (err) {
     if (err instanceof JobCancelledError) {
-      cancelJob(db, jobId);
-      publishCancelled(jobId);
+      handleStreamingCancel(db, jobId, targetTextId, startedAt, {
+        onPartialCommit: (partial) => {
+          if (isUpdateSession && worldbookId) {
+            try {
+              applyExtractedWorldbookBlocks(db, worldbookId, partial);
+            } catch (extractErr) {
+              console.error(`[setup ${jobId}] worldbook extraction failed on truncated reply:`, extractErr);
+            }
+          }
+        },
+      });
     } else {
       const message = err instanceof Error ? err.message : String(err);
       finishJob(db, jobId, "failed", message);
       publishError(jobId, message);
     }
   } finally {
+    streamingModels.delete(jobId);
     releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
     releaseProseLane();
@@ -913,6 +988,8 @@ async function executeSetupWorldbookJob(
   targetTextId: string,
   signal: AbortSignal
 ): Promise<void> {
+  const startedAt = Date.now();
+  let worldbookId: string | undefined;
   try {
     const targetText = getText(db, targetTextId);
     if (!targetText) throw new Error("target text no longer exists");
@@ -921,6 +998,7 @@ async function executeSetupWorldbookJob(
 
     const worldbook = getBookByType(db, "worldbook");
     if (!worldbook) throw new Error("worldbook not found");
+    worldbookId = worldbook.id;
 
     const replyPage = targetPage.prevPageId ? getPage(db, targetPage.prevPageId) : null;
     const replyText = replyPage?.selectedTextId ? getText(db, replyPage.selectedTextId) : null;
@@ -951,14 +1029,23 @@ async function executeSetupWorldbookJob(
     publishDone(jobId, rawText);
   } catch (err) {
     if (err instanceof JobCancelledError) {
-      cancelJob(db, jobId);
-      publishCancelled(jobId);
+      handleStreamingCancel(db, jobId, targetTextId, startedAt, {
+        onPartialCommit: (partial) => {
+          if (!worldbookId) return;
+          try {
+            applyExtractedWorldbookBlocks(db, worldbookId, partial);
+          } catch (extractErr) {
+            console.error(`[setup-worldbook ${jobId}] worldbook extraction failed on truncated reply:`, extractErr);
+          }
+        },
+      });
     } else {
       const message = err instanceof Error ? err.message : String(err);
       finishJob(db, jobId, "failed", message);
       publishError(jobId, message);
     }
   } finally {
+    streamingModels.delete(jobId);
     releaseSlot(userId, jobId);
     runningControllers.delete(jobId);
     releaseProseLane();
