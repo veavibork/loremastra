@@ -49,6 +49,15 @@ export function useStoryLogScroll({
   const pinnedRef = useRef(true);
   const prevScrollHeightRef = useRef(0);
   const prevStoryIdRef = useRef(storyId);
+  // Read fresh inside the ResizeObserver callback below rather than closed over at effect-setup
+  // time — the observer is created once (see that effect's empty-ish deps) and a passive effect
+  // recreating it on editingPageId change would still lag one animation frame behind the footer's
+  // actual (synchronous, same-commit) resize when swapping into the edit toolbar, letting a stale
+  // closure's `editingPageId` read as null and wrongly snap-to-bottom.
+  const editingPageIdRef = useRef(editingPageId);
+  const atHeadRef = useRef(atHead);
+  editingPageIdRef.current = editingPageId;
+  atHeadRef.current = atHead;
 
   useEffect(() => {
     const log = logRef.current;
@@ -88,14 +97,14 @@ export function useStoryLogScroll({
     if (!footer || !log) return;
 
     const ro = new ResizeObserver(() => {
-      if (editingPageId) return;
-      if (!pinnedRef.current || !atHead) return;
+      if (editingPageIdRef.current) return;
+      if (!pinnedRef.current || !atHeadRef.current) return;
       scrollLogToBottom(log, "auto");
     });
 
     ro.observe(footer);
     return () => ro.disconnect();
-  }, [footerRef, logRef, atHead, editingPageId]);
+  }, [footerRef, logRef]);
 
   useLayoutEffect(() => {
     const log = logRef.current;
