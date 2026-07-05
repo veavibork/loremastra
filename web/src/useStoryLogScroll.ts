@@ -62,16 +62,7 @@ export function useStoryLogScroll({
     if (!log) return;
 
     function onScroll() {
-      const wasPinned = pinnedRef.current;
       pinnedRef.current = isLogPinnedToBottom(log!);
-      // eslint-disable-next-line no-console
-      console.info("[scrollDebug] scroll event", {
-        scrollTop: log!.scrollTop,
-        scrollHeight: log!.scrollHeight,
-        clientHeight: log!.clientHeight,
-        pinnedBefore: wasPinned,
-        pinnedAfter: pinnedRef.current,
-      });
     }
 
     onScroll();
@@ -93,18 +84,8 @@ export function useStoryLogScroll({
     const textarea = log.querySelector<HTMLTextAreaElement>(
       `.entry[data-page-id="${editingPageId}"] textarea.edit-box-textarea`
     );
-    // eslint-disable-next-line no-console
-    console.info("[scrollDebug] edit-anchor effect", {
-      editingPageId,
-      foundTextarea: !!textarea,
-      alreadyFocused: textarea ? document.activeElement === textarea : null,
-      scrollTop: log.scrollTop,
-      scrollHeight: log.scrollHeight,
-    });
     if (textarea && document.activeElement !== textarea) {
       textarea.focus({ preventScroll: true });
-      // eslint-disable-next-line no-console
-      console.info("[scrollDebug] edit-anchor effect: focused, scrollTop after", log.scrollTop);
     }
   }, [editingPageId, logRef]);
 
@@ -117,20 +98,9 @@ export function useStoryLogScroll({
     // on mobile, the whole app shrinking to the visualViewport when the on-screen keyboard opens
     // (useVisualViewport.ts's --app-height) — with one mechanism instead of two.
     const ro = new ResizeObserver(() => {
-      const willBail = !!editingPageIdRef.current || !pinnedRef.current || !atHeadRef.current;
-      // eslint-disable-next-line no-console
-      console.info("[scrollDebug] log ResizeObserver fired", {
-        editingPageId: editingPageIdRef.current,
-        pinned: pinnedRef.current,
-        atHead: atHeadRef.current,
-        willScroll: !willBail,
-        scrollTopBefore: log.scrollTop,
-        clientHeight: log.clientHeight,
-      });
-      if (willBail) return;
+      if (editingPageIdRef.current) return;
+      if (!pinnedRef.current || !atHeadRef.current) return;
       scrollLogToBottom(log, "auto");
-      // eslint-disable-next-line no-console
-      console.info("[scrollDebug] log ResizeObserver: scrolled to bottom, scrollTop after", log.scrollTop);
     });
 
     ro.observe(log);
@@ -152,18 +122,6 @@ export function useStoryLogScroll({
 
     const storyJustOpened = prevHeight === 0 && entriesLength > 0;
     const shouldFollow = pinnedRef.current && atHead && (storyJustOpened || grew);
-
-    // eslint-disable-next-line no-console
-    console.info("[scrollDebug] growth-follow effect", {
-      editingPageId,
-      prevHeight,
-      newHeight: log.scrollHeight,
-      grew,
-      storyJustOpened,
-      pinned: pinnedRef.current,
-      atHead,
-      shouldFollow,
-    });
 
     if (shouldFollow) {
       const streaming = pendingTailSignature.length > 0;

@@ -2,7 +2,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  /* Same keyboard-awareness as .story-app (App.css) — the password field autoFocuses, popping
+     the on-screen keyboard immediately on mobile, and a fixed 100vh would let it sit under the
+     keyboard with the document no longer able to scroll to reveal it (index.css locks html/body
+     scroll). useVisualViewport.ts already runs app-wide, before this screen's own gate check. */
+  height: var(--app-height, 100dvh);
+  overflow-y: auto;
 }
 
 .claim-gate-card {
