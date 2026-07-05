@@ -421,7 +421,6 @@ export default function StoryView({
   // something that should trigger its own re-render.
   const pendingCaretRef = useRef<number | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
-  const footerRef = useRef<HTMLDivElement>(null);
 
   async function refresh(): Promise<LogEntry[]> {
     const freshEntries = await fetchLog(storyId);
@@ -472,7 +471,6 @@ export default function StoryView({
 
   useStoryLogScroll({
     logRef,
-    footerRef,
     storyId,
     entriesLength: entries.length,
     pendingTailSignature,
@@ -976,7 +974,7 @@ export default function StoryView({
         })}
       </div>
 
-      <div className="story-view-footer" ref={footerRef}>
+      <div className="story-view-footer">
       {error && (
         <div className="error-banner">
           <span>{error}</span>

@@ -18,8 +18,6 @@ export function scrollLogToBottom(log: HTMLElement, behavior: ScrollBehavior = "
 
 type UseStoryLogScrollOptions = {
   logRef: RefObject<HTMLDivElement | null>;
-  /** Toolbar + composer (+ error banner) — height changes shrink `.log` and need re-anchoring. */
-  footerRef: RefObject<HTMLElement | null>;
   storyId: string;
   entriesLength: number;
   /** Changes when streamed tail text grows — triggers follow when pinned. */
@@ -35,11 +33,11 @@ type UseStoryLogScrollOptions = {
  * - Follow the tail only when the user is already pinned to the bottom AND viewing the head.
  * - Never auto-scroll while a post is being edited inline.
  * - Focus the edit textarea without browser scroll jumps; let native caret-follow handle the rest.
- * - When the footer grows/shrinks, keep the bottom aligned if the user was pinned.
+ * - When .log's available space changes for any reason (footer/composer growth, keyboard-driven
+ *   viewport resize), keep the bottom aligned if the user was pinned.
  */
 export function useStoryLogScroll({
   logRef,
-  footerRef,
   storyId,
   entriesLength,
   pendingTailSignature,
@@ -111,29 +109,33 @@ export function useStoryLogScroll({
   }, [editingPageId, logRef]);
 
   useEffect(() => {
-    const footer = footerRef.current;
     const log = logRef.current;
-    if (!footer || !log) return;
+    if (!log) return;
 
+    // Observing .log itself (rather than just the footer) catches every reason its available
+    // space can change — footer/composer growth (shrinks .log via their shared flex parent) and,
+    // on mobile, the whole app shrinking to the visualViewport when the on-screen keyboard opens
+    // (useVisualViewport.ts's --app-height) — with one mechanism instead of two.
     const ro = new ResizeObserver(() => {
       const willBail = !!editingPageIdRef.current || !pinnedRef.current || !atHeadRef.current;
       // eslint-disable-next-line no-console
-      console.info("[scrollDebug] footer ResizeObserver fired", {
+      console.info("[scrollDebug] log ResizeObserver fired", {
         editingPageId: editingPageIdRef.current,
         pinned: pinnedRef.current,
         atHead: atHeadRef.current,
         willScroll: !willBail,
         scrollTopBefore: log.scrollTop,
+        clientHeight: log.clientHeight,
       });
       if (willBail) return;
       scrollLogToBottom(log, "auto");
       // eslint-disable-next-line no-console
-      console.info("[scrollDebug] footer ResizeObserver: scrolled to bottom, scrollTop after", log.scrollTop);
+      console.info("[scrollDebug] log ResizeObserver: scrolled to bottom, scrollTop after", log.scrollTop);
     });
 
-    ro.observe(footer);
+    ro.observe(log);
     return () => ro.disconnect();
-  }, [footerRef, logRef]);
+  }, [logRef]);
 
   useLayoutEffect(() => {
     const log = logRef.current;
