@@ -447,7 +447,7 @@ export default function StoryView({
     [pendingReplies]
   );
 
-  const { beginEditScrollCapture } = useStoryLogScroll({
+  useStoryLogScroll({
     logRef,
     footerRef,
     storyId,
@@ -455,7 +455,6 @@ export default function StoryView({
     pendingTailSignature,
     atHead: position?.atHead ?? true,
     editingPageId,
-    editDraftLength: editingPageId ? editDraft.length : 0,
   });
 
   // Featherless gives no signal between "request sent" and "first token" — elapsed time fills
@@ -729,7 +728,6 @@ export default function StoryView({
     const content = entry.content ?? "";
     const clicked = resolveClickOffset(e.clientX, e.clientY, contentEl);
     pendingCaretRef.current = clicked !== null ? Math.max(0, Math.min(clicked, content.length)) : content.length;
-    beginEditScrollCapture();
     setEditingPageId(pageId);
     setEditDraft(content);
     setEditInitialHeight(contentEl.offsetHeight);

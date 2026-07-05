@@ -60,6 +60,16 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+  /* The window itself must not scroll — otherwise a focused input's native "keep caret visible"
+     behavior scrolls the whole page (hiding .story-view-footer behind a mobile keyboard) instead
+     of scrolling .log, the intended inner scroller. See App.css's .log and StoryView.css's
+     doc comment for the rest of that scroll-containment chain. */
+  overflow: hidden;
+}
+
 body {
   margin: 0;
 }

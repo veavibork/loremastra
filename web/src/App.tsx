@@ -15,6 +15,7 @@ import ClaimGate, { type GateReason } from "./ClaimGate";
 import Nav from "./Nav";
 import { useGlobalCssSettings } from "./globalCssSettings";
 import { PlayTabProvider } from "./playTabSettings";
+import { useVisualViewport } from "./useVisualViewport";
 import "./App.css";
 
 interface GateState {
@@ -33,6 +34,7 @@ export default function App() {
   const [layout, setLayout] = useState<LayoutConfigData | null>(null);
 
   useGlobalCssSettings(!gate);
+  useVisualViewport();
 
   function selectStory(next: Story) {
     localStorage.setItem(SELECTED_STORY_STORAGE_KEY, next.id);

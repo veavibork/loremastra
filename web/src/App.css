@@ -1,7 +1,10 @@
 .story-app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* var() is set by useVisualViewport.ts to the actual visible height once the on-screen
+     keyboard opens on mobile; 100dvh is the static fallback where visualViewport isn't
+     available (e.g. desktop Firefox) or before the first measurement lands. */
+  height: var(--app-height, 100dvh);
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
