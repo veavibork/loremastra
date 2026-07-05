@@ -191,6 +191,16 @@ function syncPendingWaitPhases(
   return changed ? next : prev;
 }
 
+function findScrollableAncestor(el: HTMLElement): HTMLElement | null {
+  let node = el.parentElement;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 /** Grows with its content instead of scrolling internally — used for both the composer and
  * tap-to-edit's single edit box so neither ever shows a stale, pre-resize box on first paint.
  * Measuring in useLayoutEffect (before the browser paints) rather than useEffect (after) is what
@@ -227,6 +237,15 @@ function AutoGrowTextarea({
     const el = ref.current;
     if (!el) return;
     const resize = () => {
+      // Collapsing to "auto" below is necessary to detect shrinking content (scrollHeight never
+      // shrinks on its own), but reading el.scrollHeight forces a real synchronous layout with
+      // the box collapsed to one row — if the nearest scrollable ancestor is scrolled at/near its
+      // bottom, that transient shrink can make the browser clamp its scrollTop, and restoring the
+      // real height a line later does not undo that clamp (browsers only clamp scrollTop down on
+      // shrink, never push it back up on regrow). Save/restore around the collapse to prevent it.
+      const scrollParent = findScrollableAncestor(el);
+      const prevScrollTop = scrollParent?.scrollTop;
+
       // scrollHeight reflects whatever's rendered inside the box, including a wrapped
       // placeholder — for the composer's long instructional placeholder that inflated an
       // empty box to 2-3 lines tall. Hide it for the measurement so height only ever tracks
@@ -236,6 +255,10 @@ function AutoGrowTextarea({
       el.style.height = "auto";
       el.style.height = `${el.scrollHeight}px`;
       el.placeholder = placeholder;
+
+      if (scrollParent && prevScrollTop !== undefined) {
+        scrollParent.scrollTop = prevScrollTop;
+      }
     };
     resize();
     // Catches late metric shifts (e.g. Global CSS's async root-font-size override landing after
