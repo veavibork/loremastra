@@ -607,8 +607,15 @@ export default function StoryView({
         setPendingReplies((prev) => {
           const cur = prev[pageId];
           if (cur?.thinking?.trim()) saveReasoningTrace(storyId, pageId, cur.thinking);
-          const { [pageId]: _done, ...rest } = prev;
-          return rest;
+          // Don't drop the pending entry yet — entries[] still has this page's content as null
+          // (refresh() below hasn't landed), so removing it here would flip shown.map's render to
+          // its "…" placeholder for one render, collapsing the last post's height and, while
+          // pinned to the bottom, getting .log's scrollTop clamped down by the browser — the same
+          // mechanism as AutoGrowTextarea's collapse-then-clamp bug, just via a content swap
+          // instead of a style change. Keeping the full streamed text on screen until refresh()
+          // actually has the real content means the pending→shown handoff never has a gap to fall
+          // into in the first place.
+          return prev;
         });
         setTraceCacheVersion((v) => v + 1);
         setHiddenPending((prev) => {
@@ -617,8 +624,13 @@ export default function StoryView({
           next.delete(pageId);
           return next;
         });
-        void refresh();
-        setStarting(false);
+        void refresh().then(() => {
+          setPendingReplies((prev) => {
+            const { [pageId]: _done, ...rest } = prev;
+            return rest;
+          });
+          setStarting(false);
+        });
         // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring
         // message may have been queued as a direct consequence of this one finishing. Chain a
         // watch onto it so it streams in and gets highlighted live, instead of a generic poll.
