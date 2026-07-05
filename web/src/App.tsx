@@ -71,6 +71,9 @@ export default function App() {
           <div className="app-header-title">
             <h1>{story?.name ?? "Loremaster"}</h1>
             {story?.id && <span className="app-header-story-id">{story.id}</span>}
+            <span className="app-header-build-info" title={__BUILD_INFO__.builtAt}>
+              {__BUILD_INFO__.commit}
+            </span>
           </div>
         </header>
 

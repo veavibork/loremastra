@@ -37,6 +37,14 @@
   color: rgba(255, 255, 255, 0.35);
 }
 
+/* Build commit hash — hover for the build timestamp. Lets you confirm which deploy is actually
+   live instead of guessing whether you're looking at a cached bundle. */
+.app-header-build-info {
+  font-size: 0.65rem;
+  font-family: var(--mono);
+  color: rgba(255, 255, 255, 0.35);
+}
+
 .log {
   flex: 1;
   min-height: 0;
