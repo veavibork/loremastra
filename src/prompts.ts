@@ -188,6 +188,28 @@ New ROSTER entries should not reference the PC or recent events, unless the char
 You must write all worldbook entries using either the CONTENT, ROSTER, or MEMORY schema, exactly matching the provided format, including opening and closing brackets. If nothing genuinely new was introduced, write no entries — that is a normal outcome.`;
 
 /**
+ * Bracket-delimited steering for IC Author prose — keeps output in scene register rather
+ * than mirroring [STORY TO DATE] summary voice. Appended on every IC generation (send,
+ * continue, retry), with optional user guidance merged into the same block.
+ */
+export const IC_PROSE_STEERING =
+  "Write or continue the same story by adding complete paragraphs of text, trying your best to follow the instruction prompt given. Do not use the register of the STORY TO DATE; simply continue the same story as if writing an ongoing erotic pulp fantasy with punchy, impactful prose.";
+
+export function icProseSteeringNote(guidance?: string, intent?: "continue" | "regenerate"): string {
+  const trimmed = guidance?.trim();
+  if (trimmed && intent === "continue") {
+    return `[${IC_PROSE_STEERING} Continue the story based on the following input: ${trimmed}]`;
+  }
+  if (trimmed && intent === "regenerate") {
+    return `[${IC_PROSE_STEERING} Take the following into special consideration for your next reply: ${trimmed}]`;
+  }
+  if (trimmed) {
+    return `[${IC_PROSE_STEERING} ${trimmed}]`;
+  }
+  return `[${IC_PROSE_STEERING}]`;
+}
+
+/**
  * Guided retry/continue's steering text, appended as the last message before generation.
  * Bracket-delimited rather than a plain sentence — this is the same OOC/author's-note
  * convention already established by the worldbook's own [CONTENT]/[ROSTER]/[MEMORY] tags

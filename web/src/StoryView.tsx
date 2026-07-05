@@ -32,6 +32,7 @@ import {
   useReasoningDisplayPrefs,
 } from "./reasoningDisplay";
 import type { LayoutRegion } from "./api";
+import { useStoryLogScroll } from "./useStoryLogScroll";
 import "./StoryView.css";
 
 const MEMORY_JOB_TYPES = new Set(["story-to-date"]);
@@ -396,8 +397,8 @@ export default function StoryView({
   // its onFocus consumer below) — a ref rather than state since it's a one-shot instruction, not
   // something that should trigger its own re-render.
   const pendingCaretRef = useRef<number | null>(null);
-  const logEndRef = useRef<HTMLDivElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
 
   async function refresh(): Promise<LogEntry[]> {
     const freshEntries = await fetchLog(storyId);
@@ -438,9 +439,24 @@ export default function StoryView({
     })();
   }, [storyId]);
 
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries, pendingReplies]);
+  const pendingTailSignature = useMemo(
+    () =>
+      Object.entries(pendingReplies)
+        .map(([pageId, p]) => `${pageId}:${p.text.length}:${p.thinking?.length ?? 0}`)
+        .join("|"),
+    [pendingReplies]
+  );
+
+  const { beginEditScrollCapture } = useStoryLogScroll({
+    logRef,
+    footerRef,
+    storyId,
+    entriesLength: entries.length,
+    pendingTailSignature,
+    atHead: position?.atHead ?? true,
+    editingPageId,
+    editDraftLength: editingPageId ? editDraft.length : 0,
+  });
 
   // Featherless gives no signal between "request sent" and "first token" — elapsed time fills
   // that gap. While a prose job is queued behind an archive, poll active jobs and show a
@@ -713,6 +729,7 @@ export default function StoryView({
     const content = entry.content ?? "";
     const clicked = resolveClickOffset(e.clientX, e.clientY, contentEl);
     pendingCaretRef.current = clicked !== null ? Math.max(0, Math.min(clicked, content.length)) : content.length;
+    beginEditScrollCapture();
     setEditingPageId(pageId);
     setEditDraft(content);
     setEditInitialHeight(contentEl.offsetHeight);
@@ -870,7 +887,6 @@ export default function StoryView({
                     }
                   }}
                   initialHeight={editInitialHeight}
-                  autoFocus
                 />
               </>
             ) : (
@@ -925,9 +941,9 @@ export default function StoryView({
             </div>
           );
         })}
-        <div ref={logEndRef} />
       </div>
 
+      <div className="story-view-footer" ref={footerRef}>
       {error && (
         <div className="error-banner">
           <span>{error}</span>
@@ -1027,9 +1043,6 @@ export default function StoryView({
                     Kickoff →
                   </button>
                 )}
-                {position && !position.atHead && (
-                  <span className="rewind-note">Viewing an earlier point — new posts will branch from here.</span>
-                )}
               </>
             }
           />
@@ -1054,9 +1067,11 @@ export default function StoryView({
             }
           }}
           placeholder={
-            mode === "guide"
-              ? "Tell the Editor about your story… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
-              : "Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
+            position && !position.atHead
+              ? "Viewing an earlier point"
+              : mode === "guide"
+                ? "Tell the Editor about your story… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
+                : "Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
           }
           disabled={!!editingPageId}
         />
@@ -1064,6 +1079,7 @@ export default function StoryView({
           Send
         </button>
       </form>
+      </div>
     </div>
   );
 }

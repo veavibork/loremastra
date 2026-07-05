@@ -41,6 +41,7 @@ import {
   shouldPrefillReasoning,
   proseStreamUsesReasoningTrace,
   REASONING_ASSISTANT_PREFILL,
+  isReasoningModel,
   streamIdleTimeoutMs,
   estimateMessageTokens,
   type ChatMessage,
@@ -80,6 +81,7 @@ import {
   ARCHIVE_NAMING_PROMPT,
   guidedRegenerateNote,
   guidedContinueNote,
+  icProseSteeringNote,
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
@@ -235,7 +237,8 @@ async function streamWithFallback(
   messages: ChatMessage[],
   jobId: string,
   signal?: AbortSignal,
-  chatTemplateKwargs?: Record<string, unknown>
+  chatTemplateKwargs?: Record<string, unknown>,
+  prefillAssistant = false
 ): Promise<{ text: string; model: string }> {
   let reply = "";
   let usedModel = profile.model;
@@ -243,7 +246,10 @@ async function streamWithFallback(
   await withModelFallback(profile, async (candidate) => {
     usedModel = candidate.model;
     const useReasoningTrace = proseStreamUsesReasoningTrace(candidate.model, chatTemplateKwargs);
-    const candidateMessages = shouldPrefillReasoning(candidate.model, chatTemplateKwargs)
+    const usePrefill =
+      prefillAssistant ||
+      shouldPrefillReasoning(candidate.model, chatTemplateKwargs);
+    const candidateMessages = usePrefill
       ? [...messages, { role: "assistant" as const, content: REASONING_ASSISTANT_PREFILL }]
       : messages;
 
@@ -551,11 +557,12 @@ function buildProseHistory(
   const guidance = jobGuidance.get(jobId);
   if (guidance) {
     jobGuidance.delete(jobId);
-    const content =
-      guidance.intent === "continue"
-        ? guidedContinueNote(guidance.text, "story")
-        : guidedRegenerateNote(guidance.text);
-    history = [...history, { role: "system", content }];
+    history = [
+      ...history,
+      { role: "system", content: icProseSteeringNote(guidance.text, guidance.intent) },
+    ];
+  } else {
+    history = [...history, { role: "system", content: icProseSteeringNote() }];
   }
 
   return { history, targetPage };
@@ -582,7 +589,7 @@ async function executeProseJob(
     if (moodFragment) {
       finalHistory = [...history, { role: "system", content: moodFragment }];
     }
-    const inferenceMessages = shouldPrefillReasoning(profile.model, chatTemplateKwargs)
+    const inferenceMessages = isReasoningModel(profile.model)
       ? [...finalHistory, { role: "assistant" as const, content: REASONING_ASSISTANT_PREFILL }]
       : finalHistory;
     setJobInputTokenEstimate(db, jobId, estimateMessageTokens(inferenceMessages));
@@ -593,7 +600,8 @@ async function executeProseJob(
       finalHistory,
       jobId,
       signal,
-      chatTemplateKwargs
+      chatTemplateKwargs,
+      isReasoningModel(profile.model)
     );
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —

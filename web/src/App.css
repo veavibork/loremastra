@@ -39,6 +39,8 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Browser scroll anchoring fights inline edit autogrow and footer resize — we manage position explicitly. */
+  overflow-anchor: none;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
