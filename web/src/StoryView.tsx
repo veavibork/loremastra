@@ -728,6 +728,17 @@ export default function StoryView({
     const content = entry.content ?? "";
     const clicked = resolveClickOffset(e.clientX, e.clientY, contentEl);
     pendingCaretRef.current = clicked !== null ? Math.max(0, Math.min(clicked, content.length)) : content.length;
+    // eslint-disable-next-line no-console
+    console.info("[scrollDebug] handleLogClick", {
+      pageId,
+      isLastShown: shown[shown.length - 1]?.pageId === pageId,
+      role: entry.role,
+      hasCachedReasoningTrace: entry.role === "agent" ? !!reasoningTraces[pageId]?.trim() : false,
+      contentElOffsetHeight: contentEl.offsetHeight,
+      logScrollTop: logRef.current?.scrollTop,
+      logScrollHeight: logRef.current?.scrollHeight,
+      logClientHeight: logRef.current?.clientHeight,
+    });
     setEditingPageId(pageId);
     setEditDraft(content);
     setEditInitialHeight(contentEl.offsetHeight);

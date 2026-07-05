@@ -167,6 +167,13 @@ sudo systemctl restart loremaster
 
 Caddy doesn't need a restart for frontend changes — it serves `web/dist` directly off disk.
 
+**Confirming a deploy actually landed:** the header shows a small commit-hash tag next to the story
+title (hover it for the exact build timestamp) — `web/vite.config.ts`'s `define: { __BUILD_INFO__ }`
+stamps the git commit + build time at `vite build` time, rendered in `App.tsx`. Compare it against
+`git rev-parse --short HEAD` on the VM after a deploy. If a force-refresh still shows an old hash, the
+problem is the build/deploy step, not the browser cache — this rules that whole class of confusion out
+in one glance instead of guessing.
+
 **Docs-only or backend-only changes** skip the `web/` build. After `git pull`, if `package.json` /
 `package-lock.json` changed, run `npm install` before `npm run build`.
 

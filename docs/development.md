@@ -515,6 +515,13 @@ toggle remain.
   entry delete, and `apiFetch` treating all `409`s as session-superseded instead of surfacing real
   conflicts. See `88abe43`.
 
+**Additional: build-info header (deploy verification)** — ✅ done, 2026-07-05. Debugging a scroll fix
+on the live VM burned a round trip on "is this actually the new build, or a cached one?" — the header
+now shows the running build's git commit hash (hover for the exact build timestamp), stamped at
+`vite build` time via `web/vite.config.ts`'s `define: { __BUILD_INFO__ }`, rendered in `App.tsx`. See
+[gcp-deployment.md](gcp-deployment.md)'s "Confirming a deploy actually landed" note. Worth checking
+first any time live behavior doesn't match what was just deployed, before assuming the fix is wrong.
+
 ## Phase 2 backlog: Multi-User
 
 Deferred 2026-07-03 so Horde integration can prove out against the existing single-default-user model
