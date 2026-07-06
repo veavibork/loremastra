@@ -16,6 +16,7 @@ import {
   streamJob,
   undoPosition,
   type LogEntry,
+  type LogPage,
   type Position,
   type StoryPhase,
 } from "./api";
@@ -36,6 +37,9 @@ import { useStoryLogScroll } from "./useStoryLogScroll";
 import "./StoryView.css";
 
 const MEMORY_JOB_TYPES = new Set(["story-to-date"]);
+
+/** Raw entries (both IC and hidden OOC pages) kept loaded at once before "load earlier" is needed. */
+const LOG_PAGE_SIZE = 80;
 
 interface PendingReply {
   text: string;
@@ -391,6 +395,9 @@ export default function StoryView({
     localStorage.setItem(modeStorageKey(storyId), mode);
   }, [storyId, mode]);
   const [entries, setEntries] = useState<LogEntry[]>([]);
+  // Whether older history exists beyond the currently loaded window — see refresh()/loadEarlier().
+  const [hasMoreEntries, setHasMoreEntries] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [position, setPosition] = useState<Position | null>(null);
   const [draft, setDraft] = useState("");
   // Keyed by agent pageId so multiple sends can be in flight at once — queued messages each get
@@ -421,12 +428,84 @@ export default function StoryView({
   // something that should trigger its own re-render.
   const pendingCaretRef = useRef<number | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  // Set right before prepending older entries to .log — the layout effect below restores this
+  // many px of distance-from-bottom afterward so the newly taller content doesn't shove whatever
+  // the user was looking at out of view (scrollTop alone can't survive a prepend: the browser has
+  // nothing to anchor to once new nodes land above it, and overflow-anchor is off — see App.css).
+  const pendingScrollRestoreRef = useRef<number | null>(null);
 
-  async function refresh(): Promise<LogEntry[]> {
-    const freshEntries = await fetchLog(storyId);
-    setEntries(freshEntries);
+  useLayoutEffect(() => {
+    const log = logRef.current;
+    if (log && pendingScrollRestoreRef.current !== null) {
+      log.scrollTop = log.scrollHeight - pendingScrollRestoreRef.current;
+      pendingScrollRestoreRef.current = null;
+    }
+  }, [entries]);
+
+  function prependOlderEntries(older: LogEntry[]) {
+    if (older.length === 0) return;
+    const log = logRef.current;
+    pendingScrollRestoreRef.current = log ? log.scrollHeight - log.scrollTop : null;
+    setEntries((prev) => [...older, ...prev]);
+  }
+
+  /**
+   * Only the most recent LOG_PAGE_SIZE raw entries are kept loaded (see loadEarlier) — once
+   * something's already loaded, re-fetching from scratch on every action would defeat that, so
+   * this re-walks from head only down through whatever was already the oldest loaded entry
+   * (refreshing its content too, in case it was just edited) instead of the whole chain.
+   */
+  async function refresh(): Promise<LogPage> {
+    const oldestLoadedPageId = entries[0]?.pageId;
+    const page = await fetchLog(
+      storyId,
+      oldestLoadedPageId ? { throughPageId: oldestLoadedPageId } : { limit: LOG_PAGE_SIZE }
+    );
+    setEntries(page.entries);
+    setHasMoreEntries(page.hasMore);
     setPosition(await fetchPosition(storyId));
-    return freshEntries;
+    return page;
+  }
+
+  async function loadEarlier() {
+    if (!hasMoreEntries || loadingEarlier || entries.length === 0) return;
+    setLoadingEarlier(true);
+    try {
+      const page = await fetchLog(storyId, { limit: LOG_PAGE_SIZE, beforePageId: entries[0].pageId });
+      prependOlderEntries(page.entries);
+      setHasMoreEntries(page.hasMore);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingEarlier(false);
+    }
+  }
+
+  /**
+   * Undo/redo can rewind to a page older than whatever's currently loaded, since the log only
+   * keeps a recent window by default — without this, `shown`'s position-based slice (below) would
+   * fail to find currentPageId and fall back to rendering the *entire* loaded window instead of
+   * stopping at the real position. Pulls older batches in one at a time until the target page
+   * turns up (or there's genuinely nothing older left).
+   */
+  async function ensurePageLoaded(pageId: string | null, knownEntries: LogEntry[], knownHasMore: boolean) {
+    if (!pageId) return;
+    let current = knownEntries;
+    let more = knownHasMore;
+    const fetchedBatches: LogEntry[][] = [];
+    while (more && current.length > 0 && !current.some((e) => e.pageId === pageId)) {
+      const older = await fetchLog(storyId, { limit: LOG_PAGE_SIZE, beforePageId: current[0].pageId });
+      if (older.entries.length === 0) {
+        more = false;
+        break;
+      }
+      fetchedBatches.unshift(older.entries);
+      current = [...older.entries, ...current];
+      more = older.hasMore;
+    }
+    if (fetchedBatches.length > 0) prependOlderEntries(fetchedBatches.flat());
+    setHasMoreEntries(more);
   }
 
   /**
@@ -456,8 +535,8 @@ export default function StoryView({
 
   useEffect(() => {
     void (async () => {
-      const freshEntries = await refresh();
-      await resumeActiveJobs(freshEntries);
+      const page = await refresh();
+      await resumeActiveJobs(page.entries);
     })();
   }, [storyId]);
 
@@ -826,8 +905,10 @@ export default function StoryView({
 
   async function handleUndo() {
     try {
-      setPosition(await undoPosition(storyId));
-      await refresh();
+      const pos = await undoPosition(storyId);
+      setPosition(pos);
+      const page = await refresh();
+      await ensurePageLoaded(pos.currentPageId, page.entries, page.hasMore);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
@@ -836,8 +917,10 @@ export default function StoryView({
 
   async function handleRedo() {
     try {
-      setPosition(await redoPosition(storyId));
-      await refresh();
+      const pos = await redoPosition(storyId);
+      setPosition(pos);
+      const page = await refresh();
+      await ensurePageLoaded(pos.currentPageId, page.entries, page.hasMore);
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));
@@ -897,6 +980,13 @@ export default function StoryView({
   return (
     <div className="story-view">
       <div className="log" ref={logRef} onClick={handleLogClick}>
+        {hasMoreEntries && (
+          <div className="log-load-earlier">
+            <button type="button" onClick={() => void loadEarlier()} disabled={loadingEarlier}>
+              {loadingEarlier ? "Loading…" : "Load earlier"}
+            </button>
+          </div>
+        )}
         {shown.map((entry) => {
           const cachedTrace =
             entry.role === "agent" ? reasoningTraces[entry.pageId]?.trim() : undefined;

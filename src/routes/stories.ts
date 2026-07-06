@@ -170,7 +170,16 @@ storiesRoute.get("/:id/log", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
-  return c.json({ entries: buildLogView(storyDb, logbook.id) });
+
+  const limitParam = Number(c.req.query("limit"));
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.floor(limitParam) : undefined;
+
+  const page = buildLogView(storyDb, logbook.id, {
+    limit,
+    beforePageId: c.req.query("beforePageId") || undefined,
+    throughPageId: c.req.query("throughPageId") || undefined,
+  });
+  return c.json(page);
 });
 
 /**

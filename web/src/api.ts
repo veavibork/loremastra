@@ -539,10 +539,23 @@ export async function deleteStory(storyId: string): Promise<void> {
   if (data.error) throw new Error(data.error);
 }
 
-export async function fetchLog(storyId: string, opts?: { background?: boolean }): Promise<LogEntry[]> {
-  const res = await apiFetch(`/api/stories/${storyId}/log`, {}, opts);
-  const data = (await res.json()) as { entries: LogEntry[] };
-  return data.entries;
+export interface LogPage {
+  entries: LogEntry[];
+  /** True when older history exists beyond what's returned. */
+  hasMore: boolean;
+}
+
+export async function fetchLog(
+  storyId: string,
+  opts?: { background?: boolean; limit?: number; beforePageId?: string; throughPageId?: string }
+): Promise<LogPage> {
+  const params = new URLSearchParams();
+  if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts?.beforePageId) params.set("beforePageId", opts.beforePageId);
+  if (opts?.throughPageId) params.set("throughPageId", opts.throughPageId);
+  const qs = params.toString();
+  const res = await apiFetch(`/api/stories/${storyId}/log${qs ? `?${qs}` : ""}`, {}, opts);
+  return (await res.json()) as LogPage;
 }
 
 export interface StoryToDateSegment {

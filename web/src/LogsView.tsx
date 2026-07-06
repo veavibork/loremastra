@@ -49,13 +49,13 @@ export default function LogsView({ story }: PanelProps) {
 
     async function poll(opts?: { background?: boolean }) {
       if (!story) return;
-      const [logEntries, j, s] = await Promise.all([
+      const [logPage, j, s] = await Promise.all([
         fetchLog(story.id, opts),
         fetchJobs(story.id, opts),
         fetchSlots(opts),
       ]);
       if (!cancelled) {
-        setEntries(logEntries);
+        setEntries(logPage.entries);
         setJobs(j);
         setSlots(s);
       }

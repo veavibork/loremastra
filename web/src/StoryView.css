@@ -52,6 +52,17 @@
   background: #3a3a3a;
 }
 
+.log-load-earlier {
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.log-load-earlier button {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
 .pending-thinking {
   font-size: 0.75rem;
   opacity: 0.6;

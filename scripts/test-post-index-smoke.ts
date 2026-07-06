@@ -44,7 +44,7 @@ function main(): void {
   console.log(`chain posts: ${chain.length} (${visibleCount} visible, ${hiddenCount} hidden)`);
   assert(hiddenCount > 0, "story has hidden posts to validate gap behavior");
 
-  const logEntries = buildLogView(db, logbook.id);
+  const { entries: logEntries } = buildLogView(db, logbook.id);
   for (const entry of logEntries) {
     if (entry.icPostNumber == null) continue;
     const expected = resolveChainPostNumber(db, logbook.id, entry.pageId);

@@ -122,8 +122,8 @@ server.registerTool(
     withStoryDb(storyId, (db) => {
       const logbook = getBookByType(db, "logbook");
       if (!logbook) return textResult({ error: "no logbook for this story" });
-      const entries = buildLogView(db, logbook.id);
-      return textResult(limit ? entries.slice(-limit) : entries);
+      const { entries } = buildLogView(db, logbook.id, { limit });
+      return textResult(entries);
     })
 );
 
