@@ -14,8 +14,11 @@ import {
   buildStoryCorpus,
   estimateTokens,
   mergeStoryToDate,
+  selectFoldSet,
+  STORY_TO_DATE_SOFT_CAP_TOKENS,
   type StoryBlockKind,
   type StoryToDateSegment,
+  type FoldableSegment,
 } from "./story-to-date-corpus.js";
 
 export const STORY_TO_DATE_TRIGGER = 0.8;
@@ -61,6 +64,50 @@ function hasPendingStoryToDateJob(db: Database.Database): boolean {
     )
     .get();
   return !!row;
+}
+
+function hasPendingFoldJob(db: Database.Database): boolean {
+  const row = db
+    .prepare(
+      `SELECT 1 FROM jobs WHERE job_type = 'story-to-date-fold' AND status IN ('pending', 'running') LIMIT 1`
+    )
+    .get();
+  return !!row;
+}
+
+/**
+ * Feature A: when total STORY TO DATE crosses the soft cap, queue a fold job to compress the
+ * oldest segments into a "deep past" digest — keeping total memory bounded as a story runs
+ * indefinitely. Targets the oldest segment (the fold worker overwrites it and deletes the rest).
+ */
+export function enqueueEligibleFoldJob(
+  db: Database.Database,
+  userId: string,
+  logbookId: string
+): string | null {
+  if (hasPendingFoldJob(db)) return null;
+  const rows = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken);
+  const totalTokens = rows.reduce((sum, s) => sum + estimateTokens(s.content!), 0);
+  if (totalTokens <= STORY_TO_DATE_SOFT_CAP_TOKENS) return null;
+
+  const segments: FoldableSegment[] = rows.map((s) => ({
+    id: s.id,
+    content: s.content!.trim(),
+    coverageThroughIcPost: s.coverageThroughIcPost,
+    coveragePageId: s.coveragePageId,
+    seq: s.seq,
+  }));
+  const { fold } = selectFoldSet(segments);
+  if (fold.length < 2) return null;
+
+  const editor = getAgentProfile(userId, "editor");
+  const job = createJob(db, {
+    targetStoryToDateId: fold[0]!.id,
+    jobType: "story-to-date-fold",
+    priority: 4, // below forward story-to-date (5): forward compression keeps the story playable, folding is housekeeping
+    slotCost: editor.concurrencyCost,
+  });
+  return job.id;
 }
 
 function nextSegmentKind(db: Database.Database, logbookId: string): StoryBlockKind | null {

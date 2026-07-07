@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 
-export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name" | "archive-name" | "story-to-date";
+export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name" | "archive-name" | "story-to-date" | "story-to-date-fold";
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
 export interface JobRow {

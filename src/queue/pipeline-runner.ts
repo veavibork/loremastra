@@ -63,8 +63,9 @@ import type { AgentProfile } from "../config.js";
 import { isOpeningPostPage, resolveIcStartPageId } from "../services/kickoff.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
-import { enqueueEligibleStoryToDateJob, enqueueStoryToDateNameJob } from "../services/story-to-date.js";
+import { enqueueEligibleStoryToDateJob, enqueueStoryToDateNameJob, enqueueEligibleFoldJob } from "../services/story-to-date.js";
 import { executeStoryToDateJob } from "../services/story-to-date-worker.js";
+import { executeStoryToDateFoldJob } from "../services/story-to-date-fold-worker.js";
 import { fillStoryToDateSegmentName, getStoryToDateSegment } from "../db/story-to-date-store.js";
 import { cancelPendingCompressJobs } from "../services/compression.js";
 import { nowIso } from "../db/time.js";
@@ -95,7 +96,7 @@ import {
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const WORKER_JOB_TYPES: JobType[] = ["story-to-date", "story-name", "archive-name"];
+const WORKER_JOB_TYPES: JobType[] = ["story-to-date", "story-to-date-fold", "story-name", "archive-name"];
 const PROSE_JOB_TYPES: JobType[] = ["prose", "setup", "setup-worldbook"];
 
 /**
@@ -158,6 +159,8 @@ function truncateToWordLimit(text: string, maxWords: number): string {
   return words.slice(0, maxWords).join(" ");
 }
 
+// Counts BOTH forward story-to-date and fold jobs — each is a full-cost Editor call, and the
+// account concurrency limit only permits one at a time, so they share the single-in-flight cap.
 function countRunningStoryToDateJobsForUser(
   globalDb: ReturnType<typeof getGlobalDb>,
   userId: string
@@ -167,7 +170,9 @@ function countRunningStoryToDateJobsForUser(
     const story = getStory(globalDb, storyId);
     if (!story || story.ownerUserId !== userId) continue;
     const row = db
-      .prepare(`SELECT COUNT(*) AS n FROM jobs WHERE job_type = 'story-to-date' AND status = 'running'`)
+      .prepare(
+        `SELECT COUNT(*) AS n FROM jobs WHERE job_type IN ('story-to-date', 'story-to-date-fold') AND status = 'running'`
+      )
       .get() as { n: number };
     count += row.n;
   }
@@ -525,9 +530,9 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       const job = claimNextJob(db, WORKER_JOB_TYPES);
       if (!job) continue;
 
-      // Editor archives cost the full account limit — only one in flight per user.
+      // Editor archives (forward compression and folding alike) cost the full account limit — only one in flight per user.
       if (
-        job.jobType === "story-to-date" &&
+        (job.jobType === "story-to-date" || job.jobType === "story-to-date-fold") &&
         countRunningStoryToDateJobsForUser(globalDb, story.ownerUserId) > 1
       ) {
         unclaimJob(db, job.id);
@@ -550,6 +555,15 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
           continue;
         }
         void executeStoryToDateJobWrapper(db, story.ownerUserId, storyId, logbook.id, job.id, job.targetStoryToDateId);
+      } else if (job.jobType === "story-to-date-fold" && job.targetStoryToDateId) {
+        const logbook = getBookByType(db, "logbook");
+        if (!logbook) {
+          finishJob(db, job.id, "failed", "logbook not found");
+          releaseSlot(story.ownerUserId, job.id);
+          releaseWorkerLane();
+          continue;
+        }
+        void executeStoryToDateFoldJobWrapper(db, story.ownerUserId, logbook.id, job.id, job.targetStoryToDateId);
       } else if (job.jobType === "story-name" && job.targetTextId) {
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId);
       } else if (job.jobType === "archive-name" && job.targetStoryToDateId) {
@@ -1346,6 +1360,33 @@ async function executeStoryToDateJobWrapper(
     });
     enqueueStoryToDateNameJob(db, userId, segmentId);
     enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId);
+    // Feature A: once forward compression settles, check whether accumulated memory now warrants
+    // folding the deep past. Runs after (not instead of) forward work — the one-Editor guard keeps
+    // them from contending for the single account slot.
+    enqueueEligibleFoldJob(db, userId, logbookId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    finishJob(db, jobId, "failed", message);
+  } finally {
+    releaseSlot(userId, jobId);
+    releaseWorkerLane();
+  }
+}
+
+async function executeStoryToDateFoldJobWrapper(
+  db: Database.Database,
+  userId: string,
+  logbookId: string,
+  jobId: string,
+  targetSegmentId: string
+): Promise<void> {
+  const startedAt = Date.now();
+  try {
+    const apiKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
+    if (!apiKey) throw new Error("no Featherless API key configured");
+    await executeStoryToDateFoldJob(db, userId, logbookId, targetSegmentId, apiKey);
+    const editor = getAgentProfile(userId, "editor");
+    finishJob(db, jobId, "done", undefined, { model: editor.model, elapsedMs: Date.now() - startedAt });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);

@@ -40,7 +40,7 @@ Identity: name, appearance, role, cliche
 Wants: immediate goal, deeper motivation
 Knows: information relevant to the scenario
 Disposition: starting attitude towards strangers
-Hides: secrets kept from strangers
+Nuances: hidden depths and contradictions beneath the surface
 Register: one line on how they speak
 [/ROSTER]
 
@@ -169,7 +169,7 @@ Identity: name, appearance, role, cliche
 Wants: immediate goal, deeper motivation
 Knows: information relevant to the scenario
 Disposition: starting attitude towards strangers
-Hides: secrets kept from strangers
+Nuances: hidden depths and contradictions beneath the surface
 Register: one line on how they speak
 [/ROSTER]
 

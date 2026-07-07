@@ -134,7 +134,9 @@ function backfillMemoryContentStamps(db: Database.Database): void {
  */
 function migrateJobTypeCheck(db: Database.Database): void {
   const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'`).get() as { sql: string } | undefined;
-  if (!row || (row.sql.includes("'archive-name'") && row.sql.includes("'story-to-date'"))) return;
+  // Sniff the newest job type in the stored CHECK — its presence implies the older ones too,
+  // so migrating whenever it's absent covers every pre-fold DB in one condition.
+  if (!row || row.sql.includes("'story-to-date-fold'")) return;
   db.exec(`ALTER TABLE jobs RENAME TO jobs_pre_tag_gen_migration`);
   // The renamed table may itself predate one of these three (e.g. a story DB last opened
   // before Horde support existed won't have horde_request_id yet) -- back-fill them here too,

@@ -273,6 +273,58 @@ export function mergeStoryToDate(segments: StoryToDateSegment[]): string {
   return `[STORY TO DATE]\n${body}\n[/STORY TO DATE]`;
 }
 
+// ── Feature A: bounded memory via recursive folding ──────────────────────────
+/** Total assembled STORY TO DATE tokens above which the oldest segments get folded into a digest. */
+export const STORY_TO_DATE_SOFT_CAP_TOKENS = 6000;
+/** Newest segments (by cumulative token budget) kept detailed; everything older is eligible to fold. */
+export const FOLD_KEEP_RECENT_TOKENS = 3000;
+/** Fold output aims for this fraction of the folded input's word count (the model routinely beats it). */
+export const FOLD_TARGET_RATIO = 0.5;
+
+export interface FoldableSegment {
+  id: string;
+  content: string;
+  coverageThroughIcPost: number | null;
+  coveragePageId: string | null;
+  seq: number;
+}
+
+/**
+ * Deterministic split used by BOTH the fold trigger and the fold worker so they always agree on
+ * which segments get folded. Always keeps the newest segment, then peels back more newest segments
+ * until their cumulative tokens would exceed FOLD_KEEP_RECENT_TOKENS; everything older is the fold
+ * set. Segments must be passed in seq-ascending (oldest-first) order.
+ */
+export function selectFoldSet(segments: FoldableSegment[]): { fold: FoldableSegment[]; keep: FoldableSegment[] } {
+  if (segments.length <= 1) return { fold: [], keep: segments };
+  let keepFromIdx = segments.length - 1; // newest is always kept detailed
+  let keptTokens = estimateTokens(segments[keepFromIdx]!.content);
+  for (let i = segments.length - 2; i >= 0; i--) {
+    const t = estimateTokens(segments[i]!.content);
+    if (keptTokens + t > FOLD_KEEP_RECENT_TOKENS) break;
+    keptTokens += t;
+    keepFromIdx = i;
+  }
+  return { fold: segments.slice(0, keepFromIdx), keep: segments.slice(keepFromIdx) };
+}
+
+/** Editor prompt for recursively compressing the older half of STORY TO DATE into a "deep past" digest. */
+export function buildFoldSystem(targetWords: number): string {
+  return `You are the Editor, condensing the older portion of a long story's memory into a compact "deep past" digest. The recent memory is kept separately in full — your job is only the older material provided here.
+
+The text you receive is ALREADY a compressed, chronological memory of events. Compress it further: this is the distant past, where fine detail no longer matters, but the through-line must survive intact.
+
+KEEP at full weight: unresolved threads; open promises, debts, and plans; secrets not yet revealed; standing relationships and their current state; deaths and permanent changes; injuries or conditions still in effect; anything a future scene or character could still reference or contradict.
+
+COMPRESS hard or drop entirely: resolved sub-threads (a conflict that ended, a task that got done); one-off events with no lasting consequence; scene-level color and staging; anything already fully paid off. A resolved beat shrinks to a clause; an unresolved one keeps its shape.
+
+Preserve chronology and the causal throughline (this led to that). Use proper names; never "you/your" for the player character. Do not invent events. Do not reference or fold in the recent memory — it is not here.
+
+Length: aim for about ${targetWords} words — the load-bearing spine of the deep past, no more. Write flowing third-person prose in the same register as the input.
+
+Output ONLY the digest prose — no headings, labels, or commentary.`;
+}
+
 export function buildSeamCeilingInstruction(inputCeilingPost: number | null): string {
   if (inputCeilingPost == null) {
     return "End coverage at the last complete scene transition in the supplied log.";
@@ -280,16 +332,45 @@ export function buildSeamCeilingInstruction(inputCeilingPost: number | null): st
   return `The supplied log is complete through post ${inputCeilingPost} — in production, no posts beyond this existed yet. Treat post ${inputCeilingPost} as a hard ceiling: never summarize beyond post ${inputCeilingPost}. End on a natural scene seam at or before post ${inputCeilingPost}. If post ${inputCeilingPost} lands mid-scene or mid-conversation (embedded text threads *Name: …* count as part of the scene), roll [COVERAGE] back to the previous complete seam. Do not write closing framing ("the night closes", "they parted", etc.) for beats that continue after your coverage.`;
 }
 
-export function buildDefaultBeginsSystemPrompt(inputCeilingPost: number | null): string {
+/** Soft target / hard cap words per covered post, injected into the Editor prompt to fight transcription bloat on high-affect scenes. Production defaults; STD_TARGET_WPP / STD_MAX_WPP env vars override for tuning experiments only. */
+export const TARGET_WORDS_PER_COVERED_POST = 6;
+export const MAX_WORDS_PER_COVERED_POST = 10;
+
+/** Proportional length budget for an Editor block, scaled to how many posts it covers. */
+export function buildLengthTargetInstruction(coveredPosts: number | null): string {
+  if (coveredPosts == null || coveredPosts <= 0) {
+    return "Length: compress hard — a paragraph or two of load-bearing memory, not a retelling. Length is earned by consequence, not by drama.";
+  }
+  const targetWpp = Number(process.env.STD_TARGET_WPP) || TARGET_WORDS_PER_COVERED_POST;
+  const maxWpp = Number(process.env.STD_MAX_WPP) || MAX_WORDS_PER_COVERED_POST;
+  const target = Math.round(coveredPosts * targetWpp);
+  const cap = Math.round(coveredPosts * maxWpp);
+  return `Length: this block covers roughly ${coveredPosts} posts — aim for about ${target} words and do not exceed ${cap} words. A quiet stretch should come in well under target; length is earned by consequence, not by drama.`;
+}
+
+export const INCLUDE_EXCLUDE_GUIDANCE = `INCLUDE: state changes, decisions, and their consequences; relationships and how they shift; emotional shifts and the tenor between characters; forms of address, nicknames, and pet names as they develop (these are relationship state); promises and commitments; secrets revealed or still hidden; injuries, deaths, and standing threats; anything a later scene would contradict if it were forgotten. Preserve the causal throughline (this happened, therefore…).
+
+EXCLUDE: verbatim or near-verbatim dialogue; logistics and coordination chatter (who texted whom, who fetched what); blow-by-blow physical or sexual choreography beyond what changes the situation; songs, links, and references unless plot-loadbearing; sensory colour that carries no consequence. Do not invent events absent from the log.
+
+Compress hardest on the scenes that feel most vivid — high-emotion beats are where the temptation to transcribe is strongest and where compression matters most. Never paste or lightly reword lines from the log; paraphrase everything in the memory register — keep the emotional truth and what changed between characters, drop the moment-to-moment staging. The closing paragraphs must be as compressed as the opening ones.`;
+
+export function buildDefaultBeginsSystemPrompt(
+  inputCeilingPost: number | null,
+  opts: { guidance?: string } = {}
+): string {
   const ceiling = buildSeamCeilingInstruction(inputCeilingPost);
+  const length = buildLengthTargetInstruction(inputCeilingPost);
+  const guidance = opts.guidance ?? INCLUDE_EXCLUDE_GUIDANCE;
 
   return `You are the Editor, compressing a long roleplay log into a durable "story so far" memory block.
 
 You receive the complete worldbook (CONTENT, ROSTER, MEMORY) and in-character verbose prose. Post numbers are absolute from kickoff as post 1; hidden OOC/guide turns occupy numbers in the sequence but are not included in the log — expect gaps (e.g. post 198, then post 209).
 
-Write a [STORY BEGINS] block: third-person, matching the CONTENT register and tonality — not a neutral recap. Cover loadbearing events, relationships, promises, secrets revealed, and state changes that future scenes and NPCs must remember and build on. Preserve causal throughline (this happened, therefore…). Do not invent events absent from the log.
+Write a [STORY BEGINS] block: third-person, matching the CONTENT register and tonality — not a neutral recap. This is memory, not narration: record what future scenes and NPCs must remember, not how it played out beat by beat.
 
-Compress throughout — never paste lines from the verbose log. Paraphrase dialogue in the memory register; the closing paragraphs must be as compressed as the opening ones.
+${guidance}
+
+${length}
 
 Use the PC's proper name; never "you/your" for the player character.
 
@@ -302,7 +383,8 @@ You must write [STORY BEGINS]…[/STORY BEGINS] then [COVERAGE]N[/COVERAGE]. Use
 
 export function buildDefaultContinuesSystemPrompt(
   inputCeilingPost: number | null,
-  priorCoveragePost: number | null
+  priorCoveragePost: number | null,
+  opts: { guidance?: string } = {}
 ): string {
   const prior =
     priorCoveragePost != null
@@ -310,6 +392,10 @@ export function buildDefaultContinuesSystemPrompt(
       : "";
 
   const ceiling = buildSeamCeilingInstruction(inputCeilingPost);
+  const coveredPosts =
+    inputCeilingPost != null && priorCoveragePost != null ? inputCeilingPost - priorCoveragePost : null;
+  const length = buildLengthTargetInstruction(coveredPosts);
+  const guidance = opts.guidance ?? INCLUDE_EXCLUDE_GUIDANCE;
 
   return `You are the Editor, extending an existing "story so far" memory block.
 
@@ -317,9 +403,11 @@ You receive the complete worldbook, the current [STORY TO DATE], and new in-char
 
 ${prior}
 
-Write a [STORY CONTINUES] block that picks up where [STORY TO DATE] left off — same register, third person, loadbearing facts only. Do not repeat [STORY TO DATE]. Do not invent events. Append-only: do not contradict or rewrite prior memory.
+Write a [STORY CONTINUES] block that picks up where [STORY TO DATE] left off — same register, third person. This is memory, not narration: record what future scenes and NPCs must remember, not how it played out beat by beat. Do not repeat [STORY TO DATE]. Do not invent events. Append-only: do not contradict or rewrite prior memory.
 
-Compress throughout — never paste lines from the verbose log. Paraphrase dialogue in the memory register; the closing paragraphs must be as compressed as the opening ones. Do not dump final posts verbatim when the input runs long.
+${guidance}
+
+${length}
 
 ${ceiling}
 
