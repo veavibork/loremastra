@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { ChatMessage } from "./featherless.js";
 
@@ -12,6 +12,8 @@ import type { ChatMessage } from "./featherless.js";
  */
 const LOG_PATH = path.resolve(process.cwd(), "data", "outbound-requests.log");
 const MAX_ENTRIES = 50;
+/** Avoid re-reading a multi-MB log on every inference call — trim only once we're over the cap. */
+const MAX_LOG_BYTES = 512 * 1024;
 
 interface OutboundLogEntry {
   at: string;
@@ -20,20 +22,21 @@ interface OutboundLogEntry {
   messages: ChatMessage[];
 }
 
+function trimLogFile(): void {
+  const lines = readFileSync(LOG_PATH, "utf-8").split("\n").filter(Boolean);
+  const trimmed = lines.slice(-MAX_ENTRIES);
+  writeFileSync(LOG_PATH, trimmed.join("\n") + (trimmed.length ? "\n" : ""));
+}
+
 export function logOutboundRequest(entry: Omit<OutboundLogEntry, "at">): void {
   try {
     const line = JSON.stringify({ at: new Date().toISOString(), ...entry });
     if (!existsSync(LOG_PATH)) {
       writeFileSync(LOG_PATH, "");
     }
-    const lines = readFileSync(LOG_PATH, "utf-8").split("\n").filter(Boolean);
-    lines.push(line);
-    const trimmed = lines.length > MAX_ENTRIES ? lines.slice(-MAX_ENTRIES) : lines;
-    if (trimmed.length !== lines.length) {
-      writeFileSync(LOG_PATH, trimmed.join("\n") + "\n");
-    } else {
-      appendFileSync(LOG_PATH, line + "\n");
-    }
+    appendFileSync(LOG_PATH, line + "\n");
+    const size = statSync(LOG_PATH).size;
+    if (size > MAX_LOG_BYTES) trimLogFile();
   } catch (err) {
     console.error("outbound-log: failed to record request", err);
   }
