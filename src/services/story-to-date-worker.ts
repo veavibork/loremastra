@@ -3,6 +3,7 @@ import type { ChatMessage } from "../inference/featherless.js";
 import { completeChat } from "../inference/featherless.js";
 import { fillStoryToDateSegment, getStoryToDateSegment, listStoryToDateSegments } from "../db/story-to-date-store.js";
 import { getAgentProfile } from "./agent-config.js";
+import { STORY_TO_DATE_FOLD_TIMEOUT_MS } from "./story-to-date-fold-worker.js";
 import {
   buildDefaultBeginsSystemPrompt,
   buildDefaultContinuesSystemPrompt,
@@ -92,7 +93,8 @@ export async function executeStoryToDateJob(
   storyId: string,
   logbookId: string,
   segmentId: string,
-  apiKey: string
+  apiKey: string,
+  signal?: AbortSignal
 ): Promise<void> {
   const segmentRow = getStoryToDateSegment(db, segmentId);
   if (!segmentRow || segmentRow.broken) throw new Error("story-to-date segment missing or broken");
@@ -117,7 +119,11 @@ export async function executeStoryToDateJob(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS && !parsed; attempt++) {
     try {
-      let raw = await completeChat(editor, apiKey, messages, { maxTokens: editor.responseLimit });
+      let raw = await completeChat(editor, apiKey, messages, {
+        maxTokens: editor.responseLimit,
+        timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
+        signal,
+      });
       let candidate = parseResponse(raw, kind);
 
       if (
@@ -133,7 +139,11 @@ export async function executeStoryToDateJob(
             content: buildSeamRetryUserMessage(kind, candidate.coverageThroughPost, corpus.inputCeilingPost),
           },
         ];
-        const retryRaw = await completeChat(editor, apiKey, retryMessages, { maxTokens: editor.responseLimit });
+        const retryRaw = await completeChat(editor, apiKey, retryMessages, {
+          maxTokens: editor.responseLimit,
+          timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
+          signal,
+        });
         const retryParsed = parseResponse(retryRaw, kind);
         if (
           retryParsed &&

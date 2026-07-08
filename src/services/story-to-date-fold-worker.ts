@@ -1,5 +1,8 @@
 import type Database from "better-sqlite3";
 import { completeChat } from "../inference/featherless.js";
+
+/** Large merged segments can legitimately take several minutes — still bounded. */
+export const STORY_TO_DATE_FOLD_TIMEOUT_MS = 10 * 60_000;
 import {
   listStoryToDateSegments,
   getStoryToDateSegment,
@@ -33,7 +36,8 @@ export async function executeStoryToDateFoldJob(
   userId: string,
   logbookId: string,
   targetSegmentId: string,
-  apiKey: string
+  apiKey: string,
+  signal?: AbortSignal
 ): Promise<void> {
   const rows = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken);
   const segments: FoldableSegment[] = rows.map((s) => ({
@@ -63,7 +67,13 @@ export async function executeStoryToDateFoldJob(
     { role: "user" as const, content: `Older memory to condense (chronological):\n\n${merged}` },
   ];
 
-  const digest = (await completeChat(editor, apiKey, messages, { maxTokens: editor.responseLimit })).trim();
+  const digest = (
+    await completeChat(editor, apiKey, messages, {
+      maxTokens: editor.responseLimit,
+      timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
+      signal,
+    })
+  ).trim();
   if (!digest) throw new Error("fold produced empty digest");
   // Guard against a non-compressing result — if the model returned something as large as the input,
   // applying it would churn without shrinking anything. Leave the segments as they are.

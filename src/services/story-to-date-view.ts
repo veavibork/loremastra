@@ -1,9 +1,20 @@
 import type Database from "better-sqlite3";
-import { hasActiveJobForStoryToDate } from "../db/job-store.js";
+import { hasActiveJobForStoryToDate, listActiveJobs, type JobRow, type JobType } from "../db/job-store.js";
 import { listStoryToDateSegments } from "../db/story-to-date-store.js";
 import { estimateTokens, countIcPosts } from "./story-to-date-corpus.js";
 
 export type StoryToDateViewStatus = "ready" | "pending" | "broken";
+
+const MEMORY_JOB_TYPES = new Set<JobType>(["story-to-date", "story-to-date-fold", "archive-name"]);
+
+export interface ActiveMemoryJobView {
+  id: string;
+  jobType: JobType;
+  status: "pending" | "running";
+  createdAt: string;
+  startedAt: string | null;
+  targetSegmentId: string | null;
+}
 
 export interface StoryToDateViewEntry {
   id: string;
@@ -19,11 +30,13 @@ export interface StoryToDateViewEntry {
   status: StoryToDateViewStatus;
   tokenCount: number | null;
   jobActive: boolean;
+  foldJobActive: boolean;
   nameJobActive: boolean;
 }
 
 export interface StoryToDateView {
   segments: StoryToDateViewEntry[];
+  activeMemoryJobs: ActiveMemoryJobView[];
   mergedCoverageThroughPost: number | null;
   icPostCount: number;
   total: number;
@@ -54,9 +67,21 @@ export function buildStoryToDateView(db: Database.Database, logbookId: string): 
       status,
       tokenCount: content ? estimateTokens(content) : null,
       jobActive: hasActiveJobForStoryToDate(db, s.id, "story-to-date"),
+      foldJobActive: hasActiveJobForStoryToDate(db, s.id, "story-to-date-fold"),
       nameJobActive: hasActiveJobForStoryToDate(db, s.id, "archive-name"),
     };
   });
+
+  const activeMemoryJobs: ActiveMemoryJobView[] = listActiveJobs(db)
+    .filter((j) => MEMORY_JOB_TYPES.has(j.jobType))
+    .map((j: JobRow) => ({
+      id: j.id,
+      jobType: j.jobType,
+      status: j.status as "pending" | "running",
+      createdAt: j.createdAt,
+      startedAt: j.startedAt,
+      targetSegmentId: j.targetStoryToDateId,
+    }));
 
   segments.sort((a, b) => b.seq - a.seq);
 
@@ -65,6 +90,7 @@ export function buildStoryToDateView(db: Database.Database, logbookId: string): 
 
   return {
     segments,
+    activeMemoryJobs,
     mergedCoverageThroughPost: last?.coverageThroughIcPost ?? null,
     icPostCount: countIcPosts(db, logbookId),
     total: segments.length,

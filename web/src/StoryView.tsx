@@ -36,7 +36,7 @@ import type { LayoutRegion } from "./api";
 import { useStoryLogScroll } from "./useStoryLogScroll";
 import "./StoryView.css";
 
-const MEMORY_JOB_TYPES = new Set(["story-to-date"]);
+const MEMORY_JOB_TYPES = new Set(["story-to-date", "story-to-date-fold"]);
 
 /** Raw entries (both IC and hidden OOC pages) kept loaded at once before "load earlier" is needed. */
 const LOG_PAGE_SIZE = 80;

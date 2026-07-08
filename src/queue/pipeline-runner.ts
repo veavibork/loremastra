@@ -428,15 +428,23 @@ const trackedDbs = new Map<string, Database.Database>();
 /** One AbortController per currently-running job, so a cancel request can actually abort its in-flight Featherless call instead of just flipping a DB flag. Populated when a job is claimed, deleted in its executor's `finally`. */
 const runningControllers = new Map<string, AbortController>();
 
+function beginCancellableWorkerJob(jobId: string): AbortController {
+  const controller = new AbortController();
+  runningControllers.set(jobId, controller);
+  return controller;
+}
+
+function endCancellableWorkerJob(jobId: string): void {
+  runningControllers.delete(jobId);
+}
+
 /**
  * Aborts a running job's in-flight call. Returns false if the job isn't currently running here
  * (already terminal, still pending, or a job type with no mid-flight cancel support) — callers
  * should fall back to marking it cancelled directly in that case.
  *
- * Horde jobs deliberately fall into the "no mid-flight cancel support" bucket, same as
- * compress/archive today — explicit scope decision (2026-07-03): a request that's already
- * submitted just runs to completion rather than chasing the narrow, hard-to-hit window between
- * "submitted" and "resolved" that real cancellation would require synchronizing against.
+ * Horde jobs deliberately fall into the "no mid-flight cancel support" bucket — explicit scope
+ * decision (2026-07-03): a request that's already submitted just runs to completion.
  */
 export function requestJobCancel(jobId: string): boolean {
   const controller = runningControllers.get(jobId);
@@ -1298,6 +1306,7 @@ async function executeStoryToDateNameJob(
   jobId: string,
   segmentId: string
 ): Promise<void> {
+  const controller = beginCancellableWorkerJob(jobId);
   const startedAt = Date.now();
   try {
     const segment = getStoryToDateSegment(db, segmentId);
@@ -1317,7 +1326,10 @@ async function executeStoryToDateNameJob(
       try {
         const rawText = await withModelFallback(workerProfile, (profile) => {
           usedModel = profile.model;
-          return completeChat(profile, featherlessKey, nameMessages, { maxTokens: NAMING_MAX_TOKENS });
+          return completeChat(profile, featherlessKey, nameMessages, {
+            maxTokens: NAMING_MAX_TOKENS,
+            signal: controller.signal,
+          });
         });
         name = extractStoryName(rawText);
         if (!name?.trim()) {
@@ -1332,9 +1344,14 @@ async function executeStoryToDateNameJob(
     fillStoryToDateSegmentName(db, segmentId, name);
     finishJob(db, jobId, "done", undefined, { model: usedModel, elapsedMs: Date.now() - startedAt });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finishJob(db, jobId, "failed", message);
+    if (err instanceof JobCancelledError) {
+      cancelJob(db, jobId);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      finishJob(db, jobId, "failed", message);
+    }
   } finally {
+    endCancellableWorkerJob(jobId);
     releaseSlot(userId, jobId);
     releaseWorkerLane();
   }
@@ -1348,11 +1365,12 @@ async function executeStoryToDateJobWrapper(
   jobId: string,
   segmentId: string
 ): Promise<void> {
+  const controller = beginCancellableWorkerJob(jobId);
   const startedAt = Date.now();
   try {
     const apiKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     if (!apiKey) throw new Error("no Featherless API key configured");
-    await executeStoryToDateJob(db, userId, storyId, logbookId, segmentId, apiKey);
+    await executeStoryToDateJob(db, userId, storyId, logbookId, segmentId, apiKey, controller.signal);
     const editor = getAgentProfile(userId, "editor");
     finishJob(db, jobId, "done", undefined, {
       model: editor.model,
@@ -1365,9 +1383,14 @@ async function executeStoryToDateJobWrapper(
     // them from contending for the single account slot.
     enqueueEligibleFoldJob(db, userId, logbookId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finishJob(db, jobId, "failed", message);
+    if (err instanceof JobCancelledError) {
+      cancelJob(db, jobId);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      finishJob(db, jobId, "failed", message);
+    }
   } finally {
+    endCancellableWorkerJob(jobId);
     releaseSlot(userId, jobId);
     releaseWorkerLane();
   }
@@ -1380,17 +1403,23 @@ async function executeStoryToDateFoldJobWrapper(
   jobId: string,
   targetSegmentId: string
 ): Promise<void> {
+  const controller = beginCancellableWorkerJob(jobId);
   const startedAt = Date.now();
   try {
     const apiKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? "";
     if (!apiKey) throw new Error("no Featherless API key configured");
-    await executeStoryToDateFoldJob(db, userId, logbookId, targetSegmentId, apiKey);
+    await executeStoryToDateFoldJob(db, userId, logbookId, targetSegmentId, apiKey, controller.signal);
     const editor = getAgentProfile(userId, "editor");
     finishJob(db, jobId, "done", undefined, { model: editor.model, elapsedMs: Date.now() - startedAt });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finishJob(db, jobId, "failed", message);
+    if (err instanceof JobCancelledError) {
+      cancelJob(db, jobId);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      finishJob(db, jobId, "failed", message);
+    }
   } finally {
+    endCancellableWorkerJob(jobId);
     releaseSlot(userId, jobId);
     releaseWorkerLane();
   }

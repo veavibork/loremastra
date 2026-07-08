@@ -414,9 +414,8 @@ export async function completeChat(
   const inputTokens = estimateMessageTokens(messages);
   logOutboundRequest({ call: "completeChat", model: profile.model, messages });
   const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS, options?.signal);
-  let response: Response;
   try {
-    response = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
+    const response = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
         ...BASE_HEADERS,
@@ -433,24 +432,24 @@ export async function completeChat(
       }),
       signal: timeout.signal,
     });
+
+    if (!response.ok) {
+      recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
+      throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${await safeText(response)}`);
+    }
+
+    const data = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
+      throw new Error("model returned an empty completion");
+    }
+
+    recordOutcome(profile, { success: true, inputTokens, outputTokens: estimateTokens(content) });
+    return content;
   } finally {
     timeout.cleanup();
   }
-
-  if (!response.ok) {
-    recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
-    throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${await safeText(response)}`);
-  }
-
-  const data = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) {
-    recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
-    throw new Error("model returned an empty completion");
-  }
-
-  recordOutcome(profile, { success: true, inputTokens, outputTokens: estimateTokens(content) });
-  return content;
 }
 
 export interface ToolDefinition {

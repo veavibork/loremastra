@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   backfillStoryToDateNames,
+  cancelJob,
   deleteStoryToDateSegment,
   enqueueStoryToDate,
   fetchStoryToDate,
   requeueStoryToDateSegment,
   updateStoryToDateSegment,
+  type ActiveMemoryJob,
   type StoryToDatePage,
   type StoryToDateSegment,
 } from "./api";
@@ -16,10 +18,12 @@ const POLL_MS = 3000;
 
 function applyPage(
   setSegments: (s: StoryToDateSegment[]) => void,
-  setStats: (s: Omit<StoryToDatePage, "segments">) => void,
+  setStats: (s: Omit<StoryToDatePage, "segments" | "activeMemoryJobs">) => void,
+  setActiveMemoryJobs: (jobs: ActiveMemoryJob[]) => void,
   page: StoryToDatePage
 ) {
   setSegments(page.segments);
+  setActiveMemoryJobs(page.activeMemoryJobs ?? []);
   setStats({
     mergedCoverageThroughPost: page.mergedCoverageThroughPost,
     icPostCount: page.icPostCount ?? 0,
@@ -39,11 +43,26 @@ function segmentLabel(seg: StoryToDateSegment): string {
   return `${kind} · seq ${seg.seq}`;
 }
 
+function memoryJobLabel(job: ActiveMemoryJob): string {
+  if (job.jobType === "story-to-date-fold") return "Folding older memory";
+  if (job.jobType === "story-to-date") return "Compressing story memory";
+  if (job.jobType === "archive-name") return "Naming segment";
+  return job.jobType;
+}
+
+function memoryJobElapsed(job: ActiveMemoryJob): string {
+  const anchor = job.startedAt ?? job.createdAt;
+  const sec = Math.max(0, Math.floor((Date.now() - new Date(anchor).getTime()) / 1000));
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec / 60)}m ${sec % 60}s`;
+}
+
 /**
  * [STORY TO DATE] segments — collapse/expand, edit, and optional scene titles (Archives tab only).
  */
 export default function ArchivesView({ story }: PanelProps) {
   const [segments, setSegments] = useState<StoryToDateSegment[]>([]);
+  const [activeMemoryJobs, setActiveMemoryJobs] = useState<ActiveMemoryJob[]>([]);
   const [stats, setStats] = useState({
     mergedCoverageThroughPost: null as number | null,
     icPostCount: 0,
@@ -65,7 +84,7 @@ export default function ArchivesView({ story }: PanelProps) {
     async (background = false) => {
       if (!story) return;
       const page = await fetchStoryToDate(story.id, { background });
-      applyPage(setSegments, setStats, page);
+      applyPage(setSegments, setStats, setActiveMemoryJobs, page);
     },
     [story]
   );
@@ -75,7 +94,7 @@ export default function ArchivesView({ story }: PanelProps) {
     void (async () => {
       try {
         const page = await backfillStoryToDateNames(story.id);
-        applyPage(setSegments, setStats, page);
+        applyPage(setSegments, setStats, setActiveMemoryJobs, page);
       } catch {
         await refresh();
       }
@@ -98,7 +117,7 @@ export default function ArchivesView({ story }: PanelProps) {
     setError(null);
     try {
       const page = await fn();
-      applyPage(setSegments, setStats, page);
+      applyPage(setSegments, setStats, setActiveMemoryJobs, page);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -157,6 +176,39 @@ export default function ArchivesView({ story }: PanelProps) {
       </div>
 
       {error && <p className="archives-error">{error}</p>}
+      {activeMemoryJobs.length > 0 && (
+        <div className="archives-active-jobs">
+          {activeMemoryJobs.map((job) => (
+            <div key={job.id} className="archives-active-job">
+              <span>
+                {memoryJobLabel(job)} ({job.status}, {memoryJobElapsed(job)})
+              </span>
+              <button
+                type="button"
+                className="archives-cancel-job"
+                disabled={busyKey === job.id}
+                onClick={() =>
+                  void (async () => {
+                    if (!story) return;
+                    setBusyKey(job.id);
+                    setError(null);
+                    try {
+                      await cancelJob(story.id, job.id);
+                      await refresh(true);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err));
+                    } finally {
+                      setBusyKey(null);
+                    }
+                  })()
+                }
+              >
+                Cancel
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {stats.total === 0 && (
         <p className="archives-empty">No [STORY TO DATE] segments yet — queue a job or keep playing.</p>
       )}
@@ -175,7 +227,9 @@ export default function ArchivesView({ story }: PanelProps) {
           const isExpanded = expanded.has(seg.id);
           const statusLabel =
             seg.status === "ready"
-              ? "ready"
+              ? seg.foldJobActive
+                ? "folding"
+                : "ready"
               : seg.status === "broken"
                 ? "broken"
                 : seg.jobActive
@@ -198,6 +252,7 @@ export default function ArchivesView({ story }: PanelProps) {
                     {seg.tokenCount != null && ` · ~${seg.tokenCount.toLocaleString()} tok`}
                     {seg.createdAt && ` · ${new Date(seg.createdAt).toLocaleString()}`}
                     {seg.nameJobActive && " · naming…"}
+                    {seg.foldJobActive && " · folding…"}
                     {seg.jobActive && " · generating…"}
                     {seg.hidden && " · hidden"}
                   </span>

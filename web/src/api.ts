@@ -572,11 +572,22 @@ export interface StoryToDateSegment {
   status: "ready" | "pending" | "broken";
   tokenCount: number | null;
   jobActive: boolean;
+  foldJobActive: boolean;
   nameJobActive: boolean;
+}
+
+export interface ActiveMemoryJob {
+  id: string;
+  jobType: string;
+  status: "pending" | "running";
+  createdAt: string;
+  startedAt: string | null;
+  targetSegmentId: string | null;
 }
 
 export interface StoryToDatePage {
   segments: StoryToDateSegment[];
+  activeMemoryJobs: ActiveMemoryJob[];
   mergedCoverageThroughPost: number | null;
   icPostCount: number;
   total: number;
