@@ -6,14 +6,17 @@ import { getAgentProfile } from "./agent-config.js";
 import { STORY_TO_DATE_FOLD_TIMEOUT_MS } from "./story-to-date-fold-worker.js";
 import {
   buildDefaultBeginsSystemPrompt,
-  buildDefaultContinuesSystemPrompt,
+  buildNextSceneContinuesSystemPrompt,
   buildSeamRetryUserMessage,
   buildStoryCorpus,
   extractCoverage,
   extractStoryBlock,
   formatCorpusForEditor,
   mergeStoryToDate,
+  sanitizeStoryBlockContent,
   shouldRetrySeamGate,
+  STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD,
+  storyBlockWordOverlapRatio,
   stripStoryToDateWrapper,
   type StoryBlockKind,
   type StoryToDateSegment,
@@ -58,7 +61,7 @@ function buildMessages(
   const system =
     kind === "begins"
       ? buildDefaultBeginsSystemPrompt(corpus.inputCeilingPost)
-      : buildDefaultContinuesSystemPrompt(corpus.inputCeilingPost, priorCoveragePost);
+      : buildNextSceneContinuesSystemPrompt(corpus.inputCeilingPost, priorCoveragePost);
 
   const user =
     kind === "begins"
@@ -158,6 +161,25 @@ export async function executeStoryToDateJob(
         lastError = "missing block or coverage";
         continue;
       }
+
+      candidate = {
+        ...candidate,
+        block: sanitizeStoryBlockContent(candidate.block),
+      };
+      if (!candidate.block) {
+        lastError = "empty block after sanitization";
+        continue;
+      }
+
+      if (kind === "continues" && priorSegments.length) {
+        const priorBlock = priorSegments[priorSegments.length - 1]!.content;
+        const overlap = storyBlockWordOverlapRatio(candidate.block, priorBlock);
+        if (overlap >= STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD) {
+          lastError = `block duplicates prior segment (${(overlap * 100).toFixed(1)}% word overlap)`;
+          continue;
+        }
+      }
+
       if (corpus.includedPosts.length === 0) {
         lastError = "no log prose in editor input";
         continue;

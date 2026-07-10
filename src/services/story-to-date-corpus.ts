@@ -431,6 +431,76 @@ export function shouldRetrySeamGate(coverageThroughPost: number, inputCeilingPos
   return inputCeilingPost != null && coverageThroughPost === inputCeilingPost;
 }
 
+/** Strip echoed bracket labels the model sometimes pastes into memory prose. */
+export function sanitizeStoryBlockContent(text: string): string {
+  return text
+    .replace(/\s*\[\/STORY (?:BEGINS|CONTINUES)\]\s*/gi, " ")
+    .replace(/\s*\[STORY (?:BEGINS|CONTINUES|TO DATE|ENDS)\]\s*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function storyBlockWordList(text: string): string[] {
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+/** Fraction of block A's words also present in block B (case-insensitive). */
+export function storyBlockWordOverlapRatio(a: string, b: string): number {
+  const aw = storyBlockWordList(a);
+  const setB = new Set(storyBlockWordList(b).map((w) => w.toLowerCase()));
+  const shared = aw.filter((w) => setB.has(w.toLowerCase())).length;
+  return aw.length ? shared / aw.length : 0;
+}
+
+/** Continues blocks at or above this overlap with the prior segment are rejected and retried. */
+export const STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD = 0.85;
+
+const NEXT_SCENE_LENGTH_INSTRUCTION =
+  "Length: one scene only — typically 80–200 words (one or two paragraphs). Do not scale length to how many posts remain in the input; quiet scenes stay short.";
+
+const NEXT_SCENE_CONTINUES_ADDENDUM = `SCOPE: Summarize only the next scene — the first self-contained beat after prior coverage ends. Do not batch multiple scenes. Do not re-state the closing beat already in [STORY TO DATE]; open on the first new consequential state change. Never echo bracket labels like [STORY CONTINUES] inside the prose.`;
+
+function buildNextSceneCeilingInstruction(inputCeilingPost: number | null): string {
+  if (inputCeilingPost == null) {
+    return "End coverage at the first complete scene seam in the new log — not at the end of the input.";
+  }
+  return `The input includes posts through ${inputCeilingPost}, but you must NOT try to cover them all. Stop at the FIRST complete scene seam after prior coverage — even if dozens of posts remain. Treat ${inputCeilingPost} as an upper bound only, not a target. If that seam lands mid-conversation (embedded text threads count as one scene), roll [COVERAGE] back further. Do not write closing framing for beats that continue after your coverage.`;
+}
+
+/** Continues prompt: one scene per block instead of compressing the full input batch. */
+export function buildNextSceneContinuesSystemPrompt(
+  inputCeilingPost: number | null,
+  priorCoveragePost: number | null,
+  opts: { guidance?: string } = {}
+): string {
+  const prior =
+    priorCoveragePost != null
+      ? `[STORY TO DATE] already covers through post ${priorCoveragePost}. Only summarize posts after ${priorCoveragePost}. Open where [STORY TO DATE] left off — do not skip intervening events.`
+      : "";
+
+  const guidance = opts.guidance ?? INCLUDE_EXCLUDE_GUIDANCE;
+
+  return `You are the Editor, extending an existing "story so far" memory block.
+
+You receive the complete worldbook, the current [STORY TO DATE], and new in-character verbose prose that begins after prior coverage ended. Post numbers are absolute from kickoff; hidden turns occupy numbers but are omitted from the log.
+
+${prior}
+
+Write a [STORY CONTINUES] block that picks up where [STORY TO DATE] left off — same Register, third person. This is memory, not narration: telling-only memory — record what future scenes and NPCs must remember, not how it played out beat by beat. Do not re-introduce events already in [STORY TO DATE] — extend the causal spine only. Do not invent events. Append-only: do not contradict or rewrite prior memory.
+
+${NEXT_SCENE_CONTINUES_ADDENDUM}
+
+${guidance}
+
+${NEXT_SCENE_LENGTH_INSTRUCTION}
+
+${buildNextSceneCeilingInstruction(inputCeilingPost)}
+
+After [STORY CONTINUES], report coverage through [COVERAGE]N[/COVERAGE] where N is the kickoff post number through which this block reaches (absolute). N must be ≤ ${inputCeilingPost ?? "the highest post in the input"} and must land on a complete scene, not mid-scene.
+
+You must write [STORY CONTINUES]…[/STORY CONTINUES] then [COVERAGE]N[/COVERAGE]. Use the exact closing tag [/STORY CONTINUES] — not [STORY ENDS]. No other text is read.`;
+}
+
 export function stripStoryToDateWrapper(text: string): string {
   const match = /\[STORY TO DATE\]([\s\S]*?)\[\/STORY TO DATE\]/i.exec(text.trim());
   return match?.[1]?.trim() ?? text.trim();

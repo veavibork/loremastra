@@ -23,12 +23,15 @@ import {
   buildStoryCorpus,
   formatCorpusForEditor,
   buildDefaultBeginsSystemPrompt,
-  buildDefaultContinuesSystemPrompt,
+  buildNextSceneContinuesSystemPrompt,
   buildSeamRetryUserMessage,
   shouldRetrySeamGate,
   extractStoryBlock,
   extractCoverage,
   mergeStoryToDate,
+  sanitizeStoryBlockContent,
+  STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD,
+  storyBlockWordOverlapRatio,
   stripStoryToDateWrapper,
   estimateTokens,
   MIN_VERBOSE_IC_POSTS,
@@ -112,7 +115,7 @@ async function main() {
 
     const system = kind === "begins"
       ? buildDefaultBeginsSystemPrompt(corpus.inputCeilingPost)
-      : buildDefaultContinuesSystemPrompt(corpus.inputCeilingPost, priorCoverage);
+      : buildNextSceneContinuesSystemPrompt(corpus.inputCeilingPost, priorCoverage);
     const corpusText = formatCorpusForEditor(corpus, corpus.includedPosts, true);
     const user = kind === "begins"
       ? `Compress the following into [STORY BEGINS]:\n\n${corpusText}`
@@ -131,6 +134,16 @@ async function main() {
         if (rb && rc != null && rc < coverage && rc <= corpus.inputCeilingPost) { block = rb; coverage = rc; }
       }
       if (!block || coverage == null) { console.log(`  seq ${seq} attempt ${attempt}: no block/coverage`); continue; }
+      block = sanitizeStoryBlockContent(block);
+      if (!block) { console.log(`  seq ${seq} attempt ${attempt}: empty after sanitization`); continue; }
+      if (kind === "continues" && priorRows.length) {
+        const priorBlock = priorRows[priorRows.length - 1]!.content!.trim();
+        const overlap = storyBlockWordOverlapRatio(block, priorBlock);
+        if (overlap >= STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD) {
+          console.log(`  seq ${seq} attempt ${attempt}: duplicate of prior (${(overlap * 100).toFixed(1)}% overlap)`);
+          continue;
+        }
+      }
       if (corpus.inputCeilingPost != null && coverage > corpus.inputCeilingPost) { console.log(`  seq ${seq}: coverage>${corpus.inputCeilingPost}`); continue; }
       const chainEntry = buildChainPostIndex(db, logbook.id).find((e) => e.postNumber === coverage);
       if (!chainEntry || chainEntry.hidden) { console.log(`  seq ${seq}: coverage ${coverage} off visible chain`); continue; }
