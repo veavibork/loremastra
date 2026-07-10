@@ -118,8 +118,8 @@ export default function WorldbookView({ story }: PanelProps) {
                 const after = job.tokenEstimate ?? 0;
                 const cut = before > 0 ? Math.round((1 - after / before) * 100) : 0;
                 return before > 0
-                  ? `Crunch complete: ${before} → ${after} tokens (~${cut}% cut). See Logs → Queue for details.`
-                  : "Crunch complete. See Logs → Queue for details.";
+                  ? `Crunch complete: ${before} → ${after} tokens (~${cut}% cut). See Queue tab for details.`
+                  : "Crunch complete. See Queue tab for details.";
               })()
           );
           return;

@@ -43,6 +43,7 @@ const TAB_LABELS: Record<string, string> = {
   "story:play": "Story",
   "story:saves": "Saves",
   "story:logs": "Logs",
+  "story:queue": "Queue",
   "story:archives": "Archives",
   "lore:worldbook": "Worldbook",
   "lore:memory": "Memory",
@@ -92,6 +93,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: true,
         justify: "center",
         buttons: [
+          { id: "story:queue", label: "Queue", visible: true },
           { id: "story:logs", label: "Logs", visible: true },
           { id: "config:agents", label: "Agents", visible: true },
           { id: "config:prompts", label: "Prompts", visible: true },
@@ -196,30 +198,26 @@ function mergeInputBarButtons(config: LayoutConfigData): LayoutConfigData {
 }
 
 function mergeNavButtons(config: LayoutConfigData): LayoutConfigData {
-  const existingIds = new Set(
-    config.nav.containers.flatMap((c) => c.buttons.map((b) => b.id))
-  );
-  const missing: LayoutButton[] = [];
-  for (const container of DEFAULT_LAYOUT_CONFIG.nav.containers) {
-    for (const btn of container.buttons) {
-      if (!existingIds.has(btn.id) && !REMOVED_TAB_IDS.has(btn.id)) {
-        missing.push(btn);
-        existingIds.add(btn.id);
-      }
+  let result = config;
+  for (const defaultContainer of DEFAULT_LAYOUT_CONFIG.nav.containers) {
+    for (const btn of defaultContainer.buttons) {
+      if (REMOVED_TAB_IDS.has(btn.id)) continue;
+      const already = result.nav.containers.some((c) => c.buttons.some((b) => b.id === btn.id));
+      if (already) continue;
+      const target =
+        result.nav.containers.find((c) => c.id === defaultContainer.id) ?? result.nav.containers[0];
+      if (!target) continue;
+      result = {
+        ...result,
+        nav: {
+          containers: result.nav.containers.map((c) =>
+            c.id === target.id ? { ...c, buttons: [...c.buttons, btn] } : c
+          ),
+        },
+      };
     }
   }
-  if (missing.length === 0) return config;
-
-  const primary = config.nav.containers.find((c) => c.id === "nav-primary") ?? config.nav.containers[0];
-  if (!primary) return config;
-  return {
-    ...config,
-    nav: {
-      containers: config.nav.containers.map((c) =>
-        c.id === primary.id ? { ...c, buttons: [...c.buttons, ...missing] } : c
-      ),
-    },
-  };
+  return result;
 }
 
 function migrateV1(raw: LayoutConfigV1): LayoutConfigData {

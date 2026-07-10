@@ -3,6 +3,7 @@ import WorldbookView from "./WorldbookView";
 import StoryPanel from "./StoryPanel";
 import SavesView from "./SavesView";
 import LogsView from "./LogsView";
+import QueueView from "./QueueView";
 import ArchivesView from "./ArchivesView";
 import AgentsView from "./AgentsView";
 import MemoryView from "./MemoryView";
@@ -20,6 +21,7 @@ const REGISTRY: Record<string, ComponentType<PanelProps>> = {
   "story:play": StoryPanel,
   "story:saves": SavesView,
   "story:logs": LogsView,
+  "story:queue": QueueView,
   "story:archives": ArchivesView,
   "lore:worldbook": WorldbookView,
   "lore:memory": MemoryView,
