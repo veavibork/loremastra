@@ -33,7 +33,7 @@ function previewText(content: string, max = 60): string {
   const line =
     content.split("\n").find((l) => {
       const t = l.trim();
-      return t && !/^Entry type:\s*/i.test(t) && !/^Worldbook entry to compact:/i.test(t);
+      return t && !/^Entry type:\s*/i.test(t) && !/^Worldbook entry to compact:/i.test(t) && !/^\[(CONTENT|ROSTER|MEMORY)\]$/i.test(t);
     }) ?? "";
   return line.length > max ? `${line.slice(0, max)}…` : line;
 }

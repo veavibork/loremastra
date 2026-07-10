@@ -203,7 +203,7 @@ Preserve exactly, in meaning:
 - Any generation directives (Register, Embrace/Refuse/content rules).
 - The character or place at their ORIGINAL state — do not advance them to their current story state, add traits, or infer anything not already written.
 
-Output ONLY the rewritten entry — no preamble, no commentary, no code fences. Begin with the entry's schema marker ([CONTENT], [ROSTER], or [MEMORY]) exactly as in the original. Never prefix with metadata labels such as "Entry type:".`;
+Output ONLY the rewritten entry — no preamble, no commentary, no code fences. Do not wrap the output in [CONTENT], [ROSTER], or [MEMORY] bracket tags — stored entries are raw field content only (Identity:, Premise:, etc.). Never prefix with metadata labels such as "Entry type:".`;
 
 export interface IcProseSteeringOptions {
   register?: string | null;

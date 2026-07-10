@@ -21,6 +21,31 @@ interface RawWorldbookEntryRow {
   entry_type: WorldbookEntryType;
 }
 
+const WORLDBOOK_CLOSE_TAG: Record<WorldbookEntryType, string> = {
+  content: "[/CONTENT]",
+  roster: "[/ROSTER]",
+  memory: "[/MEMORY]",
+};
+
+/** Stored entries are raw field content — bracket tags are added only when assembling prompts. */
+export function normalizeWorldbookStoredContent(content: string, entryType: WorldbookEntryType): string {
+  let text = content.trim();
+  for (let i = 0; i < 5; i++) {
+    const next = text
+      .replace(/^Entry type:\s*(CONTENT|ROSTER|MEMORY)\s*\n+/i, "")
+      .replace(/^Worldbook entry to compact:\s*\n+/i, "")
+      .replace(/^\[(CONTENT|ROSTER|MEMORY)\]\s*\n?/i, "")
+      .trim();
+    if (next === text) break;
+    text = next;
+  }
+  const close = WORLDBOOK_CLOSE_TAG[entryType];
+  if (text.toUpperCase().endsWith(close.toUpperCase())) {
+    text = text.slice(0, -close.length).trimEnd();
+  }
+  return text;
+}
+
 function toEntry(row: RawWorldbookEntryRow, page: { bookId: string; hidden: boolean; broken: boolean; createdAt: string }, text: TextRow): WorldbookEntry {
   return {
     pageId: row.page_id,
@@ -29,7 +54,7 @@ function toEntry(row: RawWorldbookEntryRow, page: { bookId: string; hidden: bool
     hidden: page.hidden,
     broken: page.broken,
     createdAt: page.createdAt,
-    content: text.genPackage ?? "",
+    content: normalizeWorldbookStoredContent(text.genPackage ?? "", row.entry_type),
     currentTextId: text.id,
   };
 }
@@ -42,7 +67,7 @@ export function createWorldbookEntry(
     const { page, text } = createPageWithText(db, {
       bookId: input.bookId,
       role: "system",
-      genPackage: input.content,
+      genPackage: normalizeWorldbookStoredContent(input.content, input.entryType),
     });
     db.prepare(`INSERT INTO worldbook_entry (page_id, entry_type) VALUES (?, ?)`).run(page.id, input.entryType);
     return { page, text };
@@ -96,7 +121,7 @@ export function updateWorldbookEntry(db: Database.Database, pageId: string, inpu
       pageId,
       priorTextId: existing.currentTextId,
       role: "system",
-      genPackage: input.content,
+      genPackage: normalizeWorldbookStoredContent(input.content, existing.entryType),
     });
   }
   return getWorldbookEntry(db, pageId)!;

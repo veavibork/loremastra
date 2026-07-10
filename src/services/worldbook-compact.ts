@@ -6,6 +6,7 @@ import { getGlobalDb } from "../db/global-db.js";
 import {
   listWorldbookEntries,
   updateWorldbookEntry,
+  normalizeWorldbookStoredContent,
   type WorldbookEntry,
   type WorldbookEntryType,
 } from "../db/worldbook-store.js";
@@ -54,12 +55,14 @@ const CLOSING_TAG: Record<WorldbookEntryType, string> = {
 };
 
 /** Strip prompt-leakage prefixes from prior bad compacts or model echo. */
-export function stripCompactPromptLeakage(content: string): string {
+export function stripCompactPromptLeakage(content: string, entryType?: WorldbookEntryType): string {
+  if (entryType) return normalizeWorldbookStoredContent(content, entryType);
   let text = content.trim();
   for (let i = 0; i < 3; i++) {
     const next = text
       .replace(/^Entry type:\s*(CONTENT|ROSTER|MEMORY)\s*\n+/i, "")
       .replace(/^Worldbook entry to compact:\s*\n+/i, "")
+      .replace(/^\[(CONTENT|ROSTER|MEMORY)\]\s*\n?/i, "")
       .trim();
     if (next === text) break;
     text = next;
@@ -107,13 +110,14 @@ async function compactEntryContent(
   apiKey: string,
   entry: WorldbookEntry
 ): Promise<string> {
-  const source = stripCompactPromptLeakage(entry.content);
+  const source = stripCompactPromptLeakage(entry.content, entry.entryType);
   const messages: ChatMessage[] = [
     { role: "system", content: buildCompactSystemPrompt(entry.entryType) },
     { role: "user", content: source },
   ];
-  return stripCompactPromptLeakage(
-    (await completeChat(editor, apiKey, messages, { maxTokens: editor.responseLimit })).trim()
+  return normalizeWorldbookStoredContent(
+    (await completeChat(editor, apiKey, messages, { maxTokens: editor.responseLimit })).trim(),
+    entry.entryType
   );
 }
 
