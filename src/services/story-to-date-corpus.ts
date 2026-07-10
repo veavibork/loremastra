@@ -431,13 +431,17 @@ export function shouldRetrySeamGate(coverageThroughPost: number, inputCeilingPos
   return inputCeilingPost != null && coverageThroughPost === inputCeilingPost;
 }
 
-/** Strip echoed bracket labels the model sometimes pastes into memory prose. */
+/** Strip echoed bracket labels the model sometimes pastes into memory prose. Preserves paragraph breaks. */
 export function sanitizeStoryBlockContent(text: string): string {
-  return text
-    .replace(/\s*\[\/STORY (?:BEGINS|CONTINUES)\]\s*/gi, " ")
+  const stripped = text
+    .replace(/\s*\[\/STORY (?:BEGINS|CONTINUES)\]\s*/gi, "\n")
     .replace(/\s*\[STORY (?:BEGINS|CONTINUES|TO DATE|ENDS)\]\s*/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\r\n/g, "\n");
+  return stripped
+    .split(/\n{2,}/)
+    .map((para) => para.replace(/\n/g, " ").replace(/[^\S ]+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function storyBlockWordList(text: string): string[] {
