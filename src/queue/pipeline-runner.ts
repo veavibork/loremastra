@@ -63,6 +63,7 @@ import type { AgentProfile } from "../config.js";
 import { isOpeningPostPage, resolveIcStartPageId } from "../services/kickoff.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
+import { resolveRegisterFromContent } from "../services/worldbook-pc.js";
 import { enqueueEligibleStoryToDateJob, enqueueStoryToDateNameJob, enqueueEligibleFoldJob } from "../services/story-to-date.js";
 import { executeStoryToDateJob } from "../services/story-to-date-worker.js";
 import { executeStoryToDateFoldJob } from "../services/story-to-date-fold-worker.js";
@@ -667,16 +668,18 @@ function buildProseHistory(
     history = assembleAuthorPrompt(db, userId, targetPage.bookId, targetPage.prevPageId);
   }
 
+  const register = resolveRegisterFromContent(db);
   const guidance = jobGuidance.get(jobId);
+  const steeringOpts = {
+    register,
+    tenseGuard: guidance?.intent === "continue" || guidance?.intent === "regenerate",
+    guidance: guidance?.text,
+    intent: guidance?.intent,
+  };
   if (guidance) {
     jobGuidance.delete(jobId);
-    history = [
-      ...history,
-      { role: "system", content: icProseSteeringNote(guidance.text, guidance.intent) },
-    ];
-  } else {
-    history = [...history, { role: "system", content: icProseSteeringNote() }];
   }
+  history = [...history, { role: "system", content: icProseSteeringNote(steeringOpts) }];
 
   return { history, targetPage };
 }

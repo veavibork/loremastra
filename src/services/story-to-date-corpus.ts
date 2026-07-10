@@ -320,7 +320,7 @@ COMPRESS hard or drop entirely: resolved sub-threads (a conflict that ended, a t
 
 Preserve chronology and the causal throughline (this led to that). Use proper names; never "you/your" for the player character. Do not invent events. Do not reference or fold in the recent memory — it is not here.
 
-Length: aim for about ${targetWords} words — the load-bearing spine of the deep past, no more. Write flowing third-person prose in the same register as the input.
+Length: aim for about ${targetWords} words — the load-bearing spine of the deep past, no more. Write flowing third-person prose in the same Register as the input — not clinical reportage.
 
 Output ONLY the digest prose — no headings, labels, or commentary.`;
 }
@@ -350,9 +350,9 @@ export function buildLengthTargetInstruction(coveredPosts: number | null): strin
 
 export const INCLUDE_EXCLUDE_GUIDANCE = `INCLUDE: state changes, decisions, and their consequences; relationships and how they shift; emotional shifts and the tenor between characters; forms of address, nicknames, and pet names as they develop (these are relationship state); promises and commitments; secrets revealed or still hidden; injuries, deaths, and standing threats; anything a later scene would contradict if it were forgotten. Preserve the causal throughline (this happened, therefore…).
 
-EXCLUDE: verbatim or near-verbatim dialogue; logistics and coordination chatter (who texted whom, who fetched what); blow-by-blow physical or sexual choreography beyond what changes the situation; songs, links, and references unless plot-loadbearing; sensory colour that carries no consequence. Do not invent events absent from the log.
+EXCLUDE: verbatim or near-verbatim dialogue; logistics and coordination chatter (who texted whom, who fetched what); blow-by-blow physical or sexual choreography beyond what changes the situation; songs, links, and references unless plot-loadbearing; eyeball kicks without plot weight. Do not invent events absent from the log.
 
-Compress hardest on the scenes that feel most vivid — high-emotion beats are where the temptation to transcribe is strongest and where compression matters most. Never paste or lightly reword lines from the log; paraphrase everything in the memory register — keep the emotional truth and what changed between characters, drop the moment-to-moment staging. The closing paragraphs must be as compressed as the opening ones.`;
+Telling-only memory: state changes and relationship shifts — no beat-by-beat staging. Compress hardest where telling-not-showing risk is highest — high-affect beats tempt beat-by-beat transcription. Never paste or lightly reword lines from the log; paraphrase everything in the memory register — keep the emotional truth and what changed between characters, drop the moment-to-moment staging. The closing paragraphs must be as compressed as the opening ones.`;
 
 export function buildDefaultBeginsSystemPrompt(
   inputCeilingPost: number | null,
@@ -366,7 +366,7 @@ export function buildDefaultBeginsSystemPrompt(
 
 You receive the complete worldbook (CONTENT, ROSTER, MEMORY) and in-character verbose prose. Post numbers are absolute from kickoff as post 1; hidden OOC/guide turns occupy numbers in the sequence but are not included in the log — expect gaps (e.g. post 198, then post 209).
 
-Write a [STORY BEGINS] block: third-person, matching the CONTENT register and tonality — not a neutral recap. This is memory, not narration: record what future scenes and NPCs must remember, not how it played out beat by beat.
+Write a [STORY BEGINS] block: third-person, matching the CONTENT Register — not clinical reportage. This is memory, not narration: telling-only memory — record what future scenes and NPCs must remember, not how it played out beat by beat.
 
 ${guidance}
 
@@ -403,7 +403,7 @@ You receive the complete worldbook, the current [STORY TO DATE], and new in-char
 
 ${prior}
 
-Write a [STORY CONTINUES] block that picks up where [STORY TO DATE] left off — same register, third person. This is memory, not narration: record what future scenes and NPCs must remember, not how it played out beat by beat. Do not repeat [STORY TO DATE]. Do not invent events. Append-only: do not contradict or rewrite prior memory.
+Write a [STORY CONTINUES] block that picks up where [STORY TO DATE] left off — same Register, third person. This is memory, not narration: telling-only memory — record what future scenes and NPCs must remember, not how it played out beat by beat. Do not re-introduce events already in [STORY TO DATE] — extend the causal spine only. Do not invent events. Append-only: do not contradict or rewrite prior memory.
 
 ${guidance}
 
@@ -424,7 +424,7 @@ export function buildSeamRetryUserMessage(
   const block = mode === "begins" ? "[STORY BEGINS]" : "[STORY CONTINUES]";
   return `Your [COVERAGE]${coverageThroughPost} equals the input ceiling (post ${inputCeilingPost}). That ceiling likely lands mid-scene or mid-conversation — embedded text threads count as one scene until the beat resolves.
 
-Rewrite ${block} with [COVERAGE] rolled back to the previous complete scene seam strictly before post ${inputCeilingPost}. Never summarize beyond the new coverage. Compress throughout; do not paste source posts verbatim. Same register and rules as before.`;
+Rewrite ${block} with [COVERAGE] rolled back to the previous complete scene seam strictly before post ${inputCeilingPost}. Never summarize beyond the new coverage. Compress throughout; do not paste source posts verbatim. Same Register, telling-only memory, and rules as before.`;
 }
 
 export function shouldRetrySeamGate(coverageThroughPost: number, inputCeilingPost: number | null): boolean {
