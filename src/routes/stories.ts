@@ -47,7 +47,10 @@ import {
 } from "../services/story-to-date-admin.js";
 import { buildStoryToDateView } from "../services/story-to-date-view.js";
 import { buildPromptPreview } from "../services/prompt-preview.js";
+import { cachedStoryRead } from "../services/story-read-cache.js";
 import { enqueueWorldbookCompactJob } from "../services/worldbook-compact.js";
+
+const STORY_READ_CACHE_TTL_MS = 2000;
 import {
   buildMemoryManifest,
   buildMemorySummary,
@@ -167,33 +170,37 @@ storiesRoute.delete("/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-storiesRoute.get("/:id/log", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
+storiesRoute.get("/:id/log", async (c) => {
+  const storyId = c.req.param("id");
+  const storyDb = openTrackedStoryDb(storyId);
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
   const limitParam = Number(c.req.query("limit"));
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.floor(limitParam) : undefined;
+  const beforePageId = c.req.query("beforePageId") || undefined;
+  const throughPageId = c.req.query("throughPageId") || undefined;
+  const cacheKey = `${storyId}:log:${limit ?? ""}:${beforePageId ?? ""}:${throughPageId ?? ""}`;
 
-  const page = buildLogView(storyDb, logbook.id, {
-    limit,
-    beforePageId: c.req.query("beforePageId") || undefined,
-    throughPageId: c.req.query("throughPageId") || undefined,
-  });
+  const page = await cachedStoryRead(cacheKey, STORY_READ_CACHE_TTL_MS, () =>
+    buildLogView(storyDb, logbook.id, { limit, beforePageId, throughPageId })
+  );
   return c.json(page);
 });
 
 /**
  * The assembled Author prompt at the current position — read-only, no inference call.
  */
-storiesRoute.get("/:id/prompt-preview", (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param("id"));
+storiesRoute.get("/:id/prompt-preview", async (c) => {
+  const storyId = c.req.param("id");
+  const userId = c.get("userId");
+  const storyDb = openTrackedStoryDb(storyId);
   const logbook = getBookByType(storyDb, "logbook");
   if (!logbook) return c.json({ error: "logbook not found" }, 404);
 
   const currentPageId = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id);
   if (!currentPageId) {
-    const author = getAgentProfile(c.get("userId"), "author");
+    const author = getAgentProfile(userId, "author");
     const usableBudget = author.contextLimit - author.responseLimit;
     return c.json({
       messages: [],
@@ -203,7 +210,11 @@ storiesRoute.get("/:id/prompt-preview", (c) => {
     });
   }
 
-  return c.json(buildPromptPreview(storyDb, c.get("userId"), logbook.id, currentPageId));
+  const cacheKey = `${storyId}:prompt-preview:${userId}:${currentPageId}`;
+  const preview = await cachedStoryRead(cacheKey, STORY_READ_CACHE_TTL_MS, () =>
+    buildPromptPreview(storyDb, userId, logbook.id, currentPageId)
+  );
+  return c.json(preview);
 });
 storiesRoute.get("/:id/story-to-date", (c) => {
   const storyDb = openTrackedStoryDb(c.req.param("id"));

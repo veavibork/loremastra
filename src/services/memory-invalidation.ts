@@ -10,6 +10,7 @@ import { getText, setTextBroken } from "../db/text-store.js";
 import { computeTextContentStamp } from "./content-stamp.js";
 import { enqueueEligibleStoryToDateJob, enqueuePendingStoryToDateJobs } from "./story-to-date.js";
 import { resolveChainPostNumber } from "./post-index.js";
+import { invalidateStoryReadCache } from "./story-read-cache.js";
 
 export { computeTextContentStamp, postNeedsCompress } from "./content-stamp.js";
 
@@ -114,6 +115,7 @@ export function onCanonicalTextChangedForStory(
   storyId: string,
   pageId: string
 ): void {
+  invalidateStoryReadCache(storyId);
   const logbook = getBookByType(db, "logbook");
   if (!logbook) return;
   onCanonicalTextChanged(db, userId, logbook.id, pageId, storyId);

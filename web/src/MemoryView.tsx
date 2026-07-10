@@ -5,9 +5,6 @@ import type { PanelProps } from "./panel-types";
 import "./PromptMessage.css";
 import "./MemoryView.css";
 
-/** Polls while open — archives and worldbook can change in the background with no local action to refresh from. */
-const POLL_MS = 3000;
-
 function messageClass(m: PromptMessage): string {
   const kind = classifyPromptBlock(m.content, m.role);
   if (kind === "content" || kind === "roster" || kind === "memory" || kind === "story-to-date" || kind === "event-summary") {
@@ -26,21 +23,25 @@ function formatHeaderMeta(m: PromptMessage, label: string): string {
 export default function MemoryView({ story }: PanelProps) {
   const storyId = story?.id;
   const [preview, setPreview] = useState<PromptPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const reload = useCallback(
-    async (opts?: { background?: boolean }) => {
-      if (!storyId) return;
-      setPreview(await fetchPromptPreview(storyId, opts));
-    },
-    [storyId]
-  );
+  const reload = useCallback(async () => {
+    if (!storyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setPreview(await fetchPromptPreview(storyId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [storyId]);
 
   useEffect(() => {
-    if (!storyId) return;
     void reload();
-    const interval = setInterval(() => void reload({ background: true }), POLL_MS);
-    return () => clearInterval(interval);
-  }, [storyId, reload]);
+  }, [reload]);
 
   if (!story) return <div className="memory-view">No active story.</div>;
 
@@ -48,12 +49,18 @@ export default function MemoryView({ story }: PanelProps) {
 
   return (
     <div className="memory-view">
-      <h2>Memory</h2>
+      <div className="memory-header">
+        <h2>Memory</h2>
+        <button type="button" onClick={() => void reload()} disabled={loading}>
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
       <p className="memory-note">
         Read-only Author prompt at the current position — worldbook, [STORY TO DATE], then verbose IC
-        prose. Token counts use the same ~4 chars/token estimate as the story-to-date trigger. Refreshes
-        every few seconds.
+        prose. Token counts use the same ~4 chars/token estimate as the story-to-date trigger. Click
+        Refresh after posts or memory changes — not polled automatically.
       </p>
+      {error && <p className="memory-error">{error}</p>}
       {preview && (
         <p className="memory-budget-bar">
           <span>

@@ -1,5 +1,7 @@
 // Relative on purpose: same-origin in prod (Caddy proxies /api to the backend),
 // and in dev the Vite proxy below forwards /api to the local backend.
+import { coordinatedFetch } from "./api-coordinator.js";
+
 export const API_BASE = "";
 const SESSION_STORAGE_KEY = "loremaster.sessionId";
 const USER_STORAGE_KEY = "loremaster.userId";
@@ -79,47 +81,41 @@ async function apiFetch(path: string, init: RequestInit = {}, opts?: { backgroun
   if (sessionId) headers.set("X-Loremaster-Session", sessionId);
   if (opts?.background) headers.set("X-Loremaster-Interaction", "background");
 
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
-  } catch (err) {
-    console.error(`apiFetch: ${path} unreachable —`, err);
-    throw err;
-  }
-  if (res.status >= 500) {
-    console.error(`apiFetch: ${path} returned ${res.status}`);
-    // Framework-level error pages (e.g. an unhandled exception's default response) aren't
-    // necessarily JSON — surface a clean Error here instead of letting every call site's own
-    // res.json() crash on it with a confusing "unexpected character" parse error.
-    const text = await res.text().catch(() => "");
-    let message = text;
+  return coordinatedFetch(path, init, async () => {
+    let res: Response;
     try {
-      const parsed = JSON.parse(text) as { error?: string };
-      if (parsed?.error) message = parsed.error;
-    } catch {
-      // not JSON — use the raw text as-is
+      res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    } catch (err) {
+      console.error(`apiFetch: ${path} unreachable —`, err);
+      throw err;
     }
-    throw new Error(message || `request failed (${res.status})`);
-  }
-  if (res.status === 409) {
-    const body = (await res.json().catch(() => ({}))) as Partial<SupersededInfo> & { error?: string };
-    // The session guard is the only thing that reports "unclaimed"/"superseded" — every other
-    // 409 in this app (e.g. "this job type can't be cancelled mid-generation") is a normal
-    // business-logic conflict from the route itself, not a session change. Treating every 409
-    // as a supersede signal used to send the whole app to the claim-gate screen just from
-    // clicking Stop on a job that can't be cancelled mid-flight (compress/archive/Horde).
-    if (body.error === "unclaimed" || body.error === "superseded") {
-      const info: SupersededInfo = {
-        reason: body.error,
-        active: body.active ?? null,
-        stale: body.stale ?? null,
-      };
-      for (const listener of supersededListeners) listener(info);
-      throw new Error(`session ${info.reason}`);
+    if (res.status >= 500) {
+      console.error(`apiFetch: ${path} returned ${res.status}`);
+      const text = await res.text().catch(() => "");
+      let message = text;
+      try {
+        const parsed = JSON.parse(text) as { error?: string };
+        if (parsed?.error) message = parsed.error;
+      } catch {
+        // not JSON — use the raw text as-is
+      }
+      throw new Error(message || `request failed (${res.status})`);
     }
-    throw new Error(body.error || `request failed (${res.status})`);
-  }
-  return res;
+    if (res.status === 409) {
+      const body = (await res.json().catch(() => ({}))) as Partial<SupersededInfo> & { error?: string };
+      if (body.error === "unclaimed" || body.error === "superseded") {
+        const info: SupersededInfo = {
+          reason: body.error,
+          active: body.active ?? null,
+          stale: body.stale ?? null,
+        };
+        for (const listener of supersededListeners) listener(info);
+        throw new Error(`session ${info.reason}`);
+      }
+      throw new Error(body.error || `request failed (${res.status})`);
+    }
+    return res;
+  }, opts);
 }
 
 export interface AccountProfile {

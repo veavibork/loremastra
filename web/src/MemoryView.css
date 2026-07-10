@@ -6,7 +6,21 @@
 
 .memory-view h2 {
   font-size: 1rem;
-  margin: 0 0 0.5rem;
+  margin: 0;
+}
+
+.memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.memory-error {
+  color: #ff9b9b;
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
 }
 
 .memory-note {

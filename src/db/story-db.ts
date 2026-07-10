@@ -233,6 +233,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   const db = new Database(storyDbPath(storyId));
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  db.pragma("busy_timeout = 5000");
   migrateWorldbookEntryShape(db);
   migrateJobTypeCheck(db);
   migrateJobTypeWorldbookCompact(db);

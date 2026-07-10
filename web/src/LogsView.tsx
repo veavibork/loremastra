@@ -18,6 +18,10 @@ function parseMetrics(raw: string | null): { elapsedMs?: number; tokenEstimate?:
   }
 }
 
+/** Poll interval when tab is open — bounded fetch keeps server load manageable. */
+const POLL_MS = 2000;
+const LOG_LIMIT = 100;
+
 export default function LogsView({ story }: PanelProps) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -28,12 +32,12 @@ export default function LogsView({ story }: PanelProps) {
 
     async function poll(opts?: { background?: boolean }) {
       if (!story) return;
-      const logPage = await fetchLog(story.id, opts);
+      const logPage = await fetchLog(story.id, { ...opts, limit: LOG_LIMIT });
       if (!cancelled) setEntries(logPage.entries);
     }
 
     void poll();
-    const interval = setInterval(() => void poll({ background: true }), 2000);
+    const interval = setInterval(() => void poll({ background: true }), POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
