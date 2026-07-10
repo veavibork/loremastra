@@ -883,6 +883,39 @@ export async function updateWorldbookEntry(
   if (!data.ok) throw new Error(data.error ?? "failed to update worldbook entry");
 }
 
+export interface WorldbookCompactResult {
+  entries: Array<{
+    pageId: string;
+    entryType: WorldbookEntryType;
+    beforeTokens: number;
+    afterTokens: number;
+    skipped: boolean;
+  }>;
+  totalBeforeTokens: number;
+  totalAfterTokens: number;
+}
+
+export async function compactWorldbook(
+  storyId: string,
+  opts?: { entryType?: WorldbookEntryType; includeHidden?: boolean }
+): Promise<{ result: WorldbookCompactResult; entries: WorldbookEntry[] }> {
+  const res = await apiFetch(`/api/stories/${storyId}/worldbook/compact`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts ?? {}),
+  });
+  const data = (await res.json()) as {
+    ok?: boolean;
+    result?: WorldbookCompactResult;
+    entries?: WorldbookEntry[];
+    error?: string;
+  };
+  if (!data.ok || !data.result || !data.entries) {
+    throw new Error(data.error ?? "failed to compact worldbook");
+  }
+  return { result: data.result, entries: data.entries };
+}
+
 export type JobStreamEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; text: string }

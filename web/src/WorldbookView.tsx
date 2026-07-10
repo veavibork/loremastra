@@ -3,6 +3,7 @@ import {
   createWorldbookEntry,
   fetchWorldbook,
   updateWorldbookEntry,
+  compactWorldbook,
   type WorldbookEntry,
   type WorldbookEntryType,
 } from "./api";
@@ -33,6 +34,8 @@ export default function WorldbookView({ story }: PanelProps) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [compacting, setCompacting] = useState(false);
+  const [compactSummary, setCompactSummary] = useState<string | null>(null);
 
   function toggleExpanded(pageId: string) {
     setExpanded((prev) => {
@@ -84,6 +87,30 @@ export default function WorldbookView({ story }: PanelProps) {
     }
   }
 
+  async function crunchWorldbook() {
+    if (!storyId || compacting) return;
+    setError(null);
+    setCompactSummary(null);
+    setCompacting(true);
+    try {
+      const { result, entries: refreshed } = await compactWorldbook(storyId);
+      setEntries(refreshed);
+      const cut =
+        result.totalBeforeTokens > 0
+          ? Math.round((1 - result.totalAfterTokens / result.totalBeforeTokens) * 100)
+          : 0;
+      const changed = result.entries.filter((e) => !e.skipped && e.afterTokens < e.beforeTokens).length;
+      setCompactSummary(
+        `Crunched ${result.entries.length} entries (${changed} trimmed): ${result.totalBeforeTokens} → ${result.totalAfterTokens} tokens (~${cut}% cut).`
+      );
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCompacting(false);
+    }
+  }
+
   async function toggleHidden(entry: WorldbookEntry) {
     if (!storyId) return;
     await updateWorldbookEntry(storyId, entry.pageId, { hidden: !entry.hidden });
@@ -98,10 +125,17 @@ export default function WorldbookView({ story }: PanelProps) {
     <div className="worldbook-view">
       <div className="worldbook-header">
         <h2>Worldbook</h2>
-        <button type="button" onClick={startCreate} disabled={!!draft}>
-          + New entry
-        </button>
+        <div className="worldbook-header-actions">
+          <button type="button" onClick={() => void crunchWorldbook()} disabled={!!draft || compacting || entries.length === 0}>
+            {compacting ? "Crunching…" : "Crunch worldbook"}
+          </button>
+          <button type="button" onClick={startCreate} disabled={!!draft || compacting}>
+            + New entry
+          </button>
+        </div>
       </div>
+
+      {compactSummary && <div className="worldbook-compact-summary">{compactSummary}</div>}
 
       {error && <div className="error-banner">{error}</div>}
 

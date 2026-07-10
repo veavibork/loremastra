@@ -47,6 +47,7 @@ import {
 } from "../services/story-to-date-admin.js";
 import { buildStoryToDateView } from "../services/story-to-date-view.js";
 import { buildPromptPreview } from "../services/prompt-preview.js";
+import { compactStoryWorldbook } from "../services/worldbook-compact.js";
 import {
   buildMemoryManifest,
   buildMemorySummary,
@@ -720,6 +721,26 @@ storiesRoute.patch("/:id/worldbook/:pageId", async (c) => {
       const entry = updateWorldbookEntry(storyDb, pageId, { content: body.content });
     }
     return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+
+/** Manual worldbook compaction — experiment logic promoted to on-demand; never runs automatically. */
+storiesRoute.post("/:id/worldbook/compact", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { entryType?: WorldbookEntryType; includeHidden?: boolean };
+  const storyDb = openTrackedStoryDb(c.req.param("id"));
+  try {
+    const result = await compactStoryWorldbook(storyDb, c.get("userId"), {
+      entryType: body.entryType,
+      includeHidden: body.includeHidden,
+    });
+    const worldbook = getBookByType(storyDb, "worldbook")!;
+    return c.json({
+      ok: true,
+      result,
+      entries: listWorldbookEntries(storyDb, worldbook.id, { includeHidden: true }),
+    });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
