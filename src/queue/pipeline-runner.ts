@@ -63,7 +63,7 @@ import type { AgentProfile } from "../config.js";
 import { isOpeningPostPage, resolveIcStartPageId } from "../services/kickoff.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
-import { compactStoryWorldbook, takeWorldbookCompactJobOpts } from "../services/worldbook-compact.js";
+import { compactStoryWorldbook, takeWorldbookCompactJobOpts, buildWorldbookCompactResultSummary } from "../services/worldbook-compact.js";
 import { resolveRegisterFromContent } from "../services/worldbook-pc.js";
 import { enqueueEligibleStoryToDateJob, enqueueStoryToDateNameJob, enqueueEligibleFoldJob } from "../services/story-to-date.js";
 import { executeStoryToDateJob } from "../services/story-to-date-worker.js";
@@ -1316,6 +1316,7 @@ async function executeWorldbookCompactJob(db: Database.Database, userId: string,
       model: editor.model,
       tokenEstimate: result.totalAfterTokens,
       elapsedMs: Date.now() - startedAt,
+      resultSummary: buildWorldbookCompactResultSummary(result),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

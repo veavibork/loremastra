@@ -246,6 +246,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "jobs", "input_token_estimate", "INTEGER");
   ensureColumn(db, "jobs", "horde_request_id", "TEXT");
   ensureColumn(db, "jobs", "elapsed_ms", "INTEGER");
+  ensureColumn(db, "jobs", "result_summary", "TEXT");
   ensureColumn(db, "archive", "name", "TEXT");
   ensureColumn(db, "text", "compress_metrics", "TEXT");
   ensureColumn(db, "page", "memory_content_stamp", "TEXT");

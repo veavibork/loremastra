@@ -24,6 +24,7 @@ export interface JobRow {
   inputTokenEstimate: number | null;
   hordeRequestId: string | null;
   elapsedMs: number | null;
+  resultSummary: string | null;
 }
 
 interface RawJobRow {
@@ -45,6 +46,7 @@ interface RawJobRow {
   input_token_estimate: number | null;
   horde_request_id: string | null;
   elapsed_ms: number | null;
+  result_summary: string | null;
 }
 
 function mapJobRow(row: RawJobRow): JobRow {
@@ -67,6 +69,7 @@ function mapJobRow(row: RawJobRow): JobRow {
     inputTokenEstimate: row.input_token_estimate ?? null,
     hordeRequestId: row.horde_request_id,
     elapsedMs: row.elapsed_ms ?? null,
+    resultSummary: row.result_summary ?? null,
   };
 }
 
@@ -241,10 +244,10 @@ export function finishJob(
   id: string,
   status: "done" | "failed",
   error?: string,
-  meta?: { model?: string; tokenEstimate?: number; elapsedMs?: number }
+  meta?: { model?: string; tokenEstimate?: number; elapsedMs?: number; resultSummary?: string }
 ): void {
   db.prepare(
-    `UPDATE jobs SET status = ?, finished_at = ?, error = ?, model = COALESCE(?, model), token_estimate = COALESCE(?, token_estimate), elapsed_ms = COALESCE(?, elapsed_ms) WHERE id = ?`
+    `UPDATE jobs SET status = ?, finished_at = ?, error = ?, model = COALESCE(?, model), token_estimate = COALESCE(?, token_estimate), elapsed_ms = COALESCE(?, elapsed_ms), result_summary = COALESCE(?, result_summary) WHERE id = ?`
   ).run(
     status,
     nowIso(),
@@ -252,6 +255,7 @@ export function finishJob(
     meta?.model ?? null,
     meta?.tokenEstimate ?? null,
     meta?.elapsedMs ?? null,
+    meta?.resultSummary ?? null,
     id
   );
 }

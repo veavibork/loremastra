@@ -308,6 +308,7 @@ export interface Job {
   tokenEstimate: number | null;
   inputTokenEstimate?: number | null;
   elapsedMs: number | null;
+  resultSummary?: string | null;
 }
 
 export interface GenerationOptions {

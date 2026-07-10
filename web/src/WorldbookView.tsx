@@ -28,10 +28,14 @@ interface Draft {
   content: string;
 }
 
-/** entryType + a truncated first-line preview, since entries have no separate name field — just a raw content blob. */
+/** Skip prompt-leakage lines from a bad prior compact when picking a preview line. */
 function previewText(content: string, max = 60): string {
-  const firstLine = content.split("\n")[0] ?? "";
-  return firstLine.length > max ? `${firstLine.slice(0, max)}…` : firstLine;
+  const line =
+    content.split("\n").find((l) => {
+      const t = l.trim();
+      return t && !/^Entry type:\s*/i.test(t) && !/^Worldbook entry to compact:/i.test(t);
+    }) ?? "";
+  return line.length > max ? `${line.slice(0, max)}…` : line;
 }
 
 export default function WorldbookView({ story }: PanelProps) {
@@ -107,13 +111,16 @@ export default function WorldbookView({ story }: PanelProps) {
         if (!job || job.status === "pending" || job.status === "running") continue;
         if (job.status === "done") {
           await reload();
-          const before = job.inputTokenEstimate ?? 0;
-          const after = job.tokenEstimate ?? 0;
-          const cut = before > 0 ? Math.round((1 - after / before) * 100) : 0;
           setCompactSummary(
-            before > 0
-              ? `Crunch complete: ${before} → ${after} tokens (~${cut}% cut). See Logs → Queue for details.`
-              : "Crunch complete. See Logs → Queue for details."
+            job.resultSummary ??
+              (() => {
+                const before = job.inputTokenEstimate ?? 0;
+                const after = job.tokenEstimate ?? 0;
+                const cut = before > 0 ? Math.round((1 - after / before) * 100) : 0;
+                return before > 0
+                  ? `Crunch complete: ${before} → ${after} tokens (~${cut}% cut). See Logs → Queue for details.`
+                  : "Crunch complete. See Logs → Queue for details.";
+              })()
           );
           return;
         }

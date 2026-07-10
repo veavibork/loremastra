@@ -37,19 +37,69 @@ export interface WorldbookCompactEntryResult {
   beforeTokens: number;
   afterTokens: number;
   skipped: boolean;
+  truncated?: boolean;
 }
 
 export interface WorldbookCompactResult {
   entries: WorldbookCompactEntryResult[];
   totalBeforeTokens: number;
   totalAfterTokens: number;
+  editorCalls: number;
 }
 
-function buildCompactUserPrompt(entry: WorldbookEntry): string {
-  return `Entry type: ${entry.entryType.toUpperCase()}
+const CLOSING_TAG: Record<WorldbookEntryType, string> = {
+  content: "[/CONTENT]",
+  roster: "[/ROSTER]",
+  memory: "[/MEMORY]",
+};
 
-Worldbook entry to compact:
-${entry.content}`;
+/** Strip prompt-leakage prefixes from prior bad compacts or model echo. */
+export function stripCompactPromptLeakage(content: string): string {
+  let text = content.trim();
+  for (let i = 0; i < 3; i++) {
+    const next = text
+      .replace(/^Entry type:\s*(CONTENT|ROSTER|MEMORY)\s*\n+/i, "")
+      .replace(/^Worldbook entry to compact:\s*\n+/i, "")
+      .trim();
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
+
+function buildCompactSystemPrompt(entryType: WorldbookEntryType): string {
+  return `${WORLDBOOK_COMPACT_SYSTEM_PROMPT}
+
+The entry being compacted is a ${entryType.toUpperCase()} entry (context only — do not echo this label in your output).`;
+}
+
+function looksTruncated(
+  original: string,
+  compacted: string,
+  entryType: WorldbookEntryType,
+  responseLimit: number
+): boolean {
+  const closing = CLOSING_TAG[entryType];
+  if (original.includes(closing) && !compacted.includes(closing)) return true;
+  return estimateTokens(compacted) >= Math.floor(responseLimit * 0.92);
+}
+
+export function buildWorldbookCompactResultSummary(result: WorldbookCompactResult): string {
+  const compacted = result.entries.filter((e) => !e.skipped && !e.truncated);
+  const skipped = result.entries.filter((e) => e.skipped && !e.truncated);
+  const truncated = result.entries.filter((e) => e.truncated);
+  const byType = (type: WorldbookEntryType) => compacted.filter((e) => e.entryType === type).length;
+  const parts = [
+    `${compacted.length}/${result.entries.length} compacted`,
+    `${result.editorCalls} Editor call${result.editorCalls === 1 ? "" : "s"}`,
+    `${result.totalBeforeTokens}→${result.totalAfterTokens} tok total`,
+  ];
+  if (byType("content") || byType("roster") || byType("memory")) {
+    parts.push(`content×${byType("content")} roster×${byType("roster")} memory×${byType("memory")}`);
+  }
+  if (skipped.length) parts.push(`${skipped.length} skipped`);
+  if (truncated.length) parts.push(`${truncated.length} truncated (output limit — kept original)`);
+  return parts.join(" · ");
 }
 
 async function compactEntryContent(
@@ -57,11 +107,14 @@ async function compactEntryContent(
   apiKey: string,
   entry: WorldbookEntry
 ): Promise<string> {
+  const source = stripCompactPromptLeakage(entry.content);
   const messages: ChatMessage[] = [
-    { role: "system", content: WORLDBOOK_COMPACT_SYSTEM_PROMPT },
-    { role: "user", content: buildCompactUserPrompt(entry) },
+    { role: "system", content: buildCompactSystemPrompt(entry.entryType) },
+    { role: "user", content: source },
   ];
-  return (await completeChat(editor, apiKey, messages, { maxTokens: editor.responseLimit })).trim();
+  return stripCompactPromptLeakage(
+    (await completeChat(editor, apiKey, messages, { maxTokens: editor.responseLimit })).trim()
+  );
 }
 
 /**
@@ -87,6 +140,7 @@ export async function compactStoryWorldbook(
   const results: WorldbookCompactEntryResult[] = [];
   let totalBeforeTokens = 0;
   let totalAfterTokens = 0;
+  let editorCalls = 0;
 
   for (const entry of entries) {
     const beforeTokens = estimateTokens(entry.content);
@@ -104,6 +158,7 @@ export async function compactStoryWorldbook(
       continue;
     }
 
+    editorCalls++;
     const compacted = await compactEntryContent(editor, apiKey, entry);
     if (!compacted) {
       results.push({
@@ -112,6 +167,19 @@ export async function compactStoryWorldbook(
         beforeTokens,
         afterTokens: beforeTokens,
         skipped: true,
+      });
+      totalAfterTokens += beforeTokens;
+      continue;
+    }
+
+    if (looksTruncated(entry.content, compacted, entry.entryType, editor.responseLimit)) {
+      results.push({
+        pageId: entry.pageId,
+        entryType: entry.entryType,
+        beforeTokens,
+        afterTokens: beforeTokens,
+        skipped: true,
+        truncated: true,
       });
       totalAfterTokens += beforeTokens;
       continue;
@@ -129,7 +197,7 @@ export async function compactStoryWorldbook(
     });
   }
 
-  return { entries: results, totalBeforeTokens, totalAfterTokens };
+  return { entries: results, totalBeforeTokens, totalAfterTokens, editorCalls };
 }
 
 /** Enqueue a worldbook-compact job — one Editor call per entry, executed on the worker lane. */

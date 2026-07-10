@@ -32,6 +32,7 @@ function turnaround(job: Job): string {
 
 function jobResponse(job: Job): string {
   if (job.status === "failed") return job.error ? `error — ${job.error}` : "error";
+  if (job.status === "done" && job.resultSummary) return job.resultSummary;
   if (job.status === "done") return "200 OK";
   if (job.status === "cancelled") return "cancelled";
   return "—";
