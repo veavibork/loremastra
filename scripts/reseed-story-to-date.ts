@@ -38,7 +38,7 @@ import {
   type StoryBlockKind,
 } from "../src/services/story-to-date-corpus.js";
 import { STORY_TO_DATE_INPUT_CUTOFF, enqueueEligibleFoldJob } from "../src/services/story-to-date.js";
-import { executeStoryToDateFoldJob } from "../src/services/story-to-date-fold-worker.js";
+import { executeStoryToDateFoldJob, STORY_TO_DATE_FOLD_TIMEOUT_MS } from "../src/services/story-to-date-fold-worker.js";
 import { buildChainPostIndex } from "../src/services/post-index.js";
 import {
   listStoryToDateSegments,
@@ -53,7 +53,10 @@ async function chat(editor: any, key: string, messages: ChatMessage[]): Promise<
   const delays = [15000, 30000, 45000, 60000];
   for (let attempt = 0; ; attempt++) {
     try {
-      return await completeChat(editor, key, messages, { maxTokens: editor.responseLimit });
+      return await completeChat(editor, key, messages, {
+        maxTokens: editor.responseLimit,
+        timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
+      });
     } catch (err: any) {
       const is429 = err?.status === 429 || String(err?.message ?? "").includes("429");
       if (!is429 || attempt >= delays.length) throw err;
