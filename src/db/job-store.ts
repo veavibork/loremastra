@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { newId } from "../uuid.js";
 import { nowIso } from "./time.js";
 
-export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name" | "archive-name" | "story-to-date" | "story-to-date-fold";
+export type JobType = "compress" | "archive" | "continuity" | "prose" | "setup" | "setup-worldbook" | "tag-gen" | "story-name" | "archive-name" | "story-to-date" | "story-to-date-fold" | "worldbook-compact";
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
 export interface JobRow {
@@ -163,6 +163,15 @@ export function hasActiveJobForArchive(db: Database.Database, targetArchiveId: s
       `SELECT 1 FROM jobs WHERE target_archive_id = ? AND job_type = ? AND status IN ('pending', 'running') LIMIT 1`
     )
     .get(targetArchiveId, jobType);
+  return !!row;
+}
+
+export function hasActiveWorldbookCompactJob(db: Database.Database): boolean {
+  const row = db
+    .prepare(
+      `SELECT 1 FROM jobs WHERE job_type = 'worldbook-compact' AND status IN ('pending', 'running') LIMIT 1`
+    )
+    .get();
   return !!row;
 }
 

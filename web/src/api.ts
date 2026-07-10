@@ -306,6 +306,7 @@ export interface Job {
   error: string | null;
   model: string | null;
   tokenEstimate: number | null;
+  inputTokenEstimate?: number | null;
   elapsedMs: number | null;
 }
 
@@ -898,7 +899,7 @@ export interface WorldbookCompactResult {
 export async function compactWorldbook(
   storyId: string,
   opts?: { entryType?: WorldbookEntryType; includeHidden?: boolean }
-): Promise<{ result: WorldbookCompactResult; entries: WorldbookEntry[] }> {
+): Promise<{ jobId: string }> {
   const res = await apiFetch(`/api/stories/${storyId}/worldbook/compact`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -906,14 +907,13 @@ export async function compactWorldbook(
   });
   const data = (await res.json()) as {
     ok?: boolean;
-    result?: WorldbookCompactResult;
-    entries?: WorldbookEntry[];
+    jobId?: string;
     error?: string;
   };
-  if (!data.ok || !data.result || !data.entries) {
-    throw new Error(data.error ?? "failed to compact worldbook");
+  if (!data.ok || !data.jobId) {
+    throw new Error(data.error ?? "failed to queue worldbook crunch");
   }
-  return { result: data.result, entries: data.entries };
+  return { jobId: data.jobId };
 }
 
 export type JobStreamEvent =

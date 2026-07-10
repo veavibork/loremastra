@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   createWorldbookEntry,
   fetchWorldbook,
+  fetchJobs,
   updateWorldbookEntry,
   compactWorldbook,
   type WorldbookEntry,
@@ -15,6 +16,11 @@ const ENTRY_TYPES: WorldbookEntryType[] = ["content", "roster", "memory"];
 
 /** Polls on a short interval — entries can change in the background during Setup's live worldbook extraction, with no local action to hook a one-off refresh onto. */
 const POLL_MS = 3000;
+const JOB_POLL_MS = 1500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 interface Draft {
   pageId: string | null; // null = creating a new entry
@@ -93,16 +99,29 @@ export default function WorldbookView({ story }: PanelProps) {
     setCompactSummary(null);
     setCompacting(true);
     try {
-      const { result, entries: refreshed } = await compactWorldbook(storyId);
-      setEntries(refreshed);
-      const cut =
-        result.totalBeforeTokens > 0
-          ? Math.round((1 - result.totalAfterTokens / result.totalBeforeTokens) * 100)
-          : 0;
-      const changed = result.entries.filter((e) => !e.skipped && e.afterTokens < e.beforeTokens).length;
-      setCompactSummary(
-        `Crunched ${result.entries.length} entries (${changed} trimmed): ${result.totalBeforeTokens} → ${result.totalAfterTokens} tokens (~${cut}% cut).`
-      );
+      const { jobId } = await compactWorldbook(storyId);
+      while (true) {
+        await sleep(JOB_POLL_MS);
+        const jobs = await fetchJobs(storyId, { background: true });
+        const job = jobs.find((j) => j.id === jobId);
+        if (!job || job.status === "pending" || job.status === "running") continue;
+        if (job.status === "done") {
+          await reload();
+          const before = job.inputTokenEstimate ?? 0;
+          const after = job.tokenEstimate ?? 0;
+          const cut = before > 0 ? Math.round((1 - after / before) * 100) : 0;
+          setCompactSummary(
+            before > 0
+              ? `Crunch complete: ${before} → ${after} tokens (~${cut}% cut). See Logs → Queue for details.`
+              : "Crunch complete. See Logs → Queue for details."
+          );
+          return;
+        }
+        if (job.status === "cancelled") {
+          throw new Error("worldbook crunch was cancelled");
+        }
+        throw new Error(job.error ?? "worldbook crunch failed");
+      }
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : String(err));

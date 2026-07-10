@@ -164,6 +164,32 @@ function finishJobTypeCheckMigration(db: Database.Database): void {
   `);
 }
 
+/** Same table-rename technique as migrateJobTypeCheck — adds 'worldbook-compact' to jobs.job_type CHECK. */
+function migrateJobTypeWorldbookCompact(db: Database.Database): void {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'`).get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'worldbook-compact'")) return;
+  db.exec(`ALTER TABLE jobs RENAME TO jobs_pre_worldbook_compact_migration`);
+  ensureColumn(db, "jobs_pre_worldbook_compact_migration", "model", "TEXT");
+  ensureColumn(db, "jobs_pre_worldbook_compact_migration", "token_estimate", "INTEGER");
+  ensureColumn(db, "jobs_pre_worldbook_compact_migration", "input_token_estimate", "INTEGER");
+  ensureColumn(db, "jobs_pre_worldbook_compact_migration", "horde_request_id", "TEXT");
+  ensureColumn(db, "jobs_pre_worldbook_compact_migration", "elapsed_ms", "INTEGER");
+  ensureColumn(db, "jobs_pre_worldbook_compact_migration", "target_story_to_date_id", "TEXT REFERENCES story_to_date_segment(id)");
+}
+
+function finishJobTypeWorldbookCompactMigration(db: Database.Database): void {
+  const exists = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs_pre_worldbook_compact_migration'`)
+    .get();
+  if (!exists) return;
+  db.exec(`
+    INSERT INTO jobs (id, created_at, target_text_id, target_archive_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id, elapsed_ms)
+    SELECT id, created_at, target_text_id, target_archive_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id, elapsed_ms
+    FROM jobs_pre_worldbook_compact_migration;
+    DROP TABLE jobs_pre_worldbook_compact_migration;
+  `);
+}
+
 function dropTagTablesIfExist(db: Database.Database): void {
   db.exec(`DROP TABLE IF EXISTS tag_index; DROP TABLE IF EXISTS tags;`);
 }
@@ -209,6 +235,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   db.pragma("foreign_keys = ON");
   migrateWorldbookEntryShape(db);
   migrateJobTypeCheck(db);
+  migrateJobTypeWorldbookCompact(db);
   dropTagTablesIfExist(db);
   db.exec(STORY_SCHEMA_SQL);
   ensureColumn(db, "story_state", "current_page_id", "TEXT REFERENCES page(id)");
@@ -225,6 +252,7 @@ export function getStoryDb(storyId: string, options?: { skipRecovery?: boolean }
   ensureColumn(db, "jobs", "target_story_to_date_id", "TEXT REFERENCES story_to_date_segment(id)");
   ensureColumn(db, "story_to_date_segment", "name", "TEXT");
   finishJobTypeCheckMigration(db);
+  finishJobTypeWorldbookCompactMigration(db);
   purgeLegacyArchives(db);
   backfillSelectedForks(db);
   backfillMemoryContentStamps(db);

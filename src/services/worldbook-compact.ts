@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { getBookByType } from "../db/book-store.js";
+import { createJob, hasActiveWorldbookCompactJob, type JobRow } from "../db/job-store.js";
 import { getDecryptedFeatherlessKey } from "../db/user-store.js";
 import { getGlobalDb } from "../db/global-db.js";
 import {
@@ -12,6 +13,23 @@ import { completeChat, type ChatMessage } from "../inference/featherless.js";
 import { WORLDBOOK_COMPACT_SYSTEM_PROMPT } from "../prompts.js";
 import { getAgentProfile } from "./agent-config.js";
 import { estimateTokens } from "./story-to-date-corpus.js";
+
+export interface WorldbookCompactOpts {
+  entryType?: WorldbookEntryType;
+  includeHidden?: boolean;
+}
+
+const worldbookCompactJobOpts = new Map<string, WorldbookCompactOpts>();
+
+export function setWorldbookCompactJobOpts(jobId: string, opts: WorldbookCompactOpts): void {
+  worldbookCompactJobOpts.set(jobId, opts);
+}
+
+export function takeWorldbookCompactJobOpts(jobId: string): WorldbookCompactOpts {
+  const opts = worldbookCompactJobOpts.get(jobId) ?? {};
+  worldbookCompactJobOpts.delete(jobId);
+  return opts;
+}
 
 export interface WorldbookCompactEntryResult {
   pageId: string;
@@ -112,4 +130,32 @@ export async function compactStoryWorldbook(
   }
 
   return { entries: results, totalBeforeTokens, totalAfterTokens };
+}
+
+/** Enqueue a worldbook-compact job — one Editor call per entry, executed on the worker lane. */
+export function enqueueWorldbookCompactJob(
+  db: Database.Database,
+  userId: string,
+  opts: WorldbookCompactOpts = {}
+): JobRow {
+  if (hasActiveWorldbookCompactJob(db)) {
+    throw new Error("worldbook crunch already in progress");
+  }
+
+  const worldbook = getBookByType(db, "worldbook");
+  if (!worldbook) throw new Error("worldbook not found");
+
+  const entries = listWorldbookEntries(db, worldbook.id, {
+    includeHidden: opts.includeHidden ?? false,
+  }).filter((e) => !opts.entryType || e.entryType === opts.entryType);
+  if (!entries.length) throw new Error("no worldbook entries to compact");
+
+  const job = createJob(db, {
+    targetTextId: entries[0]!.currentTextId,
+    jobType: "worldbook-compact",
+    slotCost: getAgentProfile(userId, "editor").concurrencyCost,
+    priority: 0,
+  });
+  setWorldbookCompactJobOpts(job.id, opts);
+  return job;
 }

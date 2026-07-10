@@ -47,7 +47,7 @@ import {
 } from "../services/story-to-date-admin.js";
 import { buildStoryToDateView } from "../services/story-to-date-view.js";
 import { buildPromptPreview } from "../services/prompt-preview.js";
-import { compactStoryWorldbook } from "../services/worldbook-compact.js";
+import { enqueueWorldbookCompactJob } from "../services/worldbook-compact.js";
 import {
   buildMemoryManifest,
   buildMemorySummary,
@@ -726,21 +726,16 @@ storiesRoute.patch("/:id/worldbook/:pageId", async (c) => {
   }
 });
 
-/** Manual worldbook compaction — experiment logic promoted to on-demand; never runs automatically. */
+/** Manual worldbook compaction — queued on the worker lane; shows in Logs → Queue. */
 storiesRoute.post("/:id/worldbook/compact", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { entryType?: WorldbookEntryType; includeHidden?: boolean };
   const storyDb = openTrackedStoryDb(c.req.param("id"));
   try {
-    const result = await compactStoryWorldbook(storyDb, c.get("userId"), {
+    const job = enqueueWorldbookCompactJob(storyDb, c.get("userId"), {
       entryType: body.entryType,
       includeHidden: body.includeHidden,
     });
-    const worldbook = getBookByType(storyDb, "worldbook")!;
-    return c.json({
-      ok: true,
-      result,
-      entries: listWorldbookEntries(storyDb, worldbook.id, { includeHidden: true }),
-    });
+    return c.json({ ok: true, jobId: job.id });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }

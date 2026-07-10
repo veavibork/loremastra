@@ -63,6 +63,7 @@ import type { AgentProfile } from "../config.js";
 import { isOpeningPostPage, resolveIcStartPageId } from "../services/kickoff.js";
 import { assembleAuthorPrompt, assembleKickoffPrompt } from "../services/history.js";
 import { applyExtractedWorldbookBlocks } from "../services/worldbook-extraction.js";
+import { compactStoryWorldbook, takeWorldbookCompactJobOpts } from "../services/worldbook-compact.js";
 import { resolveRegisterFromContent } from "../services/worldbook-pc.js";
 import { enqueueEligibleStoryToDateJob, enqueueStoryToDateNameJob, enqueueEligibleFoldJob } from "../services/story-to-date.js";
 import { executeStoryToDateJob } from "../services/story-to-date-worker.js";
@@ -97,7 +98,7 @@ import {
 } from "../prompts.js";
 
 const SCAN_INTERVAL_MS = 500;
-const WORKER_JOB_TYPES: JobType[] = ["story-to-date", "story-to-date-fold", "story-name", "archive-name"];
+const WORKER_JOB_TYPES: JobType[] = ["story-to-date", "story-to-date-fold", "story-name", "archive-name", "worldbook-compact"];
 const PROSE_JOB_TYPES: JobType[] = ["prose", "setup", "setup-worldbook"];
 
 /**
@@ -577,6 +578,8 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId);
       } else if (job.jobType === "archive-name" && job.targetStoryToDateId) {
         void executeStoryToDateNameJob(db, story.ownerUserId, job.id, job.targetStoryToDateId);
+      } else if (job.jobType === "worldbook-compact" && job.targetTextId) {
+        void executeWorldbookCompactJob(db, story.ownerUserId, job.id);
       } else {
         finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
         releaseSlot(story.ownerUserId, job.id);
@@ -1293,6 +1296,27 @@ async function executeStoryNameJob(db: Database.Database, userId: string, jobId:
     }
 
     finishJob(db, jobId, "done", undefined, { model: usedModel, elapsedMs: Date.now() - startedAt });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    finishJob(db, jobId, "failed", message);
+  } finally {
+    releaseSlot(userId, jobId);
+    releaseWorkerLane();
+  }
+}
+
+async function executeWorldbookCompactJob(db: Database.Database, userId: string, jobId: string): Promise<void> {
+  const startedAt = Date.now();
+  const opts = takeWorldbookCompactJobOpts(jobId);
+  try {
+    const editor = getAgentProfile(userId, "editor");
+    const result = await compactStoryWorldbook(db, userId, opts);
+    setJobInputTokenEstimate(db, jobId, result.totalBeforeTokens);
+    finishJob(db, jobId, "done", undefined, {
+      model: editor.model,
+      tokenEstimate: result.totalAfterTokens,
+      elapsedMs: Date.now() - startedAt,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishJob(db, jobId, "failed", message);
