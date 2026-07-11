@@ -512,6 +512,37 @@ export function storyBlockWordOverlapRatio(a: string, b: string): number {
 /** Continues blocks at or above this overlap with the prior segment are rejected and retried. */
 export const STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD = 0.85;
 
+export function storyBlockWordCount(text: string): number {
+  return storyBlockWordList(text).length;
+}
+
+/** Next-scene continues: minimum words-per-covered-post before we treat coverage as a sprint. */
+export const NEXT_SCENE_MIN_WORDS_PER_COVERED_POST = 2.5;
+/** Only apply the sprint gate once coverage advances at least this many posts. */
+export const NEXT_SCENE_COVERAGE_SPRINT_MIN_DELTA = 15;
+/** Hard cap on posts one scene block may claim — catches ceiling-hugging sprints even with padded prose. */
+export const NEXT_SCENE_MAX_COVERAGE_DELTA = 70;
+
+/** True when a next-scene continues block claims far more posts than its length can support. */
+export function looksNextSceneCoverageSprint(block: string, coverageDelta: number): boolean {
+  if (coverageDelta < NEXT_SCENE_COVERAGE_SPRINT_MIN_DELTA) return false;
+  if (coverageDelta > NEXT_SCENE_MAX_COVERAGE_DELTA) return true;
+  const words = storyBlockWordCount(block);
+  return words / coverageDelta < NEXT_SCENE_MIN_WORDS_PER_COVERED_POST;
+}
+
+export function buildCoverageSprintRetryUserMessage(
+  mode: StoryBlockKind,
+  coverageThroughPost: number,
+  priorCoveragePost: number
+): string {
+  const block = mode === "begins" ? "[STORY BEGINS]" : "[STORY CONTINUES]";
+  const delta = coverageThroughPost - priorCoveragePost;
+  return `Your [COVERAGE]${coverageThroughPost} advances ${delta} posts but ${block} summarizes only one scene — that skips intervening story.
+
+Rewrite ${block} covering only the FIRST complete scene after post ${priorCoveragePost}. Roll [COVERAGE] back to that scene's closing seam (typically well under ${NEXT_SCENE_MAX_COVERAGE_DELTA} posts). One scene only — 80–200 words. Same Register, telling-only memory. Do not echo bracket labels inside the prose.`;
+}
+
 const NEXT_SCENE_LENGTH_INSTRUCTION =
   "Length: one scene only — typically 80–200 words (one or two paragraphs). Do not scale length to how many posts remain in the input; quiet scenes stay short.";
 

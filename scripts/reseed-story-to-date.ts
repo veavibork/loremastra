@@ -24,8 +24,11 @@ import {
   formatCorpusForEditor,
   buildDefaultBeginsSystemPrompt,
   buildNextSceneContinuesSystemPrompt,
+  buildCoverageSprintRetryUserMessage,
   buildSeamRetryUserMessage,
   shouldRetrySeamGate,
+  looksNextSceneCoverageSprint,
+  storyBlockWordCount,
   extractStoryBlock,
   extractCoverage,
   mergeStoryToDate,
@@ -134,7 +137,19 @@ async function main() {
         const retry = [...messages, { role: "assistant" as const, content: raw }, { role: "user" as const, content: buildSeamRetryUserMessage(kind, coverage, corpus.inputCeilingPost) }];
         const rr = await chat(editor, apiKey, retry);
         const rb = extractStoryBlock(rr, kind); const rc = extractCoverage(rr);
-        if (rb && rc != null && rc < coverage && rc <= corpus.inputCeilingPost) { block = rb; coverage = rc; }
+        if (rb && rc != null && rc < coverage && rc <= corpus.inputCeilingPost) { block = rb; coverage = rc; raw = rr; }
+      }
+      if (block && coverage != null && kind === "continues" && priorCoverage != null) {
+        const delta = coverage - priorCoverage;
+        if (looksNextSceneCoverageSprint(block, delta)) {
+          const retry = [...messages, { role: "assistant" as const, content: raw }, { role: "user" as const, content: buildCoverageSprintRetryUserMessage(kind, coverage, priorCoverage) }];
+          const rr = await chat(editor, apiKey, retry);
+          const rb = extractStoryBlock(rr, kind); const rc = extractCoverage(rr);
+          const rbSan = rb ? sanitizeStoryBlockContent(rb) : "";
+          if (rbSan && rc != null && rc < coverage && !looksNextSceneCoverageSprint(rbSan, rc - priorCoverage)) {
+            block = rbSan; coverage = rc;
+          }
+        }
       }
       if (!block || coverage == null) { console.log(`  seq ${seq} attempt ${attempt}: no block/coverage`); continue; }
       block = sanitizeStoryBlockContent(block);
@@ -153,6 +168,13 @@ async function main() {
       const cp = corpus.includedPosts.find((p) => p.icPostNumber === coverage);
       if (!cp) { console.log(`  seq ${seq}: coverage ${coverage} not in input`); continue; }
       if (priorCoverage != null && coverage <= priorCoverage) { console.log(`  seq ${seq}: no advance past ${priorCoverage}`); continue; }
+      if (kind === "continues" && priorCoverage != null) {
+        const delta = coverage - priorCoverage;
+        if (looksNextSceneCoverageSprint(block, delta)) {
+          console.log(`  seq ${seq} attempt ${attempt}: coverage sprint +${delta} in ${storyBlockWordCount(block)}w`);
+          continue;
+        }
+      }
 
       const segment = createStoryToDateSegment(db, { bookId: logbook.id, kind, seq });
       fillStoryToDateSegment(db, segment.id, {

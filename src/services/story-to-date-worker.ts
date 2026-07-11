@@ -6,6 +6,7 @@ import { getAgentProfile } from "./agent-config.js";
 import { STORY_TO_DATE_FOLD_TIMEOUT_MS } from "./story-to-date-fold-worker.js";
 import {
   buildDefaultBeginsSystemPrompt,
+  buildCoverageSprintRetryUserMessage,
   buildNextSceneContinuesSystemPrompt,
   buildSeamRetryUserMessage,
   buildStoryCorpus,
@@ -14,9 +15,11 @@ import {
   formatCorpusForEditor,
   mergeStoryToDate,
   hasLeakedStoryMarkers,
+  looksNextSceneCoverageSprint,
   sanitizeStoryBlockContent,
   shouldRetrySeamGate,
   STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD,
+  storyBlockWordCount,
   storyBlockWordOverlapRatio,
   stripStoryToDateWrapper,
   type StoryBlockKind,
@@ -155,6 +158,43 @@ export async function executeStoryToDateJob(
           retryParsed.coverageThroughPost <= (corpus.inputCeilingPost ?? Infinity)
         ) {
           candidate = retryParsed;
+          raw = retryRaw;
+        }
+      }
+
+      if (candidate && kind === "continues" && priorSegments.length) {
+        const priorCov = priorSegments[priorSegments.length - 1]!.coverageThroughPost;
+        const delta = candidate.coverageThroughPost - priorCov;
+        if (looksNextSceneCoverageSprint(candidate.block, delta)) {
+          const sprintMessages: ChatMessage[] = [
+            ...messages,
+            { role: "assistant", content: raw },
+            {
+              role: "user",
+              content: buildCoverageSprintRetryUserMessage(
+                kind,
+                candidate.coverageThroughPost,
+                priorCov
+              ),
+            },
+          ];
+          const sprintRaw = await completeChat(editor, apiKey, sprintMessages, {
+            maxTokens: editor.responseLimit,
+            timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
+            signal,
+          });
+          const sprintParsed = parseResponse(sprintRaw, kind);
+          if (sprintParsed) {
+            const sprintBlock = sanitizeStoryBlockContent(sprintParsed.block);
+            const sprintDelta = sprintParsed.coverageThroughPost - priorCov;
+            if (
+              sprintBlock &&
+              sprintParsed.coverageThroughPost < candidate.coverageThroughPost &&
+              !looksNextSceneCoverageSprint(sprintBlock, sprintDelta)
+            ) {
+              candidate = { ...sprintParsed, block: sprintBlock };
+            }
+          }
         }
       }
 
@@ -213,6 +253,11 @@ export async function executeStoryToDateJob(
         const priorCov = priorSegments[priorSegments.length - 1]!.coverageThroughPost;
         if (candidate.coverageThroughPost <= priorCov) {
           lastError = `coverage must advance beyond ${priorCov}`;
+          continue;
+        }
+        const coverageDelta = candidate.coverageThroughPost - priorCov;
+        if (looksNextSceneCoverageSprint(candidate.block, coverageDelta)) {
+          lastError = `coverage sprint: +${coverageDelta} posts in ${storyBlockWordCount(candidate.block)} words`;
           continue;
         }
       }
