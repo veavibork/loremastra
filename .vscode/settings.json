@@ -1,0 +1,59 @@
+{
+  // ── Editor ──────────────────────────────────────────────
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.rulers": [100],
+  "files.encoding": "utf8",
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  // ── TypeScript ──────────────────────────────────────────
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.updateImportsOnFileMove": "always",
+
+  // ── File / search exclusions ───────────────────────────
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.claude/worktrees": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/data": true,
+    "**/*.sqlite": true,
+    "**/*.sqlite-shm": true,
+    "**/*.sqlite-wal": true,
+    "**/package-lock.json": true,
+    "**/dev-server.log": true,
+    "**/vite-dev.log": true
+  },
+
+  // ── Backend (Hono / Node) ───────────────────────────────
+  "files.associations": {
+    "*.ts": "typescript"
+  },
+
+  // ── Frontend (Vite + React) ─────────────────────────────
+  "[typescriptreact]": {
+    "editor.defaultFormatter": null
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": null
+  },
+  "[json]": {
+    "editor.defaultFormatter": null
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": null
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": null,
+    "editor.wordWrap": "on"
+  },
+
+  // ── Terminal ────────────────────────────────────────────
+  "terminal.integrated.defaultProfile.windows": "PowerShell"
+}

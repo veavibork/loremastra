@@ -3,6 +3,14 @@
     "loremaster-dev": {
       "command": "npx",
       "args": ["tsx", "src/mcp/dev-server.ts"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "cline-worker": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/cline-worker.ts"]
     }
   }
 }

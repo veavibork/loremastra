@@ -481,8 +481,15 @@ The following ideas are noted for future consideration. They are deliberately ex
 
 ## Current State
 
-A GCP e2-micro VM is stood up with a KoboldAI Lite install and a SQLite back end with custom injections and overrides. It is functional but awkward — KAI's Horde service assumptions create friction, and several intended features (guided continue, proper queue management) don't exist in that setup.
+Phase 1 is complete — Loremaster is a purpose-built TypeScript application, deployed on a GCP e2-micro VM:
 
-The working conclusion is that hijacking KAI is not the right path. LM should be a purpose-built client. Artifacts from the KAI setup and prior SillyTavern character card experiments are available as reference material and can be shared into a development session on request.
+- **Backend:** Hono + SQLite (`better-sqlite3`), durable job queue, per-story file isolation
+- **Frontend:** React 19 + Vite 8, touch-first, config-driven layout
+- **Inference:** Featherless (primary) + AI Horde (secondary), per-user API keys encrypted at rest via `APP_MASTER_KEY`
+- **Memory:** Rolling `[STORY TO DATE]` Editor recaps (shipped 2026-07-04); per-post compression and decad archives retired
+- **Auth:** Password-gated login, per-user sessions, admin-provisioned accounts only (`npm run user:create`)
+- **Dev tooling:** MCP server (`npm run mcp`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
 
-When beginning a development session, the coding assistant should request any relevant artifacts before proposing an implementation approach.
+Deferred from Phase 1: full encryption at rest for story content, preference-profile CRUD, input-bar weapon wheel, bespoke touch-first chrome. See `docs/roadmap.md` for the open backlog and `docs/stub-revisions.md` for known gaps.
+
+When beginning a development session, see `CLAUDE.md` for the session checklist and `docs/development.md` for milestone history.

@@ -8,10 +8,11 @@ a minimal real UI) and **Phase 1 Complete** (everything loremaster.md scopes to 
 Future Phases appendix). Still building one step at a time — this exists so "push on to something else"
 has a target, not so we jump ahead of confirming each step.
 
-**Current status (2026-07-04):** Vertical Slice reached. Milestones A–E and G done. **Story-to-date memory**
-replaced per-post compression and decad archive blocks in production — see "Story-to-date memory
-(2026-07-04)" below. Milestone F (Security) is partially done — per-user login, session claim, and
-encrypted API keys are built; encryption at rest for story content remains deliberately deferred.
+**Current status (2026-07-05):** Phase 1 Complete modulo the two explicitly deferred security items
+(encryption at rest for story content, per-user file-level isolation). Multi-user auth, per-user encrypted
+API keys, story-to-date memory, worldbook + tags, setup/kickoff, post controls + branching, config-driven
+layout, MCP dev server, and Horde as a second provider are all shipped and proven. See below for
+post-Phase-1 incremental work (2026-07-05+).
 
 ## Done so far (proven, not full-featured)
 
@@ -547,3 +548,50 @@ first. Not designed in detail yet; captured here so the earlier planning pass is
   by the "encrypt one user's data as a unit" goal, so revisit once that's actually being built.
 - **Per-user encrypted API key storage** — done 2026-07-03 (Featherless + Horde, Agents tab). No
   `featherless_access` flag — each user brings their own Featherless key; nothing shared globally.
+
+---
+
+## Post-Phase-1 incremental work (2026-07-05+)
+
+After Phase 1 Complete, work shifted to hardening and polish — story-to-date memory quality,
+performance, and UX edge cases surfaced by real VM sessions.
+
+### Story-to-date memory hardening — ✅ done, 2026-07-05+
+
+- **Fold / batch sizing** (`e6e3ef8`, `85c78d1`): continues segments that would overflow Editor output
+  are now batched and recursively folded so they fit. Fold jobs are cancellable and visible in Debug.
+- **Scene scoping** (`f8c648f`, `d3ebb54`): continues scoped to one scene per block; blocks that
+  sprint coverage past one scene are rejected with a step-back retry. Coverage ceiling tightened.
+- **Seam quality** (`36f0b1f`, `acc02b4`): leaked story markers (`[STORY BEGINS]` etc.) stripped from
+  memory blocks at parse and assembly layers. Paragraph breaks preserved in Archives display.
+- **Reseed script** (`951466f`, `959ca2f`): one-shot `scripts/reseed-story-to-date.ts` backfills
+  story-to-date segments for existing stories, matching production Editor timeout.
+
+### Worldbook crunch — ✅ done, 2026-07-05+
+
+- **Manual crunch** (`43224dd`): "Crunch worldbook" button on-demand compacts worldbook entries via
+  Editor pass, reducing token bloat from accumulated CONTENT deltas.
+- **Queued crunch** (`275fc86`): crunch runs as a `worldbook-compact` job so it appears in Logs and
+  Debug alongside other background work.
+- **Crunch fixes** (`46bc565`, `90e94a7`): prefix leak from crunch output fixed; duplicate bracket
+  tags from crunch output caught and stripped. Per-entry job summary added.
+
+### Performance — ✅ done, 2026-07-05+
+
+- **Story log pagination** (`c52601d`): story log paginated instead of loading full history on every
+  refresh — significant reduction in DB load for long stories.
+- **Outbound log caching** (`bbfb9b4`): outbound request log no longer re-read from disk on every
+  inference call.
+- **Tab blocking reduction** (`7dad48d`): fetch coordinator (`web/src/api-coordinator.ts`) bounds
+  polling frequency; bounded polls and read cache prevent tab-switch stalls.
+- **Debug tab split** (`2966fdb`): Queue and Logs split into separate Debug tabs to avoid loading
+  both at once on section open.
+
+### Streaming & UX — ✅ done, 2026-07-05+
+
+- **Partial stream commit on stop** (`4021006`): stopping mid-generation now commits whatever partial
+  content has arrived, instead of discarding it.
+- **Reasoning-channel filtering** (`6360e6e`): leaked reasoning-channel artifacts (XML thinking tags
+  in content stream) rejected instead of shown or stored.
+- **Craft vocabulary prompts** (`bb95b83`): vague prose direction replaced with specific craft-
+  vocabulary terms from a systematic log audit — see `docs/prose-craft-vocabulary-cheat-sheet.md`.

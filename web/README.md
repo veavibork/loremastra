@@ -1,32 +1,40 @@
-# React + TypeScript + Vite
+# Loremaster — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite 8 single-page application for the Loremaster roleplaying platform. Connects
+to the Hono backend via Vite's dev proxy (`/api` → `http://localhost:4113`).
 
-Currently, two official plugins are available:
+## Quick start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+From this directory:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```
+npm install
+npm run dev        # Vite dev server; backend must also be running (npm run dev from repo root)
+npm run build      # type-check + production build
+npm run lint       # oxlint
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Key views
+
+| View | File | Purpose |
+|---|---|---|
+| Story | `StoryView.tsx` | Chat, post controls, IC/OOC toggle, streaming replies |
+| Lore > Worldbook | `WorldbookView.tsx` | CONTENT/ROSTER/MEMORY entry management |
+| Lore > Memory | `MemoryView.tsx` | Assembled prompt inspector |
+| Story > Archives | `ArchivesView.tsx` | Story-to-date segment management |
+| Story > Saves | `SavesView.tsx` | Story/fork management |
+| Story > Logs | `LogsView.tsx` | Per-post generation telemetry |
+| Story > Summary | `SummaryView.tsx` | Legacy gen_extract view (compression retired) |
+| Config > Agents | `AgentsView.tsx` | Model/param selection and fallback chains |
+| Config > Prompts | `PromptsView.tsx` | Prompt template editor (stub) |
+| Debug > Queue | `QueueView.tsx` | Live job queue and concurrency slots |
+| Settings | `SettingsView.tsx` | Layout JSON, banned words, CSS, play-tab prefs |
+
+## Conventions
+
+- One `.css` file per view/component — no CSS framework
+- No state management library — React state + `apiFetch` (`api.ts`)
+- `api-coordinator.ts` bounds polling frequency
+- Touch-first; must work on Android and Windows browsers
+- Config-driven layout via `Nav.tsx` + `registry.tsx`
+- Build-info header (`__BUILD_INFO__`) stamped at `vite build` time for deploy verification

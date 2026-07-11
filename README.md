@@ -55,7 +55,7 @@ Other useful scripts:
 | `npm run server:reset-db` | Reset the local database |
 | `npm run server:fresh` | Reset the database and restart the backend |
 | `npx tsx scripts/test-memory-pipeline-smoke.ts` | Memory pipeline smoke tests (in-process, no browser) |
-| `npx tsx scripts/story-to-date-experiment.ts` | Iterate on `[STORY TO DATE]` prompts against synced VM data (see docs) |
+| `npx tsx scripts/story-to-date-experiment.ts` | Iterate on `[STORY TO DATE]` prompts against synced VM data — see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md) |
 
 ## Memory diagnostics (dev)
 

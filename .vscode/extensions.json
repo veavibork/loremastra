@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    "ms-vscode.typescript-language-features",
+    "oxc.oxc",
+    "qwtel.sqlite-viewer",
+    "yzhang.markdown-all-in-one",
+    "mikestead.dotenv",
+    "stevencl.addDoc-comments",
+    "eamodio.gitlens",
+    "saoudrizwan.claude-dev"
+  ],
+  "unwantedRecommendations": [
+    "esbenp.prettier-vscode"
+  ]
+}

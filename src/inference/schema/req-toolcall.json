@@ -1,0 +1,13 @@
+{
+  "model": "moonshotai/Kimi-K2.7-Code",
+  "stream": true,
+  "tool_stream": true,
+  "max_tokens": 8192,
+  "reasoning_effort": "high",
+  "messages": [
+    {"role": "user", "content": "Use the write_file tool to write a single Python file 'shapes.py' containing: a Shape base class, Circle/Rectangle/Triangle subclasses each with area() and perimeter(), full docstrings for every method, and a __main__ block instantiating each and printing results. Around 90-110 lines. Call the tool exactly once."}
+  ],
+  "tools": [
+    {"type": "function", "function": {"name": "write_file", "description": "Write content to a file", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}}
+  ]
+}
