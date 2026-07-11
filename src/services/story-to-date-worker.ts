@@ -13,6 +13,7 @@ import {
   extractStoryBlock,
   formatCorpusForEditor,
   mergeStoryToDate,
+  hasLeakedStoryMarkers,
   sanitizeStoryBlockContent,
   shouldRetrySeamGate,
   STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD,
@@ -168,6 +169,10 @@ export async function executeStoryToDateJob(
       };
       if (!candidate.block) {
         lastError = "empty block after sanitization";
+        continue;
+      }
+      if (hasLeakedStoryMarkers(candidate.block)) {
+        lastError = "block still contains leaked story markers after sanitization";
         continue;
       }
 

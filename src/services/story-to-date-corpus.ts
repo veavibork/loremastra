@@ -236,6 +236,22 @@ const BLOCK_CLOSING: Record<StoryBlockKind, RegExp> = {
   continues: /\[\/STORY CONTINUES\]|\[STORY ENDS\]/i,
 };
 
+/** Bracket or angle-bracket story markers the model sometimes echoes into prose. */
+const LEAKED_STORY_MARKER =
+  /(?:\[|\<)\/?STORY\s+(?:BEGINS|CONTINUES|TO\s+DATE|ENDS)(?:\]|>)/gi;
+
+export function hasLeakedStoryMarkers(text: string): boolean {
+  LEAKED_STORY_MARKER.lastIndex = 0;
+  return LEAKED_STORY_MARKER.test(text);
+}
+
+function stripLeakedStoryMarkers(text: string): string {
+  return text
+    .replace(LEAKED_STORY_MARKER, " ")
+    .replace(/\s*(\[\/STORY (?:BEGINS|CONTINUES)\]|<\/STORY (?:BEGINS|CONTINUES)>)\s*$/gi, "")
+    .trim();
+}
+
 export function extractStoryBlock(text: string, kind: StoryBlockKind): string | null {
   const trimmed = text.trim();
   const open = kind === "begins" ? /\[STORY BEGINS\]/i : /\[STORY CONTINUES\]/i;
@@ -249,7 +265,7 @@ export function extractStoryBlock(text: string, kind: StoryBlockKind): string | 
   if (closeMatch && closeMatch.index >= 0) end = Math.min(end, closeMatch.index);
   if (coverageMatch && coverageMatch.index >= 0) end = Math.min(end, coverageMatch.index);
   const body = rest.slice(0, end).trim();
-  return body || null;
+  return body ? sanitizeStoryBlockContent(body) : null;
 }
 
 export function extractCoverage(text: string): number | null {
@@ -269,7 +285,10 @@ export interface StoryToDateSegment {
 /** Merge [STORY BEGINS] + [STORY CONTINUES]* into one [STORY TO DATE] block for Author prompt. */
 export function mergeStoryToDate(segments: StoryToDateSegment[]): string {
   if (!segments.length) return "";
-  const body = segments.map((s) => s.content.trim()).filter(Boolean).join("\n\n");
+  const body = segments
+    .map((s) => sanitizeStoryBlockContent(s.content.trim()))
+    .filter(Boolean)
+    .join("\n\n");
   return `[STORY TO DATE]\n${body}\n[/STORY TO DATE]`;
 }
 
@@ -470,10 +489,7 @@ export function shouldRetrySeamGate(coverageThroughPost: number, inputCeilingPos
 
 /** Strip echoed bracket labels the model sometimes pastes into memory prose. Preserves paragraph breaks. */
 export function sanitizeStoryBlockContent(text: string): string {
-  const stripped = text
-    .replace(/\s*\[\/STORY (?:BEGINS|CONTINUES)\]\s*/gi, "\n")
-    .replace(/\s*\[STORY (?:BEGINS|CONTINUES|TO DATE|ENDS)\]\s*/gi, " ")
-    .replace(/\r\n/g, "\n");
+  const stripped = stripLeakedStoryMarkers(text).replace(/\r\n/g, "\n");
   return stripped
     .split(/\n{2,}/)
     .map((para) => para.replace(/\n/g, " ").replace(/[^\S ]+/g, " ").trim())

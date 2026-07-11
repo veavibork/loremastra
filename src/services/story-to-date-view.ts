@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { hasActiveJobForStoryToDate, listActiveJobs, type JobRow, type JobType } from "../db/job-store.js";
 import { listStoryToDateSegments } from "../db/story-to-date-store.js";
-import { estimateTokens, countIcPosts } from "./story-to-date-corpus.js";
+import { estimateTokens, countIcPosts, sanitizeStoryBlockContent } from "./story-to-date-corpus.js";
 
 export type StoryToDateViewStatus = "ready" | "pending" | "broken";
 
@@ -52,7 +52,7 @@ export function buildStoryToDateView(db: Database.Database, logbookId: string): 
     if (s.broken) status = "broken";
     else if (s.content?.trim()) status = "ready";
 
-    const content = s.content?.trim() ?? null;
+    const content = s.content?.trim() ? sanitizeStoryBlockContent(s.content.trim()) : null;
     return {
       id: s.id,
       kind: s.kind,
