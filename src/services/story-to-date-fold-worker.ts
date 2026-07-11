@@ -15,14 +15,13 @@ import { getAgentProfile } from "./agent-config.js";
 import {
   buildFoldSystem,
   selectFoldSet,
+  selectFoldBatch,
   estimateTokens,
-  FOLD_TARGET_RATIO,
+  foldDigestTargetWords,
+  foldWordCount,
+  looksFoldDigestTruncated,
   type FoldableSegment,
 } from "./story-to-date-corpus.js";
-
-function wordCount(s: string): number {
-  return s.trim().split(/\s+/).filter(Boolean).length;
-}
 
 /**
  * Feature A: fold the oldest STORY TO DATE segments into a single "deep past" digest so total
@@ -54,14 +53,16 @@ export async function executeStoryToDateFoldJob(
   // or a competing fold already ran). Only proceed if the target is still the oldest fold member.
   if (fold.length < 2 || fold[0]!.id !== targetSegmentId) return; // no-op: nothing worth folding
 
-  const last = fold[fold.length - 1]!;
+  const editor = getAgentProfile(userId, "editor");
+  const batch = selectFoldBatch(fold, editor.responseLimit);
+  if (batch.length < 2 || batch[0]!.id !== targetSegmentId) return;
+
+  const last = batch[batch.length - 1]!;
   if (last.coverageThroughIcPost == null || !last.coveragePageId) return; // can't set digest coverage
 
-  const merged = fold.map((s) => s.content).join("\n\n");
+  const merged = batch.map((s) => s.content).join("\n\n");
   const foldTokens = estimateTokens(merged);
-  const targetWords = Math.max(200, Math.round(wordCount(merged) * FOLD_TARGET_RATIO));
-
-  const editor = getAgentProfile(userId, "editor");
+  const targetWords = foldDigestTargetWords(foldWordCount(merged), editor.responseLimit);
   const messages = [
     { role: "system" as const, content: buildFoldSystem(targetWords) },
     { role: "user" as const, content: `Older memory to condense (chronological):\n\n${merged}` },
@@ -75,6 +76,11 @@ export async function executeStoryToDateFoldJob(
     })
   ).trim();
   if (!digest) throw new Error("fold produced empty digest");
+  if (looksFoldDigestTruncated(digest, editor.responseLimit)) {
+    throw new Error(
+      `fold digest likely truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`
+    );
+  }
   // Guard against a non-compressing result — if the model returned something as large as the input,
   // applying it would churn without shrinking anything. Leave the segments as they are.
   if (estimateTokens(digest) >= foldTokens) return;
@@ -90,7 +96,7 @@ export async function executeStoryToDateFoldJob(
   // The digest now spans many scenes; its old single-scene name no longer fits (Archives display only).
   setStoryToDateSegmentName(db, targetSegmentId, "");
 
-  for (const seg of fold.slice(1)) {
+  for (const seg of batch.slice(1)) {
     deleteStoryToDateSegment(db, seg.id);
   }
 }

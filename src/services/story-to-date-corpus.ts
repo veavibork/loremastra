@@ -280,6 +280,43 @@ export const STORY_TO_DATE_SOFT_CAP_TOKENS = 6000;
 export const FOLD_KEEP_RECENT_TOKENS = 3000;
 /** Fold output aims for this fraction of the folded input's word count (the model routinely beats it). */
 export const FOLD_TARGET_RATIO = 0.5;
+/** Stay below Editor max_tokens — outputs near this fraction are treated as truncated. */
+export const FOLD_MAX_OUTPUT_TOKEN_RATIO = 0.85;
+
+export function foldWordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+/** Cap fold digest length so a single Editor response can finish without hitting max_tokens. */
+export function foldDigestTargetWords(mergedWords: number, responseLimit: number): number {
+  const maxOutTokens = Math.floor(responseLimit * FOLD_MAX_OUTPUT_TOKEN_RATIO);
+  const maxWords = Math.floor(maxOutTokens * 0.7);
+  return Math.min(Math.max(200, Math.round(mergedWords * FOLD_TARGET_RATIO)), maxWords);
+}
+
+export function looksFoldDigestTruncated(digest: string, responseLimit: number): boolean {
+  return estimateTokens(digest) >= Math.floor(responseLimit * FOLD_MAX_OUTPUT_TOKEN_RATIO * 0.92);
+}
+
+/**
+ * Prefix of the fold set that fits one Editor call. Folding the entire eligible set in one shot
+ * routinely asks for more digest than max_tokens allows; the model truncates mid-prose while we
+ * still extend coverage across the full span — dropping scenes between the digest and kept segments.
+ */
+export function selectFoldBatch(fold: FoldableSegment[], responseLimit: number): FoldableSegment[] {
+  if (fold.length < 2) return [];
+  const maxTargetWords = foldDigestTargetWords(Number.MAX_SAFE_INTEGER, responseLimit);
+
+  let batch: FoldableSegment[] = [];
+  for (const seg of fold) {
+    const next = [...batch, seg];
+    const mergedWords = foldWordCount(next.map((s) => s.content).join("\n\n"));
+    if (next.length >= 2 && Math.round(mergedWords * FOLD_TARGET_RATIO) > maxTargetWords) break;
+    batch = next;
+  }
+  if (batch.length < 2) return fold.slice(0, Math.min(2, fold.length));
+  return batch;
+}
 
 export interface FoldableSegment {
   id: string;
