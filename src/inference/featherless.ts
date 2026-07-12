@@ -2,7 +2,8 @@ import type { AgentProfile } from "../config.js";
 import { FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from "./featherless-config.js";
 import { getGlobalDb } from "../db/global-db.js";
 import { recordModelOutcome } from "../db/model-config-store.js";
-import { logOutboundRequest } from "./outbound-log.js";
+import { logOutboundRequest, logOutboundResponse } from "./outbound-log.js";
+import { formatError } from "../lib/errors.js";
 
 /** Optional sampler params (Config > Agents), omitted entirely rather than sent as null/0 when unset — see docs' completions parameter list. */
 function samplerParams(profile: AgentProfile): Record<string, number> {
@@ -270,6 +271,7 @@ export async function streamInference(
   }
 
   const inputTokens = estimateMessageTokens(messages);
+  const startedAt = Date.now();
   let outputChars = 0;
   const idleTimeoutMs = options?.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
 
@@ -355,10 +357,16 @@ export async function streamInference(
         }
       }
     }
-    recordOutcome(profile, { success: true, inputTokens, outputTokens: tokensFromChars(outputChars) });
+    const latency = Date.now() - startedAt;
+    const outTok = tokensFromChars(outputChars);
+    logOutboundResponse("streamInference", profile.model, { success: true, latencyMs: latency, inputTokens, outputTokens: outTok, retries: 0 });
+    recordOutcome(profile, { success: true, inputTokens, outputTokens: outTok });
     handlers.onDone();
   } catch (err) {
-    recordOutcome(profile, { success: false, inputTokens, outputTokens: tokensFromChars(outputChars) });
+    const latency = Date.now() - startedAt;
+    const outTok = tokensFromChars(outputChars);
+    logOutboundResponse("streamInference", profile.model, { success: false, latencyMs: latency, inputTokens, outputTokens: outTok, retries: 0, error: formatError(err) });
+    recordOutcome(profile, { success: false, inputTokens, outputTokens: outTok });
     if (err instanceof Error && err.name === "AbortError") {
       handlers.onError(new Error(`stream idle timeout (${idleTimeoutMs}ms without provider data)`));
     } else {
@@ -413,6 +421,7 @@ export async function completeChat(
 
   const inputTokens = estimateMessageTokens(messages);
   logOutboundRequest({ call: "completeChat", model: profile.model, messages });
+  const startedAt = Date.now();
   const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS, options?.signal);
   try {
     const response = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
@@ -434,18 +443,26 @@ export async function completeChat(
     });
 
     if (!response.ok) {
+      const latency = Date.now() - startedAt;
+      const bodyText = await safeText(response);
+      logOutboundResponse("completeChat", profile.model, { success: false, latencyMs: latency, inputTokens, outputTokens: 0, retries: 0, error: `HTTP ${response.status}: ${bodyText}` });
       recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
-      throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${await safeText(response)}`);
+      throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${bodyText}`);
     }
 
     const data = (await response.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
+      const latency = Date.now() - startedAt;
+      logOutboundResponse("completeChat", profile.model, { success: false, latencyMs: latency, inputTokens, outputTokens: 0, retries: 0, error: "model returned empty completion" });
       recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
       throw new Error("model returned an empty completion");
     }
 
-    recordOutcome(profile, { success: true, inputTokens, outputTokens: estimateTokens(content) });
+    const latency = Date.now() - startedAt;
+    const outTok = estimateTokens(content);
+    logOutboundResponse("completeChat", profile.model, { success: true, latencyMs: latency, inputTokens, outputTokens: outTok, retries: 0 });
+    recordOutcome(profile, { success: true, inputTokens, outputTokens: outTok });
     return content;
   } finally {
     timeout.cleanup();
@@ -487,6 +504,7 @@ export async function callWithTools(
 
   const inputTokens = estimateMessageTokens(messages);
   logOutboundRequest({ call: "callWithTools", model: profile.model, messages });
+  const startedAt = Date.now();
   const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS);
   let response: Response;
   try {
@@ -515,8 +533,11 @@ export async function callWithTools(
   }
 
   if (!response.ok) {
+    const latency = Date.now() - startedAt;
+    const bodyText = await safeText(response);
+    logOutboundResponse("callWithTools", profile.model, { success: false, latencyMs: latency, inputTokens, outputTokens: 0, retries: 0, error: `HTTP ${response.status}: ${bodyText}` });
     recordOutcome(profile, { success: false, inputTokens, outputTokens: 0 });
-    throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${await safeText(response)}`);
+    throw new FeatherlessError(response.status, `Featherless request failed: ${response.status} ${bodyText}`);
   }
 
   const data = (await response.json()) as {
@@ -543,6 +564,9 @@ export async function callWithTools(
   });
 
   const outputChars = (message?.content ?? "").length + toolCalls.reduce((sum, tc) => sum + JSON.stringify(tc.arguments).length, 0);
-  recordOutcome(profile, { success: true, inputTokens, outputTokens: tokensFromChars(outputChars) });
+  const latency = Date.now() - startedAt;
+  const outTok = tokensFromChars(outputChars);
+  logOutboundResponse("callWithTools", profile.model, { success: true, latencyMs: latency, inputTokens, outputTokens: outTok, retries: 0 });
+  recordOutcome(profile, { success: true, inputTokens, outputTokens: outTok });
   return { content: message?.content ?? null, toolCalls };
 }

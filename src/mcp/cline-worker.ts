@@ -15,6 +15,12 @@
  * Registered in .mcp.json as "cline-worker". Runs as a standalone stdio MCP server,
  * same pattern as src/mcp/dev-server.ts.
  */
+
+// Future: batch_ask tool — accept an array of tasks, fan them out as parallel
+// completeChat calls via Promise.all, return all results. With a 1-slot model
+// (Qwen2.5-7B) and the worker's own API key, 4 tasks = 4 Featherless slots
+// from an independent pool. Stateless, read-only — no file edits or tool-calling.
+// ~50 LOC addition. Investigated 2026-07-12, shelved for now.
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -31,7 +37,7 @@ try {
 }
 
 const API_KEY = process.env.CLINE_WORKER_API_KEY ?? "";
-const MODEL = process.env.CLINE_WORKER_MODEL ?? "NousResearch/Hermes-3-Llama-3.1-8B";
+const MODEL = process.env.CLINE_WORKER_MODEL ?? "Qwen2.5-7B-Instruct";
 
 const MAX_FILE_CHARS = 28_000;
 const MAX_GREP_RESULTS = 50;

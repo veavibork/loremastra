@@ -1,3 +1,6 @@
+import { logUnhandledError } from "./lib/errors.js";
+import { startHealthSnapshots, type HealthSnapshot } from "./lib/pipeline-health.js";
+import { getWorkerLaneSnapshot } from "./queue/worker-lanes.js";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { storiesRoute } from "./routes/stories.js";
@@ -71,3 +74,38 @@ startPipelineRunner();
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Loremaster listening on http://localhost:${info.port}`);
 });
+
+// -- Global error handlers --
+
+process.on("unhandledRejection", (reason) => {
+  logUnhandledError({ source: "unhandledRejection" }, reason);
+});
+
+process.on("uncaughtException", (err) => {
+  logUnhandledError({ source: "uncaughtException" }, err);
+  // Don't exit — the pipeline runner is the critical subsystem and a single
+  // story/slot error shouldn't take down the whole HTTP server.
+});
+
+// -- Pipeline health snapshots --
+
+function buildHealthSnapshot(): Omit<HealthSnapshot, "at"> {
+  const db = getGlobalDb();
+  const lanes = getWorkerLaneSnapshot();
+  const users = listUsers(db);
+  const userId = users[0]?.id ?? "";
+  const queue = getQueueStatus(userId);
+  return {
+    activeJobs: 0,
+    pendingJobs: 0,
+    workerLanesUsed: lanes.workerActive,
+    workerLanesMax: lanes.workerThreadLimit,
+    proseLaneBusy: lanes.proseActive > 0,
+    hordeJobsRunning: 0,
+    hordeSlotsUsed: queue.used,
+    hordeSlotsMax: queue.max,
+    trackedStories: listAllStories(db).length,
+  };
+}
+
+startHealthSnapshots(buildHealthSnapshot);

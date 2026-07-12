@@ -90,6 +90,18 @@ export function publishCancelled(jobId: string): void {
   buffers.delete(jobId);
   emitter.emit(jobId, { type: "cancelled" });
 }
+export function publishJobCreated(jobId: string, jobType: string, storyId: string): void {
+  emitter.emit(jobId, { type: "created", jobType, storyId, at: new Date().toISOString() });
+}
+
+export function publishJobClaimed(jobId: string): void {
+  emitter.emit(jobId, { type: "claimed", at: new Date().toISOString() });
+}
+
+export function publishJobStarted(jobId: string): void {
+  emitter.emit(jobId, { type: "started", at: new Date().toISOString() });
+}
+
 
 export type JobEvent =
   | { type: "token"; text: string }
@@ -100,7 +112,11 @@ export type JobEvent =
   | { type: "sync"; text: string; thinking?: string; progress?: string; inputTokenEstimate?: number }
   | { type: "done"; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: "error"; message: string }
-  | { type: "cancelled" };
+  | { type: "cancelled" }
+  | { type: "created"; jobType: string; storyId: string; at: string }
+  | { type: "claimed"; at: string }
+  | { type: "started"; at: string };
+
 
 export function subscribeJob(jobId: string, onEvent: (event: JobEvent) => void): () => void {
   emitter.on(jobId, onEvent);

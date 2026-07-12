@@ -87,9 +87,8 @@ There is no aggregate `npm test` command — run the specific script you need.
 - **Frontend:** oxlint, configured in `web/.oxlintrc.json` (plugins: `react`,
   `typescript`, `oxc`; rules: `react/rules-of-hooks: error`,
   `react/only-export-components: warn`). Run with `npm run lint` from `web/`.
-- **Backend:** no linter is configured. The only enforced check is
-  `npm run typecheck`.
-- **Formatting:** no formatter (e.g. Prettier) is configured in this repo.
+- **Backend:** oxlint, configured in `.oxlintrc.json` (plugins: `typescript`, `oxc`). Run with `npm run lint` from repo root. The only other enforced check is `npm run typecheck`.
+- **Formatting:** no formatter is currently configured. This is not a settled decision — see evaluation-roadmap.md F-026.
 
 ## Directory map
 
@@ -132,7 +131,7 @@ Frontend `web/src/`:
 - `*View.tsx` — top-level views (Story, Settings, Logs, Memory, Worldbook,
   Archives, Saves, Agents, Prompts, Queue)
 - other `*.tsx`/`.ts` — components and helpers (each view has a matching `.css`)
-- `assets/`, `public/` — static assets
+- `public/` (under `web/`) — static assets
 
 ## Documentation
 

@@ -35,7 +35,7 @@ It is strict-adjacent: `noUnusedLocals`, `noUnusedParameters`,
   - Plugins: `react`, `typescript`, `oxc`
   - Key rules: `react/rules-of-hooks: error`, `react/only-export-components: warn`
 - Run with `npm run lint` from `web/`.
-- No Prettier is configured — do not introduce one without a decision.
+- No formatter is currently configured. This is not a settled decision — see docs/evaluation-roadmap.md F-026.
 
 ## Build
 

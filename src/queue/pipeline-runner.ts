@@ -39,6 +39,8 @@ import {
   publishDone,
   publishError,
   publishCancelled,
+  publishJobClaimed,
+  publishJobStarted,
   getJobBuffer,
 } from "./job-events.js";
 import {
@@ -539,6 +541,7 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
 
       const job = claimNextJob(db, WORKER_JOB_TYPES);
       if (!job) continue;
+      publishJobClaimed(job.id);
 
       // Editor archives (forward compression and folding alike) cost the full account limit — only one in flight per user.
       if (
@@ -564,6 +567,7 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
           releaseWorkerLane();
           continue;
         }
+        publishJobStarted(job.id);
         void executeStoryToDateJobWrapper(db, story.ownerUserId, storyId, logbook.id, job.id, job.targetStoryToDateId);
       } else if (job.jobType === "story-to-date-fold" && job.targetStoryToDateId) {
         const logbook = getBookByType(db, "logbook");
@@ -573,12 +577,16 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
           releaseWorkerLane();
           continue;
         }
+        publishJobStarted(job.id);
         void executeStoryToDateFoldJobWrapper(db, story.ownerUserId, logbook.id, job.id, job.targetStoryToDateId);
       } else if (job.jobType === "story-name" && job.targetTextId) {
+        publishJobStarted(job.id);
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId);
       } else if (job.jobType === "archive-name" && job.targetStoryToDateId) {
+        publishJobStarted(job.id);
         void executeStoryToDateNameJob(db, story.ownerUserId, job.id, job.targetStoryToDateId);
       } else if (job.jobType === "worldbook-compact" && job.targetTextId) {
+        publishJobStarted(job.id);
         void executeWorldbookCompactJob(db, story.ownerUserId, job.id);
       } else {
         finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);
@@ -600,6 +608,7 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
 
   const job = claimNextJob(db, PROSE_JOB_TYPES);
   if (!job) return;
+  publishJobClaimed(job.id);
 
   // Horde prose: submit-then-poll — does not hold the prose lane (workers may run while queued).
   if (job.jobType === "prose" && job.targetTextId && getAgentProfile(userId, "author").provider === "horde") {
@@ -626,14 +635,17 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
   if (job.jobType === "prose" && job.targetTextId) {
     const controller = new AbortController();
     runningControllers.set(job.id, controller);
+    publishJobStarted(job.id);
     void executeProseJob(db, userId, job.id, job.targetTextId, controller.signal, storyId);
   } else if (job.jobType === "setup" && job.targetTextId) {
     const controller = new AbortController();
     runningControllers.set(job.id, controller);
+    publishJobStarted(job.id);
     void executeSetupJob(db, userId, job.id, job.targetTextId, controller.signal);
   } else if (job.jobType === "setup-worldbook" && job.targetTextId) {
     const controller = new AbortController();
     runningControllers.set(job.id, controller);
+    publishJobStarted(job.id);
     void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal);
   } else {
     finishJob(db, job.id, "failed", `job ${job.id} (${job.jobType}) has no valid target`);

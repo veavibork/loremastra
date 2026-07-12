@@ -33,9 +33,9 @@ The following shorthand is used consistently throughout this document and codeba
 | **tag** | A keyword associated with a worldbook entry or post; the primary mechanism for lore retrieval |
 | **verbose** | The full text of a single post (~200 tokens) |
 | **story-to-date segment** | An Editor-generated rolling recap (`[STORY BEGINS]` / `[STORY CONTINUES]`), merged into one `[STORY TO DATE]` block in the Author prompt |
-| **Archives tab** | UI for inspecting/editing story-to-date segments and optional scene titles (tab-only; not injected into assembly) |
+| **Archives tab** | UI for inspecting/editing story-to-date segments, archive block summaries, and optional scene titles (tab-only; not injected into Author prompt assembly) |
 
-**Retired (2026-07-04):** per-post **compression** (`gen_extract`) and non-overlapping **decad archive blocks** (`[EVENT SUMMARY]` every ten posts). Code and DB columns may remain for migration compatibility; they are not enqueued, not assembled, and are purged on story DB open. Do not reintroduce without an explicit design decision.
+**Dormant (2026-07-04):** per-post **compression** (`gen_extract`) is disabled (`COMPRESSION_ENABLED = false`). The column and store functions remain as temporary migration scaffolding — per `evaluation-roadmap.md` F-020b, a sunset TODO marker is pending. Do not re-enable without an explicit design decision. **Decad archive blocks** remain active in the pipeline and UI; the earlier retirement note was incorrect. Code that references `gen_extract` in read paths (log-view, memory-manifest, content-stamp) should be removed once the migration window closes.
 
 ---
 
@@ -486,7 +486,7 @@ Phase 1 is complete — Loremaster is a purpose-built TypeScript application, de
 - **Backend:** Hono + SQLite (`better-sqlite3`), durable job queue, per-story file isolation
 - **Frontend:** React 19 + Vite 8, touch-first, config-driven layout
 - **Inference:** Featherless (primary) + AI Horde (secondary), per-user API keys encrypted at rest via `APP_MASTER_KEY`
-- **Memory:** Rolling `[STORY TO DATE]` Editor recaps (shipped 2026-07-04); per-post compression and decad archives retired
+- **Memory:** Rolling `[STORY TO DATE]` Editor recaps (shipped 2026-07-04); per-post compression dormant, decad archives active
 - **Auth:** Password-gated login, per-user sessions, admin-provisioned accounts only (`npm run user:create`)
 - **Dev tooling:** MCP server (`npm run mcp`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
 
