@@ -7,20 +7,20 @@ It is strict-adjacent: `noUnusedLocals`, `noUnusedParameters`,
 ## Architecture
 
 - **Entry:** `main.tsx` → `App.tsx` (root component)
-- **Views:** Top-level screens are `*View.tsx` files — `StoryView`, `SettingsView`,
-  `LogsView`, `MemoryView`, `WorldbookView`, `ArchivesView`, `SavesView`, `AgentsView`,
+- **Views:** Top-level screens are `*View.tsx` files — `StoryView`, `PreferencesView`,
+  `LogsView`, `ContextView`, `WorldbookView`, `SegmentsView`, `SavesView`, `AgentsView`,
   `PromptsView`, `QueueView`.
 - **CSS pairing:** Each view has a matching `.css` file (e.g. `StoryView.css`).
   Component-level CSS files follow the same pattern.
 - **API layer:** `api.ts` (core fetch wrapper), `api-coordinator.ts` (request orchestration).
-- **Utilities:** `format-time.ts`, `layoutUtils.ts`, `globalCssSettings.ts`,
+- **Utilities:** `format-time.ts`, `layoutUtils.ts`, `global-css-settings.ts`,
   `panel-types.ts`, `prompt-block.ts`, `toast.ts`, `error-capture.ts`.
 - **Hooks:** `useStoryLogScroll.ts`, `useVisualViewport.ts` (custom hooks prefixed `use`).
 
 ## Conventions
 
 - **Component naming:** PascalCase for components (`StoryView`, `Nav`, `ClaimGate`).
-  Hooks are camelCase with `use` prefix. Utility modules are kebab-case.
+  Hooks are camelCase with `use` prefix. Utility modules are kebab-case where possible.
 - **No CSS framework** — plain CSS files per component/view. Layout is config-driven
   (see `loremaster.md` UI Structure): component sizing uses relative/proportional units,
   not fixed pixel values.

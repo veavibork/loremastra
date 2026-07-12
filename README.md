@@ -2,7 +2,7 @@
 
 A lightweight, private roleplaying platform for a small group of trusted users, built for long-form RP stories. See [loremaster.md](loremaster.md) for the full project reference (mission, architecture, terminology, and roadmap context).
 
-**Memory model (2026-07-04):** rolling `[STORY TO DATE]` Editor recaps + verbose recent posts. Per-post compression is dormant; decad archive blocks remain active. See [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md).
+**Memory model (2026-07-04, fully cleaned up 2026-07-12):** rolling `[STORY TO DATE]` Editor recaps + verbose recent posts. Per-post compression and decad archive blocks are fully retired and removed. See [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md).
 
 **Author streaming UX (2026-07-04):** prefill countdown, live reasoning trace (`delta.reasoning` on
 Featherless V4-Pro), server-anchored elapsed timers — see [docs/featherless-notes.md](docs/featherless-notes.md)
@@ -64,24 +64,23 @@ Other useful scripts:
 | `npx tsx scripts/test-memory-pipeline-smoke.ts` | Memory pipeline smoke tests (in-process, no browser)                                                                                   |
 | `npx tsx scripts/story-to-date-experiment.ts`   | Iterate on `[STORY TO DATE]` prompts against synced VM data — see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md) |
 
-## Memory diagnostics (dev)
+## Context diagnostics (dev)
 
 While a story is open, quick health checks:
 
 ```
-GET  /api/stories/:id/memory/summary
-GET  /api/stories/:id/memory/tag-activation
+GET  /api/stories/:id/context/summary
+GET  /api/stories/:id/context/manifest
 GET  /api/stories/:id/prompt-preview
 GET  /api/stories/:id/story-to-date
-POST /api/stories/:id/memory/backfill
+POST /api/stories/:id/context/backfill
+POST /api/stories/:id/context/enqueue
 ```
 
 See [loremaster.md](loremaster.md) (MCP Server section) for the full MCP tool list. Production deploy: [docs/gcp-deployment.md](docs/gcp-deployment.md).
 
 ## Project layout
 
-- `src/` — backend (routes, services, db, queue)
-- `web/` — frontend
 - `scripts/` — one-off/dev scripts (DB init, user creation, dev server management)
 - `docs/roadmap.md` — high-level backlog (open items only)
 - `docs/development.md` — detailed milestone history and implementation notes

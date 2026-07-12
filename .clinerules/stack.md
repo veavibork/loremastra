@@ -119,23 +119,19 @@ Backend `src/`:
   `client-errors.ts`)
 - `db/` — SQLite stores and schema definitions (one `*-store.ts` per entity,
   plus `global-schema.ts`, `story-schema.ts`, `global-db.ts`, `story-db.ts`)
-- `services/` — business logic (memory/story-to-date, worldbook, archive,
-  compression, kickoff, history, etc.)
+- `services/` — business logic (story-to-date, worldbook, story transition, context invalidation, worldbook assembly, history, post-index, fork, layout, etc.)
 - `queue/` — job queue, concurrency, and worker-lane logic
 - `inference/` — inference-provider integrations (Featherless, AI Horde,
   reasoning-stream, outbound logging)
 - `middleware/` — Hono middleware (`session-guard.ts`)
 - `mcp/` — dev-tools MCP server (`dev-server.ts`, `single-instance.ts`)
-- `data/` — bundled data files (`featherless-tag-ratings.json`,
-  `hf-model-tags.json`)
-- `experiments/` — experimental code (one stub file; not currently active)
+- `defaults/` — bundled data files (`featherless-tag-ratings.json`, `hf-model-tags.json`, `global-css.ts`)
 
 Frontend `web/src/`:
 
 - `main.tsx` — entrypoint; `App.tsx` — root component
-- `*View.tsx` — top-level views (Story, Settings, Logs, Memory, Worldbook,
-  Archives, Saves, Agents, Prompts, Queue)
-- other `*.tsx`/`.ts` — components and helpers (each view has a matching `.css`)
+- `*View.tsx` — top-level views (Story, Preferences, Logs, Context, Worldbook, Segments, Saves, Agents, Prompts, Queue)
+  other `*.tsx`/`.ts` — components and helpers (each view has a matching `.css`)
 - `public/` (under `web/`) — static assets
 
 ## Documentation

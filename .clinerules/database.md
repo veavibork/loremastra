@@ -45,13 +45,13 @@ table-rename migration pattern.
 - **Store files** — one `*-store.ts` per entity in `src/db/`. Each exports typed functions
   that take a `Database` handle and return typed rows. Stores do not open connections
   themselves; callers pass the db handle.
-- **Content stamps** — `memory_content_stamp` on `page` is a SHA-256 fingerprint of
-  normalized `gen_package`. Used for memory invalidation diagnostics, not for compression
+- **Content stamps** — `content_hash` on `page` is a SHA-256 fingerprint of
+  normalized `gen_package`. Used for invalidation diagnostics, not for compression
   triggers (compression is retired).
 
 ## Retired columns/tables (do not rebuild)
 
 Per-post compression (`gen_extract`) and decad archive blocks (`[EVENT SUMMARY]`) are
-retired (2026-07-04). Legacy `archive`/`archive_member` rows and `gen_extract` columns may
-exist in old DB files but are purged on open via `purgeLegacyArchives`. Do not reintroduce
+fully retired (2026-07-04); `gen_extract` columns and `archive`/`archive_member` tables
+were removed in the 2026-07-12 disambiguation resolution. Do not reintroduce
 without an explicit design decision. See `loremaster.md` for full context.

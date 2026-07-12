@@ -31,7 +31,6 @@ Standalone TypeScript scripts in `scripts/`, run individually with `tsx`:
 - `test-memory-pipeline-smoke.ts` — in-process integration test: memory pipeline, HTTP API
   checks, and unit smokes. The closest thing to a "run the test suite" command.
 - `test-content-store.ts` — content store CRUD smoke.
-- `test-memory-invalidation.ts` — memory stamp invalidation on edit/retry/undo.
 - `test-memory-pipeline-http.ts` — memory pipeline via HTTP endpoints.
 - `test-post-index-smoke.ts` — tag indexing after post changes.
 - `test-role-suggestions.ts` — role suggestion logic.

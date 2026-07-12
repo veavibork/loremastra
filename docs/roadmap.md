@@ -17,7 +17,7 @@ real sessions; act only if the named problem actually shows up.
 - **Bespoke touch-first chrome** — status-icon nav, half-transparent sidebar, touch-first interaction pattern deferred in favor of plain controls ([development.md](development.md))
 - **Cross-story Debug view** — Debug panel scoped to active story only ([stub-revisions.md](stub-revisions.md))
 - **Client error friendly titles** — human-readable explanations for raw fetch/CORS failures; revisit after real usage data ([development.md](development.md))
-- **Summary tab cleanup** — legacy `gen_extract` view; compression retired; remove or repurpose ([development.md](development.md))
+- ~~Summary tab cleanup~~ — done 2026-07-12 (disambiguation resolution; gen_extract view removed)
 
 ## Security & data
 
@@ -26,7 +26,7 @@ real sessions; act only if the named problem actually shows up.
 
 ## Memory & lore
 
-- **MemoryView stale copy** — UI still references old Setting/Register/PC labels; cosmetic until Lore polish pass ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
+- **ContextView (formerly MemoryView)** — renamed 2026-07-12; still uses older Setting/Register/PC labels; cosmetic until Lore polish pass ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
 - **Worldbook deltas** — story-state changes stored separately from canonical entries so events don't contaminate baseline lore ([loremaster.md](../loremaster.md) Future Phases, [stub-revisions.md](stub-revisions.md))
 - **Fork point-in-time worldbook** — forks copy latest worldbook state, not reconstructed as-of fork timestamp ([development.md](development.md), [stub-revisions.md](stub-revisions.md))
 

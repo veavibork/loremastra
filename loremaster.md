@@ -20,22 +20,22 @@ This document is the authoritative reference for the Loremaster project. It is i
 
 The following shorthand is used consistently throughout this document and codebase.
 
-| Term                      | Definition                                                                                                                                                |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **LM**                    | Loremaster — this project                                                                                                                                 |
-| **market**                | Existing RP platforms: SillyTavern, KoboldAI, CharacterAI, AI Dungeon, NovelAI, etc.                                                                      |
-| **host**                  | LM's back-end server (currently a GCP e2-micro VM)                                                                                                        |
-| **provider**              | The LLM inference endpoint supplied by the user (Featherless and the Horde, as of the multi-user milestone)                                               |
-| **site**                  | LM's front end — a browser-accessible web application                                                                                                     |
-| **users**                 | LM's expected population: fewer than ten people                                                                                                           |
-| **story**                 | A single RP session/save slot — the core unit of LM's service                                                                                             |
-| **ERP**                   | Explicit/adult roleplay content — the primary content type LM is built to support                                                                         |
-| **tag**                   | A keyword associated with a worldbook entry or post; the primary mechanism for lore retrieval                                                             |
-| **verbose**               | The full text of a single post (~200 tokens)                                                                                                              |
-| **story-to-date segment** | An Editor-generated rolling recap (`[STORY BEGINS]` / `[STORY CONTINUES]`), merged into one `[STORY TO DATE]` block in the Author prompt                  |
-| **Archives tab**          | UI for inspecting/editing story-to-date segments, archive block summaries, and optional scene titles (tab-only; not injected into Author prompt assembly) |
+| Term                      | Definition                                                                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **LM**                    | Loremaster — this project                                                                                                                |
+| **market**                | Existing RP platforms: SillyTavern, KoboldAI, CharacterAI, AI Dungeon, NovelAI, etc.                                                     |
+| **host**                  | LM's back-end server (currently a GCP e2-micro VM)                                                                                       |
+| **provider**              | The LLM inference endpoint supplied by the user (Featherless and the Horde, as of the multi-user milestone)                              |
+| **site**                  | LM's front end — a browser-accessible web application                                                                                    |
+| **users**                 | LM's expected population: fewer than ten people                                                                                          |
+| **story**                 | A single RP session/save slot — the core unit of LM's service                                                                            |
+| **ERP**                   | Explicit/adult roleplay content — the primary content type LM is built to support                                                        |
+| **tag**                   | A keyword associated with a worldbook entry or post; the primary mechanism for lore retrieval                                            |
+| **verbose**               | The full text of a single post (~200 tokens)                                                                                             |
+| **story-to-date segment** | An Editor-generated rolling recap (`[STORY BEGINS]` / `[STORY CONTINUES]`), merged into one `[STORY TO DATE]` block in the Author prompt |
+| **Segments tab**          | UI for inspecting/editing story-to-date segments and optional scene titles (tab-only; not injected into Author prompt assembly)          |
 
-**Dormant (2026-07-04):** per-post **compression** (`gen_extract`) is disabled (`COMPRESSION_ENABLED = false`). The column and store functions remain as temporary migration scaffolding — per `evaluation-roadmap.md` F-020b, a sunset TODO marker is pending. Do not re-enable without an explicit design decision. **Decad archive blocks** remain active in the pipeline and UI; the earlier retirement note was incorrect. Code that references `gen_extract` in read paths (log-view, memory-manifest, content-stamp) should be removed once the migration window closes.
+**Retired (2026-07-04):** per-post **compression** (`gen_extract`) and **decad archive blocks** (`[EVENT SUMMARY]`/`archive`/`archive_member`) are fully removed (2026-07-12 disambiguation resolution). Do not reintroduce without an explicit design decision.
 
 ---
 
@@ -166,7 +166,7 @@ Inference-based auto-tagging was evaluated and rejected. The results were unreli
 
 LM has three agents, each with a distinct role and prompt strategy.
 
-**Editor** — Conversational agent for setup and maintenance. Conducts "shop talk" with the user, writing plain prose that wraps anything worldbook-worthy in a bracket tag the back end detects deterministically (see Structured Schema) — not a tool call. Also used during kickoff to generate and iterate on the opening post.
+**Editor** — Conversational agent for setup and maintenance. Conducts "shop talk" with the user, writing plain prose that wraps anything worldbook-worthy in a bracket tag the back end detects deterministically (see Structured Schema) — not a tool call. Also used during story transition to generate and iterate on the opening post.
 
 **Author** — Story-phase agent. Receives worldbook entries (persistent and tag-triggered), the assembled log, and the user's latest post. Prompted to treat the user's input as describing the PC's actions — not as direct user commands. Responsible for all prose generation during play.
 
@@ -184,22 +184,21 @@ Each agent's capabilities are implemented as discrete tools — functions with e
 
 The Editor's worldbook authoring is a deliberate exception to mid-conversation tool calls: an earlier design had the Editor call a tool (e.g. `create_worldbook_entry`) on its own judgment. In practice this proved unreliable — schema/field-casing drift and inconsistent completeness across otherwise-identical conversations (see docs/stub-revisions.md) — so it was replaced (2026-07-03) with plain bracket-tagged prose the back end parses deterministically via regex, no tool call involved.
 
-**Retired (2026-07-04):** per-post compression previously used forced tool-calling (`submit_summary`). That pipeline is removed; memory is `[STORY TO DATE]` Editor jobs instead. Decad archive summarization (`submit_archive_summary`) was superseded by story-to-date segments, but the Archives tab and `archive-name` Worker jobs for scene titles remain active. Phase 1 still benefits from providers with reliable chat completions; native function calling is no longer on the critical path for memory.
+**Retired (2026-07-04):** per-post compression used forced tool-calling (`submit_summary`). That pipeline is removed; memory is `[STORY TO DATE]` Editor jobs instead. Decad archive summarization (`submit_archive_summary`) was superseded by story-to-date segments; the Segments tab and `segment-name` Worker jobs for scene titles remain active. Phase 1 still benefits from providers with reliable chat completions; native function calling is no longer on the critical path for memory.
 
 ### MCP Server (Developer-Facing)
 
 LM's back end exposes an MCP server primarily so AI coding assistants working on LM itself — Cursor, Claude Code, or similar — can inspect live application state during a development session: recent logs, queue status, a story's worldbook or tag index, memory health, assembled prompts, and similar. This addresses a concrete pain point: without it, debugging requires manually copying state out of the running instance and pasting it into a chat session. With it, a coding assistant can query the actual system directly.
 
-Run locally with `npm run mcp`. Tools include: `list_stories`, `get_worldbook`, `get_tags`, `get_queue_status`, `get_recent_log`, `get_memory_manifest`, `get_memory_summary`, `preview_tag_activation`, `get_prompt_preview`, `backfill_memory`, `reindex_tags`, `enqueue_memory_jobs`, `notify_direct_mutation`, `tail_dev_server_log`, `get_recent_outbound_requests`.
+Run locally with `npm run mcp`. Tools include: `list_stories`, `get_worldbook`, `get_queue_status`, `get_recent_log`, `tail_dev_server_log`, `get_recent_outbound_requests`, `get_memory_manifest`, `get_memory_summary`, `get_prompt_preview`, `backfill_memory`, `enqueue_memory_jobs`, `notify_direct_mutation`.
 
 Equivalent HTTP routes for curl/automation (session required unless `DEV_BYPASS_SESSION_GUARD` is set on the server):
 
 ```
-GET  /api/stories/:id/memory/summary
-GET  /api/stories/:id/memory/manifest
-GET  /api/stories/:id/memory/tag-activation?fromPageId=...
-POST /api/stories/:id/memory/backfill   { "reindexTags": true, "enqueueJobs": true }
-POST /api/stories/:id/memory/enqueue
+GET  /api/stories/:id/context/summary
+GET  /api/stories/:id/context/manifest
+POST /api/stories/:id/context/backfill   { "enqueueJobs": true }
+POST /api/stories/:id/context/enqueue
 GET  /api/stories/:id/prompt-preview    ?tags=id1,id2   (optional tag override)
 ```
 
@@ -219,7 +218,7 @@ This is the core of LM's context management (shipped 2026-07-04). Older history 
 
 **Story-to-date segment** — An Editor job produces either `[STORY BEGINS]…[/STORY BEGINS]` (first segment) or `[STORY CONTINUES]…[/STORY CONTINUES]` (subsequent segments). Each segment records `[COVERAGE]N[/COVERAGE]` — the absolute in-character post number through which it summarizes. Segments are stored in `story_to_date_segment` and merged into a single `[STORY TO DATE]…[/STORY TO DATE]` system message at assembly time.
 
-**Scene title (optional)** — After a segment fills, a Worker `archive-name` job may assign a short `[NAME]` title. **Archives tab only** — never injected into the Author prompt.
+**Scene title (optional)** — After a segment fills, a Worker `segment-name` job may assign a short `[NAME]` title. **Segments tab only** — never injected into the Author prompt.
 
 ### Trigger and input
 
@@ -231,7 +230,7 @@ Implementation: `src/services/story-to-date.ts`, `src/services/story-to-date-wor
 
 ### Content stamps and invalidation
 
-Each page stores `memory_content_stamp`: a SHA-256 fingerprint of normalized canonical `gen_package`. Stamps update on edit/retry/undo/redo for diagnostics; **compress jobs are not enqueued** (retired).
+Each page stores `content_hash`: a SHA-256 fingerprint of normalized canonical `gen_package`. Stamps update on edit/retry/undo/redo for diagnostics; **compress jobs are not enqueued** (retired).
 
 When canonical text changes inside a segment's coverage window, affected story-to-date segments (and their pending jobs) are deleted; a new segment may enqueue once the trigger threshold is met again. Fork truncate uses the same pruning rules.
 
@@ -242,13 +241,13 @@ When canonical text changes inside a segment's coverage window, affected story-t
 1. Author system prompt
 2. All visible worldbook entries (CONTENT, ROSTER, MEMORY)
 3. Merged `[STORY TO DATE]` from ready segments
-4. Verbose posts **after** the last segment's coverage page only (kickoff page onward)
+4. Verbose posts **after** the last segment's coverage page only (story transition page onward)
 
 There is no per-post compression tier and no decad archive tier in assembly.
 
-### Retired: per-post compression
+### Retired: per-post compression and decad archives
 
-Per-post compression (~20 tokens via Worker) was the Phase 1 design through 2026-07-03. **Retired 2026-07-04.** Legacy `gen_extract` columns may still exist in old DB files but are ignored (`COMPRESSION_ENABLED = false`). Decad archive blocks (`[EVENT SUMMARY]`) were superseded by story-to-date segments at the same time — the Archives tab now manages story-to-date segments, and `archive-name` Worker jobs provide optional scene titles. Legacy `archive`/`archive_member` rows are purged on open (`purgeLegacyArchives` in `src/db/story-db.ts`). Do not rebuild either path without an explicit new design.
+Per-post compression (~20 tokens via Worker) and decad archive blocks (`[EVENT SUMMARY]`) were the Phase 1 design through 2026-07-03. **Retired 2026-07-04; fully removed 2026-07-12.** Legacy `gen_extract` columns, `archive`/`archive_member` tables, and `purgeLegacyArchives` have been deleted. The Segments tab now manages story-to-date segments exclusively, and `segment-name` Worker jobs provide optional scene titles.
 
 ---
 
@@ -259,9 +258,9 @@ Per-post compression (~20 tokens via Worker) was the Phase 1 design through 2026
 1. User initiates a new story.
 2. The editor opens a structured conversation, asking what kind of story the user wants and probing for details.
 3. As the conversation develops, the back end regex-scans the editor's OOC replies for bracket-tagged blocks and creates a worldbook entry per detected block, highlighted live in the chat. The tag cloud is user-maintained, not editor-populated. Both are presented to the user as a live preview beside the chat.
-4. User clicks **Kickoff** on the live worldbook. The editor finalizes the worldbook and transitions to the kickoff phase.
+4. User clicks **Start Story** on the live worldbook. The editor finalizes the worldbook and transitions to the story phase.
 
-### 2. Kickoff
+### 2. Story Transition
 
 1. The author generates an opening post based on the worldbook.
 2. User feedback is treated as a guided retry. The opening post is shown as a live preview beside the chat.
@@ -315,7 +314,7 @@ These rules apply uniformly across all controls above:
 
 - **Story-to-date segments are invalidated** when canonical text changes at or before a segment's coverage page. Affected segments and their pending jobs are removed; new segments enqueue when the trigger threshold is met again.
 - **Tag indexing** runs retroactively on any content change. An edited post, a newly canonical version, or undo/redo all trigger re-indexing for affected text.
-- **Content stamps** (`memory_content_stamp`) update on canonical text change for diagnostics and manifest views; they do not enqueue compress jobs.
+- **Content stamps** (`content_hash`) update on canonical text change for diagnostics and context manifest views; they do not enqueue compress jobs.
 
 ### Worldbook Versioning
 
@@ -361,8 +360,8 @@ Tabs include Saves, Logs, **Archives**, and Summary.
 
 - _Saves_ — session/slot management; load, name, rename, and switch between active stories and branches.
 - _Logs_ — recent activity telemetry: timestamps, input text, observed tags, prompt text, response text, token counts, turnaround times, error codes.
-- _Archives_ — **shipped UI for story-to-date segments** (2026-07-04): collapse/expand, edit/save content, requeue pending segments, optional Worker-generated scene titles, token counts. This is the management surface for `[STORY TO DATE]` memory; titles from naming jobs appear here only.
-- _Summary_ — legacy read-only view of `gen_extract` lines. Compression is retired; this tab may be empty on new stories and is a candidate for removal or repurposing.
+- _Segments_ — **shipped UI for story-to-date segments** (2026-07-04): collapse/expand, edit/save content, requeue pending segments, optional Worker-generated scene titles, token counts. This is the management surface for `[STORY TO DATE]` memory; titles from naming jobs appear here only.
+- _Summary_ — removed (2026-07-12); the legacy `gen_extract` view was cleaned up in the disambiguation resolution.
 
 **Config**
 Two tabs: Agents and Prompts.
@@ -489,7 +488,7 @@ Phase 1 is complete — Loremaster is a purpose-built TypeScript application, de
 - **Backend:** Hono + SQLite (`better-sqlite3`), durable job queue, per-story file isolation
 - **Frontend:** React 19 + Vite 8, touch-first, config-driven layout
 - **Inference:** Featherless (primary) + AI Horde (secondary), per-user API keys encrypted at rest via `APP_MASTER_KEY`
-- **Memory:** Rolling `[STORY TO DATE]` Editor recaps (shipped 2026-07-04); per-post compression dormant, decad archives active
+- **Memory:** Rolling `[STORY TO DATE]` Editor recaps (shipped 2026-07-04); per-post compression and decad archives retired and fully removed (2026-07-12)
 - **Auth:** Password-gated login, per-user sessions, admin-provisioned accounts only (`npm run user:create`)
 - **Dev tooling:** MCP server (`npm run mcp`), testing (vitest + playwright — `npm test`, `npm run test:e2e`), linting (oxlint — `npm run lint`), formatting (Prettier — `npm run format`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
 

@@ -298,6 +298,24 @@ the single-active-session-eviction bullet is done. Future Phases appendix items 
 WYSIWYG layout editing, worldbook deltas, pronoun-per-tag declarations, outside MCP client support)
 stay out of scope unless explicitly requested.
 
+## Disambiguation resolution (2026-07-12) — ✅ done
+
+Full execution of `docs/disambiguation-resolution.md`: ~46 items across 6 phases eliminating naming collisions, overloads, and orphaned references across the codebase.
+
+**Phase 1 — Purge Dead Code:** Deleted `archive-worker.ts`, `compress-worker.ts`, `compression.ts`, `memory-config.ts`, `src/experiments/`. Removed `gen_extract` column (text-store, schema, log-view), `compress` job type, `sourcebook` book type. Cleaned `COMPRESSION_ENABLED` imports, simplified `postNeedsCompress` to stub.
+
+**Phase 2 — Backend Renames (12 files):** `memory-manifest.ts` → `context-manifest.ts`, `memory-invalidation.ts` → `context-invalidation.ts`, `content-stamp.ts` → `content-fingerprint.ts`, `play-tab.ts` → `display-preferences.ts`, `toggle-presets.ts` → `generation-presets.ts`, `worker-lanes.ts` → `job-lanes.ts`, `story-to-date-corpus.ts` → `story-to-date-engine.ts`, `kickoff.ts` → `story-transition.ts`, `worldbook-pc.ts` → `worldbook-assembly.ts`, `api-coordinator.ts` → `api-limiter.ts`, `outbound-log.ts` → `outbound-telemetry.ts`. Merged `story-to-date-admin.ts` into `story-to-date.ts`.
+
+**Phase 3 — Content Changes:** Deduplicated `AgentRole` to `model-config-store.ts`. Renamed `StoryPhase 'story'` → `'active'`, `book_type 'game'` → `'story'`, `memory_content_stamp` → `content_hash`. Renamed `/memory` → `/context` routes. Renamed `archive-name` → `segment-name` job type. Removed legacy archive system (`archive-store.ts`, `archive.ts`, `archive-eligibility.ts`, `archive-view.ts`, `purgeLegacyArchives`, archive tables from schema).
+
+**Phase 4 — File Moves:** Moved `global-css.ts` → `src/defaults/`, `db/time.ts` → `src/lib/time.ts`, `horde-slots.ts` → `src/inference/`. Consolidated `corrupted-tools/` to root.
+
+**Phase 5 — Frontend Renames (8 components):** PascalCase renames (`playTabSettings.tsx` → `PlayTabSettings.tsx`, etc.), view renames (`SettingsView` → `PreferencesView`, `ArchivesView` → `SegmentsView`, `MemoryView` → `ContextView`), registry tab keys updated.
+
+**Phase 6 — Verification:** 72/72 tests passing, 0 lint warnings (backend), 0 compilation errors, 12 pre-existing frontend lint warnings preserved.
+
+13 diagnostic scripts updated for renamed modules/paths. 3 dead scripts deleted (`check-memory-jobs.ts`, `story-memory-stats.ts`, `test-memory-invalidation.ts`).
+
 **Additional, post-Phase-1: centralized prompts, freeform worldbook, pure-grep tags** — ✅ done,
 2026-07-03. Replaces the forced-tool-calling worldbook extraction pipeline (Milestone C's
 `runWorldbookExtraction`) with plain bracket-tagged prose the back end regex-scans deterministically —
