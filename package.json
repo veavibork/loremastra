@@ -19,7 +19,8 @@
     "server:restart": "node scripts/dev-restart.mjs",
     "server:reset-db": "node scripts/dev-reset-db.mjs",
     "server:fresh": "node scripts/dev-reset-db.mjs && node scripts/dev-restart.mjs",
-    "mcp": "tsx src/mcp/dev-server.ts"
+    "mcp": "tsx src/mcp/dev-server.ts",
+    "prepare": "simple-git-hooks"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.6",
@@ -36,10 +37,18 @@
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.7.4",
     "@vitest/coverage-v8": "^4.1.10",
+    "lint-staged": "^16.2.6",
     "oxlint": "^1.73.0",
     "prettier": "^3.9.5",
+    "simple-git-hooks": "^2.13.1",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
     "vitest": "^4.1.10"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,css,md}": "prettier --write"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged"
   }
 }
