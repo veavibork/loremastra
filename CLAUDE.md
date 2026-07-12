@@ -218,3 +218,13 @@ If you use the cheap worker MCP server (`cline-worker`), keep it on a small 1-sl
 `src/inference/schema/` contains Darkness-bamboo's raw API verification toolkit:
 `req-toolcall.json`, `req-multitool.json`, `parse.py`, and `README.md`. Use it to verify
 new models empirically before relying on them in OMP.
+
+## When Ending a Session
+
+If you changed code, config, or tooling:
+
+1. **Lint:** `npm run lint` (backend) and `cd web && npm run lint` (frontend). Fix warnings.
+2. **Test:** `npm test` — confirm nothing broke.
+3. **Format:** files auto-formatted on commit by the pre-commit hook.
+4. **Reconcile docs:** run through `.clinerules/skills/doc-reconciliation.md`. Docs MUST match reality after every session — stale claims compound fast.
+5. **Commit:** `git add` and commit with a descriptive message.
