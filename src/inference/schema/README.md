@@ -1,6 +1,6 @@
 # Raw API verification toolkit (Featherless / any OpenAI-compatible provider)
 
-Deterministic curl tests + a tiny SSE parser for figuring out how a provider *actually* behaves
+Deterministic curl tests + a tiny SSE parser for figuring out how a provider _actually_ behaves
 (reasoning field name, tool-call integrity, effort control) instead of trusting docs or hearsay.
 No LLM prompt magic — the "prompts" here are just test fixtures designed to force specific behaviors.
 
@@ -33,15 +33,15 @@ Each request's user message forces one specific, deterministic behavior so a fai
 
 ## Full test matrix (what each variation reveals)
 
-| Test | Change from baseline | Reveals |
-|---|---|---|
-| long tool args | ~100-line file write | mid-stream arg corruption / tag leakage |
-| two tool calls, one turn | multitool prompt | tool-call ID uniqueness |
-| `reasoning_effort: high/max/low` | add param, non-stream | which effort levels the host accepts |
-| zai-style `thinking: {...}` vs nothing | swap/remove param | which thinking control actually works (vs silently ignored) |
-| non-stream math question | no tools | which field carries reasoning (`reasoning` vs `reasoning_content`) |
-| tool-result round trip, no reasoning replay | hand-built assistant+tool history | whether the endpoint validates replayed reasoning |
-| forced `tool_choice` (named) + reasoning | add both params | whether forced tool choice 400s or conflicts with reasoning |
+| Test                                        | Change from baseline              | Reveals                                                            |
+| ------------------------------------------- | --------------------------------- | ------------------------------------------------------------------ |
+| long tool args                              | ~100-line file write              | mid-stream arg corruption / tag leakage                            |
+| two tool calls, one turn                    | multitool prompt                  | tool-call ID uniqueness                                            |
+| `reasoning_effort: high/max/low`            | add param, non-stream             | which effort levels the host accepts                               |
+| zai-style `thinking: {...}` vs nothing      | swap/remove param                 | which thinking control actually works (vs silently ignored)        |
+| non-stream math question                    | no tools                          | which field carries reasoning (`reasoning` vs `reasoning_content`) |
+| tool-result round trip, no reasoning replay | hand-built assistant+tool history | whether the endpoint validates replayed reasoning                  |
+| forced `tool_choice` (named) + reasoning    | add both params                   | whether forced tool choice 400s or conflicts with reasoning        |
 
 ## Instructions for running this via a coding agent
 
@@ -57,6 +57,6 @@ If you drive this with an AI agent (Claude Code, omp, etc.), this is the instruc
 ## Gotchas (learned the hard way)
 
 - Providers change deployments without notice — re-run after any announced backend change
-- Vendor docs and community posts may describe a *different* deployment (e.g. Z.AI's own API uses
+- Vendor docs and community posts may describe a _different_ deployment (e.g. Z.AI's own API uses
   `reasoning_content`; Featherless serves the same model returning `reasoning`)
 - A single empty-reasoning response fooled me once; n=2 + control showed reasoning was simply on by default

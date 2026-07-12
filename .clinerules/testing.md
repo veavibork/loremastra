@@ -5,14 +5,14 @@ checks are standalone TypeScript scripts in `scripts/`, run individually with `t
 
 ## Script prefixes
 
-| Prefix | Purpose |
-|---|---|
-| `test-` | Smoke/integration checks — verify a subsystem works end-to-end |
-| `probe-` | Diagnostic experiments — explore an API/provider behavior |
-| `debug-` | Debugging tools — inspect specific state or trace a bug |
-| `inspect-` / `check-` | Read-only inspection of DB or runtime state |
-| `story-to-date-*` | Memory pipeline experiments and diagnostics |
-| `vm-*` | VM-sync diagnostics (`.cjs`/`.mjs` variants for standalone use) |
+| Prefix                | Purpose                                                         |
+| --------------------- | --------------------------------------------------------------- |
+| `test-`               | Smoke/integration checks — verify a subsystem works end-to-end  |
+| `probe-`              | Diagnostic experiments — explore an API/provider behavior       |
+| `debug-`              | Debugging tools — inspect specific state or trace a bug         |
+| `inspect-` / `check-` | Read-only inspection of DB or runtime state                     |
+| `story-to-date-*`     | Memory pipeline experiments and diagnostics                     |
+| `vm-*`                | VM-sync diagnostics (`.cjs`/`.mjs` variants for standalone use) |
 
 There is **no `npm test` command**. Run the specific script you need:
 

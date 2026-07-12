@@ -1,78 +1,78 @@
-import { useEffect, useState } from "react";
-import { createStory, deleteStory, fetchPhase, listStories, renameStory, type Story } from "./api";
-import type { PanelProps } from "./panel-types";
-import "./SavesView.css";
+import { useEffect, useState } from 'react'
+import { createStory, deleteStory, fetchPhase, listStories, renameStory, type Story } from './api'
+import type { PanelProps } from './panel-types'
+import './SavesView.css'
 
 function formatLastPlayed(iso: string | null): string {
-  if (!iso) return "never played";
-  return new Date(iso).toLocaleString();
+  if (!iso) return 'never played'
+  return new Date(iso).toLocaleString()
 }
 
 export default function SavesView({ story, onStoryChange, onPhaseChange }: PanelProps) {
-  const [stories, setStories] = useState<Story[]>([]);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
-  const [newName, setNewName] = useState("");
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [stories, setStories] = useState<Story[]>([])
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [newName, setNewName] = useState('')
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function reload() {
-    setStories(await listStories());
+    setStories(await listStories())
   }
 
   useEffect(() => {
-    void reload();
-  }, []);
+    void reload()
+  }, [])
 
   async function handleSwitch(target: Story) {
-    onStoryChange(target);
-    onPhaseChange((await fetchPhase(target.id)).phase);
+    onStoryChange(target)
+    onPhaseChange((await fetchPhase(target.id)).phase)
   }
 
   async function handleRename(id: string) {
-    if (!renameDraft.trim()) return;
+    if (!renameDraft.trim()) return
     try {
-      await renameStory(id, renameDraft.trim());
-      setRenamingId(null);
-      await reload();
+      await renameStory(id, renameDraft.trim())
+      setRenamingId(null)
+      await reload()
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   async function handleCreate() {
-    if (!newName.trim()) return;
+    if (!newName.trim()) return
     try {
-      const created = await createStory(newName.trim());
-      setNewName("");
-      await reload();
-      await handleSwitch(created);
+      const created = await createStory(newName.trim())
+      setNewName('')
+      await reload()
+      await handleSwitch(created)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   async function handleDelete(id: string) {
     try {
-      await deleteStory(id);
-      setConfirmingDeleteId(null);
+      await deleteStory(id)
+      setConfirmingDeleteId(null)
       if (story?.id === id) {
-        const remaining = await listStories();
-        const next = remaining[0] ?? (await createStory("Default Story"));
-        await handleSwitch(next);
+        const remaining = await listStories()
+        const next = remaining[0] ?? (await createStory('Default Story'))
+        await handleSwitch(next)
       }
-      await reload();
+      await reload()
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   function parentName(parentId: string | null): string | null {
-    if (!parentId) return null;
-    return stories.find((s) => s.id === parentId)?.name ?? "(unknown)";
+    if (!parentId) return null
+    return stories.find((s) => s.id === parentId)?.name ?? '(unknown)'
   }
 
   return (
@@ -83,17 +83,21 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
       <form
         className="saves-new-form"
         onSubmit={(e) => {
-          e.preventDefault();
-          void handleCreate();
+          e.preventDefault()
+          void handleCreate()
         }}
       >
-        <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New story name" />
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="New story name"
+        />
         <button type="submit">+ New story</button>
       </form>
 
       <ul className="saves-list">
         {stories.map((s) => (
-          <li key={s.id} className={s.id === story?.id ? "active" : ""}>
+          <li key={s.id} className={s.id === story?.id ? 'active' : ''}>
             {renamingId === s.id ? (
               <>
                 <input value={renameDraft} onChange={(e) => setRenameDraft(e.target.value)} />
@@ -114,8 +118,9 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
                   )}
                   {s.stats && (
                     <span className="saves-row-stats">
-                      {s.stats.icPosts ?? "—"} IC posts &middot; {s.stats.chatRows} text versions &middot;{" "}
-                      {s.stats.worldbookRows} worldbook entries &middot; {formatLastPlayed(s.stats.lastPlayedAt)}
+                      {s.stats.icPosts ?? '—'} IC posts &middot; {s.stats.chatRows} text versions
+                      &middot; {s.stats.worldbookRows} worldbook entries &middot;{' '}
+                      {formatLastPlayed(s.stats.lastPlayedAt)}
                     </span>
                   )}
                 </div>
@@ -131,19 +136,27 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
                   </div>
                 ) : (
                   <div className="saves-row-actions">
-                    <button type="button" onClick={() => handleSwitch(s)} disabled={s.id === story?.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitch(s)}
+                      disabled={s.id === story?.id}
+                    >
                       Switch
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setRenamingId(s.id);
-                        setRenameDraft(s.name);
+                        setRenamingId(s.id)
+                        setRenameDraft(s.name)
                       }}
                     >
                       Rename
                     </button>
-                    <button type="button" className="danger" onClick={() => setConfirmingDeleteId(s.id)}>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => setConfirmingDeleteId(s.id)}
+                    >
                       Delete
                     </button>
                   </div>
@@ -154,5 +167,5 @@ export default function SavesView({ story, onStoryChange, onPhaseChange }: Panel
         ))}
       </ul>
     </div>
-  );
+  )
 }

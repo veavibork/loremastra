@@ -5,9 +5,23 @@
   "max_tokens": 2048,
   "reasoning_effort": "high",
   "messages": [
-    {"role": "user", "content": "Get the weather for Tokyo AND Osaka. You must call get_weather twice in this single turn, once per city."}
+    {
+      "role": "user",
+      "content": "Get the weather for Tokyo AND Osaka. You must call get_weather twice in this single turn, once per city."
+    }
   ],
   "tools": [
-    {"type": "function", "function": {"name": "get_weather", "description": "Get current weather for a city", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": { "city": { "type": "string" } },
+          "required": ["city"]
+        }
+      }
+    }
   ]
 }

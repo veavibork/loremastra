@@ -35,27 +35,29 @@ and [docs/reasoning-stream-research.md](docs/reasoning-stream-research.md) (thin
 ## Running
 
 Backend:
+
 ```
 npm run dev
 ```
 
 Frontend (from `web/`):
+
 ```
 npm run dev
 ```
 
 Other useful scripts:
 
-| Command | Description |
-|---|---|
-| `npm run typecheck` | Type-check the backend without emitting |
-| `npm run build` | Compile the backend |
-| `npm run mcp` | Dev-tools MCP server (queue, logs, worldbook, memory manifest, prompt preview) |
-| `npm run server:restart` | Restart the dev backend process |
-| `npm run server:reset-db` | Reset the local database |
-| `npm run server:fresh` | Reset the database and restart the backend |
-| `npx tsx scripts/test-memory-pipeline-smoke.ts` | Memory pipeline smoke tests (in-process, no browser) |
-| `npx tsx scripts/story-to-date-experiment.ts` | Iterate on `[STORY TO DATE]` prompts against synced VM data — see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md) |
+| Command                                         | Description                                                                                                                            |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                             | Type-check the backend without emitting                                                                                                |
+| `npm run build`                                 | Compile the backend                                                                                                                    |
+| `npm run mcp`                                   | Dev-tools MCP server (queue, logs, worldbook, memory manifest, prompt preview)                                                         |
+| `npm run server:restart`                        | Restart the dev backend process                                                                                                        |
+| `npm run server:reset-db`                       | Reset the local database                                                                                                               |
+| `npm run server:fresh`                          | Reset the database and restart the backend                                                                                             |
+| `npx tsx scripts/test-memory-pipeline-smoke.ts` | Memory pipeline smoke tests (in-process, no browser)                                                                                   |
+| `npx tsx scripts/story-to-date-experiment.ts`   | Iterate on `[STORY TO DATE]` prompts against synced VM data — see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md) |
 
 ## Memory diagnostics (dev)
 

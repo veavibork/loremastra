@@ -102,6 +102,7 @@ state, never persisted, per the doc's "not stored as a post." Kickoff reuses the
 attempts (retry, not a new page each time) so Back-to-Setup → Kickoff-again doesn't pollute the log chain.
 
 Two real bugs caught via direct testing, not superficial ones:
+
 - **Null tool-call ids**: Featherless sometimes returns `id: null` on some entries when a model calls
   several tools in one turn (observed with DeepSeek-V4-Pro creating an NPC + Location together).
   Passing that through verbatim on the next request got a `422` rejection. Fixed with a synthetic
@@ -169,7 +170,7 @@ reason as the backfill above — no migration framework exists yet, so this is t
 Fork (`src/services/fork.ts`) physically copies the story's SQLite file (WAL-checkpointed first so the
 copy is complete), then in the copy hides everything after the fork point and severs that page's forward
 pointer — a permanent structural truncation, not just moving the ephemeral cursor, since a separate story
-file has no "redo forward" concept to preserve. Worldbook state is copied at its *current* (latest) state
+file has no "redo forward" concept to preserve. Worldbook state is copied at its _current_ (latest) state
 rather than reconstructed as of the fork point's timestamp — worldbook entries aren't chronologically
 linked to log pages the way posts are, so true point-in-time reconstruction is a real feature in its own
 right (adjacent to the doc's own deferred "worldbook deltas" idea). Fine for forks made close to the
@@ -198,7 +199,7 @@ until there's a concrete reason to invest in it — the config-driven nav undern
 chrome sits on top of it later.
 
 Done: Story section (Play = the existing phase-aware chat, now `StoryPlayPanel.tsx`; Saves = list/switch
-/rename/create stories, shows fork lineage; Logs = per-post telemetry table, now backed by *real* data —
+/rename/create stories, shows fork lineage; Logs = per-post telemetry table, now backed by _real_ data —
 `fillTextGeneration` didn't capture any metrics before this pass, so Logs would have shown nothing;
 added `elapsedMs`/`tokenEstimate` capture in `executeProseJob` and extended `buildLogView`/`LogEntry`
 with `createdAt`/`genMetrics`). Lore section (Worldbook = existing `LoreView`; Memory = the prompt
@@ -217,16 +218,17 @@ telemetry only covers prose (story) posts, not compress/archive job metrics. Deb
 story is currently active, not a cross-story view.
 
 **F. Security** — partially done, 2026-07-02.
+
 - ~~Session tokens with single-active-session eviction (explicit signal on evict, not silent failure).~~
   — done, but decoupled from the password-login step this bullet originally assumed: a manual "claim"
   button triggers eviction instead. `src/db/session-store.ts` (built on the previously-100%-dead
   `sessions` table), `src/middleware/session-guard.ts` (global Hono middleware, 409 on any mismatch —
-  applies to *all* HTTP access, curl/dev scripts included, no bypass), `POST /api/sessions/claim`,
+  applies to _all_ HTTP access, curl/dev scripts included, no bypass), `POST /api/sessions/claim`,
   frontend `ClaimGate.tsx` gating all of `App.tsx`. This is concurrency/data-integrity arbitration
   between one trusted user's own devices, **not access control** — the API still takes zero credentials,
   exactly as before. Verified end-to-end live: unclaimed → 409, claim → 200, second claim evicts the
   first with both sessions' real last-seen timestamps returned, a job started by a session evicted mid-
-  flight ran to completion and produced a real reply, background polls confirmed *not* to refresh a
+  flight ran to completion and produced a real reply, background polls confirmed _not_ to refresh a
   session's last-seen time (only real interactions do). Known accepted gap: direct in-process DB/script
   access (ad hoc `.mts` test scripts, the MCP dev-server tools) never touches Hono, so it bypasses this
   entirely — mitigated by habit (claim a throwaway session after such work if the browser should notice),
@@ -237,6 +239,7 @@ story is currently active, not a cross-story view.
   not a blocker.
 
 **G. Remaining Phase 1 requirements** — ✅ done, 2026-07-01.
+
 - ~~Config-driven layout system~~ — done, pulled forward ahead of E (see above).
 - **MCP dev server** — `src/mcp/dev-server.ts`, a stdio MCP server (registered in `.mcp.json`, run via
   `npm run mcp`) exposing `list_stories`, `get_worldbook`, `get_tags` (with live matched-post counts),
@@ -248,14 +251,14 @@ story is currently active, not a cross-story view.
   `src/inference/featherless.ts`; `AgentProfile.fallbackModels` (ranked, editable via Config > Agents)
   tried in order when the primary returns a "this model is unavailable" status. Verified with a real
   failure: set the worker's model to a string that doesn't exist, confirmed the job failed with a
-  Featherless 404, added a fallback model, confirmed the *same* job type then succeeded via the
+  Featherless 404, added a fallback model, confirmed the _same_ job type then succeeded via the
   fallback. That test surfaced a real gap — 404 (`model_not_found`) isn't in Featherless's documented
   error table at all, and wasn't in the original unavailable-status set (400/403/503); added it. See
   docs/featherless-notes.md.
 - **Provider boundary** — confirmed clean, and tightened while confirming: `FEATHERLESS_API_KEY`/
   `FEATHERLESS_BASE_URL`/`FEATHERLESS_USER_AGENT` lived in the shared `config.ts` alongside the
   provider-agnostic `AgentProfile`/`DEFAULT_*_PROFILE` — moved to a new `src/inference/featherless-
-  config.ts` so `config.ts` has zero Featherless-specific symbols left. Confirmed via grep that nothing
+config.ts` so `config.ts` has zero Featherless-specific symbols left. Confirmed via grep that nothing
   outside `src/inference/` touches raw Featherless request/response shapes — everything else calls
   `streamInference`/`callWithForcedTool`/`callWithTools`/`withModelFallback` with a provider-agnostic
   `AgentProfile` + `ChatMessage[]`.
@@ -280,7 +283,7 @@ to each of the ~29 catch sites across 9 view files. `apiFetch` (`web/src/api.ts`
 recognizes as a network-failure signature and escalates to a sticky critical toast — directly matching
 the original "site stopped responding, CORS error" complaint that prompted this feature.
 
-Verified live: `console.error("test")` produces a fading error toast; a *real* uncaught exception
+Verified live: `console.error("test")` produces a fading error toast; a _real_ uncaught exception
 (`setTimeout(() => { throw new Error(...) })`, not a directly-typed `throw` — Chrome's DevTools console
 REPL swallows synchronous throws before they reach `window.onerror`, a browser quirk not a bug here)
 produces a sticky critical toast; the backend-down path was confirmed via `apiFetch`'s network-failure
@@ -300,6 +303,7 @@ stay out of scope unless explicitly requested.
 `runWorldbookExtraction`) with plain bracket-tagged prose the back end regex-scans deterministically —
 see docs/stub-revisions.md's superseded entry for why the old mechanism was dropped, and
 loremaster.md's Structured Schema section for the new one. Summary of what changed:
+
 - `src/prompts.ts` centralizes all 9 prompt constants (previously scattered/duplicated across
   `history.ts`, the now-deleted `setup.ts`, and `pipeline-runner.ts`), sourced verbatim from a
   `prompts.md` the user wrote (deleted once `src/prompts.ts` was confirmed working, to kill the
@@ -342,6 +346,7 @@ update-session turn ("bring me up to date") showed genuine IC awareness with exa
 post frozen as a literal "…" until some unrelated action happened to call `refresh()` (pendingReplies
 is plain component state, wiped on remount, and nothing re-subscribed to the still-running job); and
 the pre-first-token gap showed a dead "…" with no signal at all.
+
 - `job-events.ts` now buffers each job's accumulated text/progress in memory (cleared on
   done/error). A fresh SSE connection — including a genuinely new one after remount, not just
   EventSource's own auto-reconnect — gets a `sync` event replaying everything generated so far before
@@ -389,6 +394,7 @@ in the log. `POST /:id/ooc/start-session` no longer creates a page or writes any
 just moves the boundary to whichever hidden page is already most recent, so the Editor's context still
 resets per session with nothing new visible and no cost to toggling back and forth. `EDITOR_UPDATE_OPENING`
 removed from `src/prompts.ts` and the prompt catalog entirely — no replacement needed.
+
 - Separately, closing and reopening the Story tab (Nav's tab columns fully unmount a panel on close)
   reset IC/OOC mode back to its phase-based default, which combined with the above meant reopening
   into OOC re-triggered a session boundary move mid-conversation, truncating the Editor's context out
@@ -398,6 +404,7 @@ removed from `src/prompts.ts` and the prompt catalog entirely — no replacement
 
 **Additional, post-Phase-1: Logs/Worldbook collapsed-by-default content, Preview tab retired for a new Summary tab** —
 ✅ done, 2026-07-03.
+
 - Logs and Worldbook both showed full post/entry content inline at all times, which got noisy fast.
   Both now default to collapsed: Logs shows a truncated single-line preview per row (click to
   expand/collapse in place, full pre-wrap text when open) instead of a dedicated content column;
@@ -432,9 +439,10 @@ section — not dropped, just resequenced after this proves out.
 
 Two real discrepancies surfaced while re-grounding the plan against current code (2026-07-03), worth
 remembering when Phase 2 is picked up:
+
 - "File-level per-user isolation" has no existing pattern to build from. `data/global.sqlite` is one
   shared file for every user's `layout_configs`/`settings_spaces`/`preference_profiles`/`model_configs`/
-  `stories`/`sessions`, scoped only by a `user_id` column. Only story *content* is file-per-unit today —
+  `stories`/`sessions`, scoped only by a `user_id` column. Only story _content_ is file-per-unit today —
   per-story isolation is precedent for the idea, not reusable code.
 - There is no login in any form today. `session-guard.ts` hardcodes `getOrCreateDefaultUser()`; the
   existing "claim" flow (Milestone F) is a single global claim, not per-user auth. Real login is net-new
@@ -459,6 +467,7 @@ either provider key — only `APP_MASTER_KEY` and the unrelated `DEV_BYPASS_SESS
 toggle remain.
 
 **H1. Horde REST client (standalone, unwired)** — ✅ done.
+
 - `src/inference/horde.ts` (mirrors `featherless.ts`'s shape): submit (`POST /v2/generate/text/async`),
   poll (`GET .../status/{id}`), cancel (`DELETE .../status/{id}`). Treats `is_possible: false`, `429`,
   and `faulted` as first-class outcomes, not exceptions to patch around later.
@@ -475,6 +484,7 @@ toggle remain.
   definitive yes/no on tool-calling.
 
 **H2. Provider field on model configs** — ✅ done.
+
 - `model_configs` gets `provider TEXT NOT NULL DEFAULT 'featherless'` (via `ensureColumn`, same pattern
   as the existing `fallback_models` column); `AgentProfile` (`src/config.ts`) gets a matching `provider`
   field.
@@ -486,6 +496,7 @@ toggle remain.
   manually-inserted `provider = 'horde'` row round-trips through the existing list/get functions.
 
 **H3. Horde queue/dispatch integration** — ✅ done.
+
 - `pipeline-runner.ts`'s `scanStory` branches on `provider`: Featherless keeps its current
   synchronous-await path untouched. Horde jobs submit-then-return, storing the Horde-side request id on
   the job row (new nullable column on `jobs` in `story-schema.ts`, same `ensureColumn` pattern), polled
@@ -500,6 +511,7 @@ toggle remain.
   story, running alongside a Featherless-backed job without either blocking the other.
 
 **H4. Config UI wiring** — ✅ done.
+
 - Config > Agents' per-row model config gets a provider selector; Horde rows use the Horde's
   `models`/`workers` targeting fields instead of Featherless's model catalog.
 - If H1 found Horde tool-calling unreliable, add a guardrail against assigning Horde to the Worker role
@@ -508,6 +520,7 @@ toggle remain.
   actually used.
 
 **H5. End-to-end validation** — ✅ done.
+
 - One full story turn generated via Horde start to finish through the real UI: no-streaming UX reads as
   intended (not a hang), Debug/Logs show Horde jobs sensibly, nothing in the existing Featherless path
   regresses.

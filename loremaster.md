@@ -20,20 +20,20 @@ This document is the authoritative reference for the Loremaster project. It is i
 
 The following shorthand is used consistently throughout this document and codebase.
 
-| Term | Definition |
-|---|---|
-| **LM** | Loremaster — this project |
-| **market** | Existing RP platforms: SillyTavern, KoboldAI, CharacterAI, AI Dungeon, NovelAI, etc. |
-| **host** | LM's back-end server (currently a GCP e2-micro VM) |
-| **provider** | The LLM inference endpoint supplied by the user (Featherless and the Horde, as of the multi-user milestone) |
-| **site** | LM's front end — a browser-accessible web application |
-| **users** | LM's expected population: fewer than ten people |
-| **story** | A single RP session/save slot — the core unit of LM's service |
-| **ERP** | Explicit/adult roleplay content — the primary content type LM is built to support |
-| **tag** | A keyword associated with a worldbook entry or post; the primary mechanism for lore retrieval |
-| **verbose** | The full text of a single post (~200 tokens) |
-| **story-to-date segment** | An Editor-generated rolling recap (`[STORY BEGINS]` / `[STORY CONTINUES]`), merged into one `[STORY TO DATE]` block in the Author prompt |
-| **Archives tab** | UI for inspecting/editing story-to-date segments, archive block summaries, and optional scene titles (tab-only; not injected into Author prompt assembly) |
+| Term                      | Definition                                                                                                                                                |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **LM**                    | Loremaster — this project                                                                                                                                 |
+| **market**                | Existing RP platforms: SillyTavern, KoboldAI, CharacterAI, AI Dungeon, NovelAI, etc.                                                                      |
+| **host**                  | LM's back-end server (currently a GCP e2-micro VM)                                                                                                        |
+| **provider**              | The LLM inference endpoint supplied by the user (Featherless and the Horde, as of the multi-user milestone)                                               |
+| **site**                  | LM's front end — a browser-accessible web application                                                                                                     |
+| **users**                 | LM's expected population: fewer than ten people                                                                                                           |
+| **story**                 | A single RP session/save slot — the core unit of LM's service                                                                                             |
+| **ERP**                   | Explicit/adult roleplay content — the primary content type LM is built to support                                                                         |
+| **tag**                   | A keyword associated with a worldbook entry or post; the primary mechanism for lore retrieval                                                             |
+| **verbose**               | The full text of a single post (~200 tokens)                                                                                                              |
+| **story-to-date segment** | An Editor-generated rolling recap (`[STORY BEGINS]` / `[STORY CONTINUES]`), merged into one `[STORY TO DATE]` block in the Author prompt                  |
+| **Archives tab**          | UI for inspecting/editing story-to-date segments, archive block summaries, and optional scene titles (tab-only; not injected into Author prompt assembly) |
 
 **Dormant (2026-07-04):** per-post **compression** (`gen_extract`) is disabled (`COMPRESSION_ENABLED = false`). The column and store functions remain as temporary migration scaffolding — per `evaluation-roadmap.md` F-020b, a sunset TODO marker is pending. Do not re-enable without an explicit design decision. **Decad archive blocks** remain active in the pipeline and UI; the earlier retirement note was incorrect. Code that references `gen_extract` in read paths (log-view, memory-manifest, content-stamp) should be removed once the migration window closes.
 
@@ -68,7 +68,7 @@ The current development environment will shift to locally hosted for initial bui
 
 ERP content limits which providers are usable. The same model accessed through different channels may have very different behavior — Deepseek at source is heavily restricted; Deepseek through Featherless is largely uninhibited.
 
-LM's approach to guardrails is through **model and provider selection**, not through prompt-level defensive engineering. A portion of the prompt is dedicated to *encouraging* ERP-aligned behavior, calibrated to user-specific preferences established during setup. Little to no prompt space is spent trying to override the model's trained refusals — if the model needs to be argued into compliance, it's the wrong model.
+LM's approach to guardrails is through **model and provider selection**, not through prompt-level defensive engineering. A portion of the prompt is dedicated to _encouraging_ ERP-aligned behavior, calibrated to user-specific preferences established during setup. Little to no prompt space is spent trying to override the model's trained refusals — if the model needs to be argued into compliance, it's the wrong model.
 
 ---
 
@@ -77,7 +77,7 @@ LM's approach to guardrails is through **model and provider selection**, not thr
 RP creates a fundamental tension with how LLMs are trained:
 
 - The user asserts facts about their player character's behavior and expects them to be treated as canon — which is exactly what an LLM is trained to do with user input.
-- But the user also expects the LLM to *oppose* the player character, introduce new facts, create conflict, and surprise them — which looks indistinguishable from the LLM contradicting the user, which it's trained not to do.
+- But the user also expects the LLM to _oppose_ the player character, introduce new facts, create conflict, and surprise them — which looks indistinguishable from the LLM contradicting the user, which it's trained not to do.
 - And the user expects genuine novelty — not repetition of what got a positive response last time, which is exactly what RLHF incentivizes.
 
 Compounding this: context limits are finite. At 32k tokens, a long story starts to degrade — characters contradict established facts, forget events, flanderize. Half of what the market sells is context management. LM's answer is structured schema, agentic prompting, and rolling story-to-date memory — working together.
@@ -351,21 +351,24 @@ The goal is that a user never needs to be in more than one section to accomplish
 
 **Lore**
 Two-column layout. The left column holds the Tags panel, always visible. The right column has tabs for Memory, Worldbook, and related lore views during play.
-- *Tags* — tag management; create, edit, hide (toggle), delete (toggle), filter (toggle).
-- *Memory* — assembled prompt inspector: shows the finalized prompt as it would be sent, with each component's source identified (worldbook, `[STORY TO DATE]`, verbose posts).
-- *Worldbook* — worldbook management; create, edit, hide (toggle), delete. Entry type (CONTENT/ROSTER/MEMORY) is a discrete flag; content is freeform prose.
+
+- _Tags_ — tag management; create, edit, hide (toggle), delete (toggle), filter (toggle).
+- _Memory_ — assembled prompt inspector: shows the finalized prompt as it would be sent, with each component's source identified (worldbook, `[STORY TO DATE]`, verbose posts).
+- _Worldbook_ — worldbook management; create, edit, hide (toggle), delete. Entry type (CONTENT/ROSTER/MEMORY) is a discrete flag; content is freeform prose.
 
 **Story**
 Tabs include Saves, Logs, **Archives**, and Summary.
-- *Saves* — session/slot management; load, name, rename, and switch between active stories and branches.
-- *Logs* — recent activity telemetry: timestamps, input text, observed tags, prompt text, response text, token counts, turnaround times, error codes.
-- *Archives* — **shipped UI for story-to-date segments** (2026-07-04): collapse/expand, edit/save content, requeue pending segments, optional Worker-generated scene titles, token counts. This is the management surface for `[STORY TO DATE]` memory; titles from naming jobs appear here only.
-- *Summary* — legacy read-only view of `gen_extract` lines. Compression is retired; this tab may be empty on new stories and is a candidate for removal or repurposing.
+
+- _Saves_ — session/slot management; load, name, rename, and switch between active stories and branches.
+- _Logs_ — recent activity telemetry: timestamps, input text, observed tags, prompt text, response text, token counts, turnaround times, error codes.
+- _Archives_ — **shipped UI for story-to-date segments** (2026-07-04): collapse/expand, edit/save content, requeue pending segments, optional Worker-generated scene titles, token counts. This is the management surface for `[STORY TO DATE]` memory; titles from naming jobs appear here only.
+- _Summary_ — legacy read-only view of `gen_extract` lines. Compression is retired; this tab may be empty on new stories and is a candidate for removal or repurposing.
 
 **Config**
 Two tabs: Agents and Prompts.
-- *Agents* — model and parameter selection per agent (Editor, Author, Worker). Controls for reasoning mode toggle and token budget per agent. Controls for concurrent thread counts allowed.
-- *Prompts* — the prompt template for each element, exposed for direct editing. Not expected to be used frequently, but must not require SSH access. Any changes made to prompts are per-user and do not alter the defaults.
+
+- _Agents_ — model and parameter selection per agent (Editor, Author, Worker). Controls for reasoning mode toggle and token budget per agent. Controls for concurrent thread counts allowed.
+- _Prompts_ — the prompt template for each element, exposed for direct editing. Not expected to be used frequently, but must not require SSH access. Any changes made to prompts are per-user and do not alter the defaults.
 
 Config previously had a third tab, Preview, duplicating Lore > Memory's assembled-prompt inspector outside of play. Dropped (2026-07-03) as a redundant surface — Memory already covers the same need.
 
@@ -374,6 +377,7 @@ Live queue state and worker status. Distinct from Logs (which is historical) —
 
 **Settings** (gear icon, not a primary section button)
 Lower-frequency than the four primary sections. Contains:
+
 - UI preference controls: dark/light mode, font size, spacing, padding, quoted speech color.
 - Preference profiles: named snapshots of the full settings state (e.g. "wholesome slice of life", "grimdark"). Stored in user metadata, not per-story. Users can switch profiles to match their mood without any per-story tracking.
 
@@ -407,7 +411,7 @@ LM is a private tool for a small circle of known users. Security requirements ar
 
 **Encryption at rest (current implementation):** Provider API keys are encrypted at rest using a server-held symmetric key (AES-256-GCM), decrypted only in-process at the moment of the outbound provider call, and never returned through any UI — including to the operator's own admin view. This protects against casual/UI-level exposure, not against someone with SSH or root access to the host, who can read the server-held key like any other server secret; that gap is accepted, not a bug. Story content and logs are not encrypted at rest during this milestone.
 
-Account access is controlled via password, not SSH credentials directly — each user gets a login (see Multi-User & Second Provider Milestone). Account *lifecycle* — creating, renaming, deleting a user, or resetting a forgotten password — remains SSH-only, run by the operator via a script, with no UI or API surface for any of it.
+Account access is controlled via password, not SSH credentials directly — each user gets a login (see Multi-User & Second Provider Milestone). Account _lifecycle_ — creating, renaming, deleting a user, or resetting a forgotten password — remains SSH-only, run by the operator via a script, with no UI or API surface for any of it.
 
 **User metadata** — name, inference provider, API keys, UI preferences, preference profiles, and similar — is stored per-user; only API keys are encrypted at rest during this milestone (see above). Password-derived encryption of the full metadata blob remains part of the deferred target model.
 
@@ -446,12 +450,14 @@ This is the next concrete build target: taking LM from a single implicit user to
 **Two providers, independently configured per user.** Featherless remains available as-is. The Horde (aihorde.net) is added as a second option — each user's row includes a Horde API key slot, defaulted to the anonymous key (`"0000000000"`) at account creation so the Horde works out of the box with zero setup, overridable with the user's own registered key if they want queue priority.
 
 **The Horde is not a drop-in Featherless replacement — expect real differences, not bugs to fix:**
+
 - No streaming. Featherless streams tokens as they generate; the Horde is async submit-then-poll only, so a Horde-backed reply appears as a single block once the job resolves, not progressively. This is confirmed, not a defect to chase.
 - No account-wide concurrency signal. Featherless's queue gating leans on a real per-account concurrency feed (see Provider Abstraction); the Horde's capacity signal is per-request (`queue_position`, `wait_time`), so it needs its own dispatch/queue handling rather than reusing the existing slot system. Expect a genuinely separate queue path for Horde-backed jobs, not a shim over the existing one.
 - Function-calling support is unconfirmed on Horde workers. Memory no longer depends on forced tool calls; setup worldbook extraction uses bracket-regex. Horde remains async submit-then-poll only.
 
 **Explicitly deferred within this milestone:**
-- Onboarding any specific user's own Horde worker (e.g. via KoboldCpp's built-in `--hordeconfig` mode). This milestone builds the Horde *client* integration in LM; getting a particular user's own hardware serving jobs on the Horde is a separate, later step once the client side works.
+
+- Onboarding any specific user's own Horde worker (e.g. via KoboldCpp's built-in `--hordeconfig` mode). This milestone builds the Horde _client_ integration in LM; getting a particular user's own hardware serving jobs on the Horde is a separate, later step once the client side works.
 - Generic OpenAI-compatible endpoints (LM Studio, AnythingLLM, or similar). Considered and set aside — the Horde solves the actual problem (routing a user's local compute through LM without exposing their home network) without the tunneling/networking burden a direct connection would require.
 
 See Security for what encryption scope does and does not cover during this milestone.

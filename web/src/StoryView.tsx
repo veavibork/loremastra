@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   cancelJob,
   continuePost,
@@ -19,180 +19,221 @@ import {
   type LogPage,
   type Position,
   type StoryPhase,
-} from "./api";
-import EntryContent from "./EntryContent";
-import { RoleLabel } from "./playTabSettings";
-import { toast } from "./toast";
-import ButtonContainerRow from "./ButtonContainerRow";
-import { DEFAULT_INPUT_BAR } from "./layoutUtils";
-import { useStoryToggles } from "./storyToggles";
+} from './api'
+import EntryContent from './EntryContent'
+import { RoleLabel } from './playTabSettings'
+import { toast } from './toast'
+import ButtonContainerRow from './ButtonContainerRow'
+import { DEFAULT_INPUT_BAR } from './layoutUtils'
+import { useStoryToggles } from './storyToggles'
 import {
   loadAllReasoningTraces,
   ReasoningTracePanel,
   saveReasoningTrace,
   useReasoningDisplayPrefs,
-} from "./reasoningDisplay";
-import type { LayoutRegion } from "./api";
-import { useStoryLogScroll } from "./useStoryLogScroll";
-import "./StoryView.css";
+} from './reasoningDisplay'
+import type { LayoutRegion } from './api'
+import { useStoryLogScroll } from './useStoryLogScroll'
+import './StoryView.css'
 
-const MEMORY_JOB_TYPES = new Set(["story-to-date", "story-to-date-fold"]);
+const MEMORY_JOB_TYPES = new Set(['story-to-date', 'story-to-date-fold'])
 
 /** Raw entries (both IC and hidden OOC pages) kept loaded at once before "load earlier" is needed. */
-const LOG_PAGE_SIZE = 80;
+const LOG_PAGE_SIZE = 80
 
 interface PendingReply {
-  text: string;
-  thinking?: string;
-  progress?: string;
-  startedAt: number;
-  jobId: string;
-  inputTokenEstimate?: number;
-  prefillEstimateSec?: number;
+  text: string
+  thinking?: string
+  progress?: string
+  startedAt: number
+  jobId: string
+  inputTokenEstimate?: number
+  prefillEstimateSec?: number
   /** When the worker claimed the job — prefill countdown starts here, not at send time. */
-  runningStartedAt?: number;
+  runningStartedAt?: number
   /** Tracks queue wait, prefill, reasoning, and prose for elapsed-time labels. */
-  waitPhase?: "memory" | "prefill" | "reasoning" | "generating";
-  lastProseStatus?: string;
+  waitPhase?: 'memory' | 'prefill' | 'reasoning' | 'generating'
+  lastProseStatus?: string
 }
 
 /** Conservative TTFT guess — intentionally high so early tokens feel like a win. */
 function estimatePrefillSeconds(inputTokens: number | null | undefined): number {
-  if (!inputTokens || inputTokens <= 0) return 30;
-  return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)));
+  if (!inputTokens || inputTokens <= 0) return 30
+  return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)))
 }
 
-function mergeJobMeta(pending: PendingReply, job: ActiveJobRow): Pick<PendingReply, "inputTokenEstimate" | "prefillEstimateSec" | "runningStartedAt"> {
-  const inputTokenEstimate = job.inputTokenEstimate ?? pending.inputTokenEstimate;
-  const runningStartedAt = job.startedAt ? new Date(job.startedAt).getTime() : pending.runningStartedAt;
+function mergeJobMeta(
+  pending: PendingReply,
+  job: ActiveJobRow,
+): Pick<PendingReply, 'inputTokenEstimate' | 'prefillEstimateSec' | 'runningStartedAt'> {
+  const inputTokenEstimate = job.inputTokenEstimate ?? pending.inputTokenEstimate
+  const runningStartedAt = job.startedAt
+    ? new Date(job.startedAt).getTime()
+    : pending.runningStartedAt
   const prefillEstimateSec =
-    inputTokenEstimate != null ? estimatePrefillSeconds(inputTokenEstimate) : pending.prefillEstimateSec;
-  return { inputTokenEstimate, prefillEstimateSec, runningStartedAt };
+    inputTokenEstimate != null
+      ? estimatePrefillSeconds(inputTokenEstimate)
+      : pending.prefillEstimateSec
+  return { inputTokenEstimate, prefillEstimateSec, runningStartedAt }
 }
 
 function isMemoryJobRunning(jobs: Awaited<ReturnType<typeof fetchActiveJobs>>): boolean {
-  return jobs.some((j) => MEMORY_JOB_TYPES.has(j.jobType) && j.status === "running");
+  return jobs.some((j) => MEMORY_JOB_TYPES.has(j.jobType) && j.status === 'running')
 }
 
-type ActiveJobRow = Awaited<ReturnType<typeof fetchActiveJobs>>[number];
+type ActiveJobRow = Awaited<ReturnType<typeof fetchActiveJobs>>[number]
 
 /** Wall-clock anchor for elapsed labels — job creation, or run start once the worker picks it up. */
 function jobElapsedAnchor(job: ActiveJobRow): number {
-  return new Date(job.startedAt ?? job.createdAt).getTime();
+  return new Date(job.startedAt ?? job.createdAt).getTime()
 }
 
 /** Keep the oldest known anchor so reconnect/phase sync never resets the visible timer. */
 function stableElapsedAnchor(pending: PendingReply, proseJob: ActiveJobRow): number {
-  return Math.min(pending.startedAt, jobElapsedAnchor(proseJob));
+  return Math.min(pending.startedAt, jobElapsedAnchor(proseJob))
 }
 
 function pendingStatusLabel(pending: PendingReply): string {
-  if (pending.progress) return pending.progress;
-  const elapsed = Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000));
+  if (pending.progress) return pending.progress
+  const elapsed = Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000))
   const queueHint =
-    pending.waitPhase !== "memory" && pending.waitPhase !== "prefill" && pending.lastProseStatus === "pending"
-      ? ", queued"
-      : "";
-  if (pending.waitPhase === "prefill") {
-    const runAnchor = pending.runningStartedAt ?? pending.startedAt;
-    const runningElapsed = Math.max(0, Math.round((Date.now() - runAnchor) / 1000));
-    const est = pending.prefillEstimateSec ?? 30;
-    const remaining = Math.max(0, est - runningElapsed);
-    return remaining > 0 ? `Prefilling… (~${remaining}s)` : "Prefilling…";
+    pending.waitPhase !== 'memory' &&
+    pending.waitPhase !== 'prefill' &&
+    pending.lastProseStatus === 'pending'
+      ? ', queued'
+      : ''
+  if (pending.waitPhase === 'prefill') {
+    const runAnchor = pending.runningStartedAt ?? pending.startedAt
+    const runningElapsed = Math.max(0, Math.round((Date.now() - runAnchor) / 1000))
+    const est = pending.prefillEstimateSec ?? 30
+    const remaining = Math.max(0, est - runningElapsed)
+    return remaining > 0 ? `Prefilling… (~${remaining}s)` : 'Prefilling…'
   }
-  if (pending.waitPhase === "generating" && !pending.text.trim()) {
-    return `Generating… (${elapsed}s${queueHint})`;
+  if (pending.waitPhase === 'generating' && !pending.text.trim()) {
+    return `Generating… (${elapsed}s${queueHint})`
   }
   if (pending.thinking?.trim() && !pending.text.trim()) {
-    return `Reasoning… (${elapsed}s${queueHint})`;
+    return `Reasoning… (${elapsed}s${queueHint})`
   }
-  if (pending.waitPhase === "memory") {
-    return `Memory update in progress… (${elapsed}s)`;
+  if (pending.waitPhase === 'memory') {
+    return `Memory update in progress… (${elapsed}s)`
   }
-  return `Thinking… (${elapsed}s${queueHint})`;
+  return `Thinking… (${elapsed}s${queueHint})`
 }
 
 function syncPendingWaitPhases(
   prev: Record<string, PendingReply>,
-  jobs: Awaited<ReturnType<typeof fetchActiveJobs>>
+  jobs: Awaited<ReturnType<typeof fetchActiveJobs>>,
 ): Record<string, PendingReply> {
-  const memoryBlocking = isMemoryJobRunning(jobs);
-  let changed = false;
-  const next = { ...prev };
+  const memoryBlocking = isMemoryJobRunning(jobs)
+  let changed = false
+  const next = { ...prev }
 
   for (const [pageId, pending] of Object.entries(prev)) {
-    if (pending.text || pending.progress) continue;
-    const proseJob = jobs.find((j) => j.id === pending.jobId);
-    if (!proseJob) continue;
+    if (pending.text || pending.progress) continue
+    const proseJob = jobs.find((j) => j.id === pending.jobId)
+    if (!proseJob) continue
 
-    const startedAt = stableElapsedAnchor(pending, proseJob);
-    const meta = mergeJobMeta(pending, proseJob);
+    const startedAt = stableElapsedAnchor(pending, proseJob)
+    const meta = mergeJobMeta(pending, proseJob)
 
-    if (proseJob.status === "pending" && memoryBlocking) {
-      if (pending.waitPhase !== "memory") {
-        next[pageId] = { ...pending, ...meta, waitPhase: "memory", startedAt, lastProseStatus: proseJob.status };
-        changed = true;
+    if (proseJob.status === 'pending' && memoryBlocking) {
+      if (pending.waitPhase !== 'memory') {
+        next[pageId] = {
+          ...pending,
+          ...meta,
+          waitPhase: 'memory',
+          startedAt,
+          lastProseStatus: proseJob.status,
+        }
+        changed = true
       }
-      continue;
+      continue
     }
 
-    if (pending.waitPhase === "memory") {
-      const waitPhase = pending.thinking?.trim() ? "reasoning" : "prefill";
-      next[pageId] = { ...pending, ...meta, waitPhase, startedAt, lastProseStatus: proseJob.status };
-      changed = true;
-      continue;
+    if (pending.waitPhase === 'memory') {
+      const waitPhase = pending.thinking?.trim() ? 'reasoning' : 'prefill'
+      next[pageId] = { ...pending, ...meta, waitPhase, startedAt, lastProseStatus: proseJob.status }
+      changed = true
+      continue
     }
 
-    if (proseJob.status === "running" && !pending.thinking?.trim() && !pending.text.trim()) {
-      const waitPhase = "prefill";
+    if (proseJob.status === 'running' && !pending.thinking?.trim() && !pending.text.trim()) {
+      const waitPhase = 'prefill'
       if (
         pending.waitPhase !== waitPhase ||
         pending.lastProseStatus !== proseJob.status ||
         pending.startedAt !== startedAt ||
         pending.prefillEstimateSec !== meta.prefillEstimateSec
       ) {
-        next[pageId] = { ...pending, ...meta, waitPhase, startedAt, lastProseStatus: proseJob.status };
-        changed = true;
+        next[pageId] = {
+          ...pending,
+          ...meta,
+          waitPhase,
+          startedAt,
+          lastProseStatus: proseJob.status,
+        }
+        changed = true
       }
-      continue;
+      continue
     }
 
-    if (proseJob.status === "running" && pending.text.trim() && pending.waitPhase !== "generating") {
-      next[pageId] = { ...pending, ...meta, waitPhase: "generating", startedAt, lastProseStatus: proseJob.status };
-      changed = true;
-      continue;
+    if (
+      proseJob.status === 'running' &&
+      pending.text.trim() &&
+      pending.waitPhase !== 'generating'
+    ) {
+      next[pageId] = {
+        ...pending,
+        ...meta,
+        waitPhase: 'generating',
+        startedAt,
+        lastProseStatus: proseJob.status,
+      }
+      changed = true
+      continue
     }
 
     if (pending.thinking?.trim() && !pending.text.trim()) {
-      if (pending.waitPhase !== "reasoning" || pending.lastProseStatus !== proseJob.status) {
-        next[pageId] = { ...pending, ...meta, waitPhase: "reasoning", startedAt, lastProseStatus: proseJob.status };
-        changed = true;
+      if (pending.waitPhase !== 'reasoning' || pending.lastProseStatus !== proseJob.status) {
+        next[pageId] = {
+          ...pending,
+          ...meta,
+          waitPhase: 'reasoning',
+          startedAt,
+          lastProseStatus: proseJob.status,
+        }
+        changed = true
       }
-      continue;
+      continue
     }
 
     if (!pending.waitPhase) {
       const waitPhase =
-        proseJob.status === "running" ? "prefill" : proseJob.status === "pending" ? undefined : "prefill";
+        proseJob.status === 'running'
+          ? 'prefill'
+          : proseJob.status === 'pending'
+            ? undefined
+            : 'prefill'
       next[pageId] = {
         ...pending,
         ...meta,
         waitPhase: waitPhase ?? pending.waitPhase,
         startedAt,
         lastProseStatus: proseJob.status,
-      };
-      changed = true;
+      }
+      changed = true
     } else if (
       pending.lastProseStatus !== proseJob.status ||
       pending.startedAt !== startedAt ||
       pending.inputTokenEstimate !== meta.inputTokenEstimate
     ) {
-      next[pageId] = { ...pending, ...meta, startedAt, lastProseStatus: proseJob.status };
-      changed = true;
+      next[pageId] = { ...pending, ...meta, startedAt, lastProseStatus: proseJob.status }
+      changed = true
     }
   }
 
-  return changed ? next : prev;
+  return changed ? next : prev
 }
 
 /** Grows with its content instead of scrolling internally — used for both the composer and
@@ -223,22 +264,22 @@ function AutoGrowTextarea({
   initialHeight,
   protectScrollRef,
 }: {
-  value: string;
-  onChange: (value: string) => void;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
-  onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void;
-  className?: string;
-  placeholder?: string;
-  disabled?: boolean;
-  autoFocus?: boolean;
-  initialHeight?: number;
-  protectScrollRef?: React.RefObject<HTMLElement | null>;
+  value: string
+  onChange: (value: string) => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
+  className?: string
+  placeholder?: string
+  disabled?: boolean
+  autoFocus?: boolean
+  initialHeight?: number
+  protectScrollRef?: React.RefObject<HTMLElement | null>
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null)
 
   useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    const el = ref.current
+    if (!el) return
     const resize = () => {
       // Collapsing to "auto" below is necessary to detect shrinking content (scrollHeight never
       // shrinks on its own), but reading el.scrollHeight forces a real synchronous layout with
@@ -247,38 +288,38 @@ function AutoGrowTextarea({
       // shared parent) can make the browser clamp its scrollTop, and restoring the real height a
       // line later does not undo that clamp (browsers only clamp scrollTop down on shrink, never
       // push it back up on regrow). Save/restore around the collapse to prevent it.
-      const scrollTarget = protectScrollRef?.current;
-      const prevScrollTop = scrollTarget?.scrollTop;
+      const scrollTarget = protectScrollRef?.current
+      const prevScrollTop = scrollTarget?.scrollTop
 
       // scrollHeight reflects whatever's rendered inside the box, including a wrapped
       // placeholder — for the composer's long instructional placeholder that inflated an
       // empty box to 2-3 lines tall. Hide it for the measurement so height only ever tracks
       // the actual value.
-      const placeholder = el.placeholder;
-      el.placeholder = "";
-      el.style.height = "auto";
-      el.style.height = `${el.scrollHeight}px`;
-      el.placeholder = placeholder;
+      const placeholder = el.placeholder
+      el.placeholder = ''
+      el.style.height = 'auto'
+      el.style.height = `${el.scrollHeight}px`
+      el.placeholder = placeholder
 
       if (scrollTarget && prevScrollTop !== undefined) {
-        scrollTarget.scrollTop = prevScrollTop;
+        scrollTarget.scrollTop = prevScrollTop
       }
-    };
-    resize();
+    }
+    resize()
     // Catches late metric shifts (e.g. Global CSS's async root-font-size override landing after
     // this first measurement) that the value-keyed effect above has no other reason to rerun for.
-    const raf = requestAnimationFrame(resize);
-    return () => cancelAnimationFrame(raf);
-  }, [value, protectScrollRef]);
+    const raf = requestAnimationFrame(resize)
+    return () => cancelAnimationFrame(raf)
+  }, [value, protectScrollRef])
 
   return (
     <textarea
       ref={(el) => {
-        ref.current = el;
+        ref.current = el
         // Guards against re-applying on every render (callback refs re-fire then) — once the
         // layout effect above has set a real height, style.height is no longer empty and this
         // becomes a no-op.
-        if (el && initialHeight && !el.style.height) el.style.height = `${initialHeight}px`;
+        if (el && initialHeight && !el.style.height) el.style.height = `${initialHeight}px`
       }}
       rows={1}
       className={className}
@@ -290,7 +331,7 @@ function AutoGrowTextarea({
       disabled={disabled}
       autoFocus={autoFocus}
     />
-  );
+  )
 }
 
 /** Nav's tab-based layout unmounts a panel entirely when its column is closed, so plain
@@ -300,12 +341,12 @@ function AutoGrowTextarea({
  * with no extra startOocSession call — see handleEnterOoc, which only fires from an explicit
  * toggle click, never from this restore path. */
 function modeStorageKey(storyId: string): string {
-  return `loremaster.storyMode.${storyId}`;
+  return `loremaster.storyMode.${storyId}`
 }
 
-function loadPersistedMode(storyId: string): "guide" | "play" | null {
-  const raw = localStorage.getItem(modeStorageKey(storyId));
-  return raw === "guide" || raw === "play" ? raw : null;
+function loadPersistedMode(storyId: string): 'guide' | 'play' | null {
+  const raw = localStorage.getItem(modeStorageKey(storyId))
+  return raw === 'guide' || raw === 'play' ? raw : null
 }
 
 /**
@@ -318,26 +359,30 @@ function loadPersistedMode(storyId: string): "guide" | "play" | null {
  * caret-hit-testing APIs (very old browsers) or the click didn't land in a tagged span at all —
  * callers should fall back to "end of content" in that case.
  */
-function resolveClickOffset(clientX: number, clientY: number, contentEl: HTMLElement): number | null {
+function resolveClickOffset(
+  clientX: number,
+  clientY: number,
+  contentEl: HTMLElement,
+): number | null {
   const doc = document as Document & {
-    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-  };
-  let node: Node | null = null;
-  let offset = 0;
-  if (typeof document.caretRangeFromPoint === "function") {
-    const range = document.caretRangeFromPoint(clientX, clientY);
-    if (!range) return null;
-    node = range.startContainer;
-    offset = range.startOffset;
-  } else if (typeof doc.caretPositionFromPoint === "function") {
-    const pos = doc.caretPositionFromPoint(clientX, clientY);
-    if (!pos) return null;
-    node = pos.offsetNode;
-    offset = pos.offset;
-  } else {
-    return null;
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
   }
-  if (!node || !contentEl.contains(node)) return null;
+  let node: Node | null = null
+  let offset = 0
+  if (typeof document.caretRangeFromPoint === 'function') {
+    const range = document.caretRangeFromPoint(clientX, clientY)
+    if (!range) return null
+    node = range.startContainer
+    offset = range.startOffset
+  } else if (typeof doc.caretPositionFromPoint === 'function') {
+    const pos = doc.caretPositionFromPoint(clientX, clientY)
+    if (!pos) return null
+    node = pos.offsetNode
+    offset = pos.offset
+  } else {
+    return null
+  }
+  if (!node || !contentEl.contains(node)) return null
 
   // Hit-testing usually lands inside a text node (offset = character index within it), but
   // browsers sometimes resolve to an element boundary instead — e.g. clicking below the last
@@ -347,24 +392,26 @@ function resolveClickOffset(clientX: number, clientY: number, contentEl: HTMLEle
   // end, depending on which side of the boundary the click landed) before walking up for a
   // data-src-start-tagged ancestor.
   if (node.nodeType !== Node.TEXT_NODE) {
-    const children = node.childNodes;
-    if (children.length === 0) return null;
-    const landedAfterLastChild = offset >= children.length;
-    let child: Node = children[Math.min(offset, children.length - 1)];
+    const children = node.childNodes
+    if (children.length === 0) return null
+    const landedAfterLastChild = offset >= children.length
+    let child: Node = children[Math.min(offset, children.length - 1)]
     while (child.nodeType !== Node.TEXT_NODE && child.childNodes.length > 0) {
-      child = landedAfterLastChild ? child.childNodes[child.childNodes.length - 1] : child.childNodes[0];
+      child = landedAfterLastChild
+        ? child.childNodes[child.childNodes.length - 1]
+        : child.childNodes[0]
     }
-    if (child.nodeType !== Node.TEXT_NODE) return null;
-    node = child;
-    offset = landedAfterLastChild ? (child.textContent?.length ?? 0) : 0;
+    if (child.nodeType !== Node.TEXT_NODE) return null
+    node = child
+    offset = landedAfterLastChild ? (child.textContent?.length ?? 0) : 0
   }
 
-  let el: HTMLElement | null = node.parentElement;
+  let el: HTMLElement | null = node.parentElement
   while (el && el !== contentEl && el.dataset.srcStart === undefined) {
-    el = el.parentElement;
+    el = el.parentElement
   }
-  if (!el || el.dataset.srcStart === undefined) return null;
-  return parseInt(el.dataset.srcStart, 10) + offset;
+  if (!el || el.dataset.srcStart === undefined) return null
+  return parseInt(el.dataset.srcStart, 10) + offset
 }
 
 export default function StoryView({
@@ -373,80 +420,83 @@ export default function StoryView({
   onKickedOff,
   inputBar,
 }: {
-  storyId: string;
-  phase: StoryPhase;
-  onKickedOff?: () => void;
-  inputBar?: LayoutRegion;
+  storyId: string
+  phase: StoryPhase
+  onKickedOff?: () => void
+  inputBar?: LayoutRegion
 }) {
-  const toggles = useStoryToggles(storyId);
-  const reasoningPrefs = useReasoningDisplayPrefs();
-  const { showReasoning, reasoningExpanded, toggleShowReasoning, toggleReasoningExpanded } = reasoningPrefs;
-  const [traceCacheVersion, setTraceCacheVersion] = useState(0);
+  const toggles = useStoryToggles(storyId)
+  const reasoningPrefs = useReasoningDisplayPrefs()
+  const { showReasoning, reasoningExpanded, toggleShowReasoning, toggleReasoningExpanded } =
+    reasoningPrefs
+  const [traceCacheVersion, setTraceCacheVersion] = useState(0)
   const reasoningTraces = useMemo(
     () => (showReasoning ? loadAllReasoningTraces(storyId) : {}),
-    [storyId, showReasoning, traceCacheVersion]
-  );
-  const toolbarContainers = inputBar?.containers?.length ? inputBar.containers : DEFAULT_INPUT_BAR.containers;
-  const [mode, setMode] = useState<"guide" | "play">(
-    () => loadPersistedMode(storyId) ?? (phase === "setup" ? "guide" : "play")
-  );
+    [storyId, showReasoning, traceCacheVersion],
+  )
+  const toolbarContainers = inputBar?.containers?.length
+    ? inputBar.containers
+    : DEFAULT_INPUT_BAR.containers
+  const [mode, setMode] = useState<'guide' | 'play'>(
+    () => loadPersistedMode(storyId) ?? (phase === 'setup' ? 'guide' : 'play'),
+  )
 
   useEffect(() => {
-    localStorage.setItem(modeStorageKey(storyId), mode);
-  }, [storyId, mode]);
-  const [entries, setEntries] = useState<LogEntry[]>([]);
+    localStorage.setItem(modeStorageKey(storyId), mode)
+  }, [storyId, mode])
+  const [entries, setEntries] = useState<LogEntry[]>([])
   // Whether older history exists beyond the currently loaded window — see refresh()/loadEarlier().
-  const [hasMoreEntries, setHasMoreEntries] = useState(false);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const [position, setPosition] = useState<Position | null>(null);
-  const [draft, setDraft] = useState("");
+  const [hasMoreEntries, setHasMoreEntries] = useState(false)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
+  const [position, setPosition] = useState<Position | null>(null)
+  const [draft, setDraft] = useState('')
   // Keyed by agent pageId so multiple sends can be in flight at once — queued messages each get
   // their own page (and their own streamJob subscription) rather than sharing one slot.
   // startedAt backs the "Thinking… (Ns)" placeholder — anchored to the job's server createdAt /
   // startedAt when reattaching or polling so closing the tab doesn't reset the counter.
-  const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply>>({});
+  const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply>>({})
   // Horde (and compress/archive) jobs can't be aborted mid-generation — the cancel route 409s
   // rather than actually stopping anything. Rather than a stop button that just fails silently,
   // pageIds in here are hidden from the log entirely while the job keeps running in the
   // background; they come back on their own once the job resolves (see watchJob's cleanup).
-  const [hiddenPending, setHiddenPending] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
+  const [hiddenPending, setHiddenPending] = useState<Set<string>>(new Set())
+  const [error, setError] = useState<string | null>(null)
   // Only guards the brief request round-trip for actions that must stay serialized (kickoff,
   // continue, retry) — not held for the whole generation. See the `busy` derivation below for
   // what actually disables those buttons for the full duration.
-  const [starting, setStarting] = useState(false);
+  const [starting, setStarting] = useState(false)
   // Tap-to-edit: at most one post editable at a time (see handleLogClick). null means nothing is
   // being edited and every post renders as plain read-only content.
-  const [editingPageId, setEditingPageId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState("");
-  const [editInitialHeight, setEditInitialHeight] = useState<number | undefined>(undefined);
+  const [editingPageId, setEditingPageId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [editInitialHeight, setEditInitialHeight] = useState<number | undefined>(undefined)
   // Set on focus so the overlay's Delete (forward-delete) button acts on the one box that can
   // possibly be focused — see handleDeleteKey's doc comment for why this uses execCommand.
-  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   // Where to drop the cursor once the edit textarea mounts and focuses (see handleLogClick and
   // its onFocus consumer below) — a ref rather than state since it's a one-shot instruction, not
   // something that should trigger its own re-render.
-  const pendingCaretRef = useRef<number | null>(null);
-  const logRef = useRef<HTMLDivElement>(null);
+  const pendingCaretRef = useRef<number | null>(null)
+  const logRef = useRef<HTMLDivElement>(null)
   // Set right before prepending older entries to .log — the layout effect below restores this
   // many px of distance-from-bottom afterward so the newly taller content doesn't shove whatever
   // the user was looking at out of view (scrollTop alone can't survive a prepend: the browser has
   // nothing to anchor to once new nodes land above it, and overflow-anchor is off — see App.css).
-  const pendingScrollRestoreRef = useRef<number | null>(null);
+  const pendingScrollRestoreRef = useRef<number | null>(null)
 
   useLayoutEffect(() => {
-    const log = logRef.current;
+    const log = logRef.current
     if (log && pendingScrollRestoreRef.current !== null) {
-      log.scrollTop = log.scrollHeight - pendingScrollRestoreRef.current;
-      pendingScrollRestoreRef.current = null;
+      log.scrollTop = log.scrollHeight - pendingScrollRestoreRef.current
+      pendingScrollRestoreRef.current = null
     }
-  }, [entries]);
+  }, [entries])
 
   function prependOlderEntries(older: LogEntry[]) {
-    if (older.length === 0) return;
-    const log = logRef.current;
-    pendingScrollRestoreRef.current = log ? log.scrollHeight - log.scrollTop : null;
-    setEntries((prev) => [...older, ...prev]);
+    if (older.length === 0) return
+    const log = logRef.current
+    pendingScrollRestoreRef.current = log ? log.scrollHeight - log.scrollTop : null
+    setEntries((prev) => [...older, ...prev])
   }
 
   /**
@@ -456,29 +506,32 @@ export default function StoryView({
    * (refreshing its content too, in case it was just edited) instead of the whole chain.
    */
   async function refresh(): Promise<LogPage> {
-    const oldestLoadedPageId = entries[0]?.pageId;
+    const oldestLoadedPageId = entries[0]?.pageId
     const page = await fetchLog(
       storyId,
-      oldestLoadedPageId ? { throughPageId: oldestLoadedPageId } : { limit: LOG_PAGE_SIZE }
-    );
-    setEntries(page.entries);
-    setHasMoreEntries(page.hasMore);
-    setPosition(await fetchPosition(storyId));
-    return page;
+      oldestLoadedPageId ? { throughPageId: oldestLoadedPageId } : { limit: LOG_PAGE_SIZE },
+    )
+    setEntries(page.entries)
+    setHasMoreEntries(page.hasMore)
+    setPosition(await fetchPosition(storyId))
+    return page
   }
 
   async function loadEarlier() {
-    if (!hasMoreEntries || loadingEarlier || entries.length === 0) return;
-    setLoadingEarlier(true);
+    if (!hasMoreEntries || loadingEarlier || entries.length === 0) return
+    setLoadingEarlier(true)
     try {
-      const page = await fetchLog(storyId, { limit: LOG_PAGE_SIZE, beforePageId: entries[0].pageId });
-      prependOlderEntries(page.entries);
-      setHasMoreEntries(page.hasMore);
+      const page = await fetchLog(storyId, {
+        limit: LOG_PAGE_SIZE,
+        beforePageId: entries[0].pageId,
+      })
+      prependOlderEntries(page.entries)
+      setHasMoreEntries(page.hasMore)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoadingEarlier(false);
+      setLoadingEarlier(false)
     }
   }
 
@@ -489,23 +542,30 @@ export default function StoryView({
    * stopping at the real position. Pulls older batches in one at a time until the target page
    * turns up (or there's genuinely nothing older left).
    */
-  async function ensurePageLoaded(pageId: string | null, knownEntries: LogEntry[], knownHasMore: boolean) {
-    if (!pageId) return;
-    let current = knownEntries;
-    let more = knownHasMore;
-    const fetchedBatches: LogEntry[][] = [];
+  async function ensurePageLoaded(
+    pageId: string | null,
+    knownEntries: LogEntry[],
+    knownHasMore: boolean,
+  ) {
+    if (!pageId) return
+    let current = knownEntries
+    let more = knownHasMore
+    const fetchedBatches: LogEntry[][] = []
     while (more && current.length > 0 && !current.some((e) => e.pageId === pageId)) {
-      const older = await fetchLog(storyId, { limit: LOG_PAGE_SIZE, beforePageId: current[0].pageId });
+      const older = await fetchLog(storyId, {
+        limit: LOG_PAGE_SIZE,
+        beforePageId: current[0].pageId,
+      })
       if (older.entries.length === 0) {
-        more = false;
-        break;
+        more = false
+        break
       }
-      fetchedBatches.unshift(older.entries);
-      current = [...older.entries, ...current];
-      more = older.hasMore;
+      fetchedBatches.unshift(older.entries)
+      current = [...older.entries, ...current]
+      more = older.hasMore
     }
-    if (fetchedBatches.length > 0) prependOlderEntries(fetchedBatches.flat());
-    setHasMoreEntries(more);
+    if (fetchedBatches.length > 0) prependOlderEntries(fetchedBatches.flat())
+    setHasMoreEntries(more)
   }
 
   /**
@@ -520,33 +580,35 @@ export default function StoryView({
    * from a general refresh() would double-subscribe those jobs.
    */
   async function resumeActiveJobs(freshEntries: LogEntry[]) {
-    const unresolved = freshEntries.filter((e) => e.role === "agent" && e.content === null && e.textId);
-    if (unresolved.length === 0) return;
+    const unresolved = freshEntries.filter(
+      (e) => e.role === 'agent' && e.content === null && e.textId,
+    )
+    if (unresolved.length === 0) return
     try {
-      const jobs = await fetchActiveJobs(storyId);
+      const jobs = await fetchActiveJobs(storyId)
       for (const entry of unresolved) {
-        const job = jobs.find((j) => j.targetTextId === entry.textId);
-        if (job) watchJob(job.id, entry.pageId, undefined, jobElapsedAnchor(job));
+        const job = jobs.find((j) => j.targetTextId === entry.textId)
+        if (job) watchJob(job.id, entry.pageId, undefined, jobElapsedAnchor(job))
       }
     } catch (err) {
-      console.error("failed to resume active jobs", err);
+      console.error('failed to resume active jobs', err)
     }
   }
 
   useEffect(() => {
     void (async () => {
-      const page = await refresh();
-      await resumeActiveJobs(page.entries);
-    })();
-  }, [storyId]);
+      const page = await refresh()
+      await resumeActiveJobs(page.entries)
+    })()
+  }, [storyId])
 
   const pendingTailSignature = useMemo(
     () =>
       Object.entries(pendingReplies)
         .map(([pageId, p]) => `${pageId}:${p.text.length}:${p.thinking?.length ?? 0}`)
-        .join("|"),
-    [pendingReplies]
-  );
+        .join('|'),
+    [pendingReplies],
+  )
 
   useStoryLogScroll({
     logRef,
@@ -555,78 +617,89 @@ export default function StoryView({
     pendingTailSignature,
     atHead: position?.atHead ?? true,
     editingPageId,
-  });
+  })
 
   // Featherless gives no signal between "request sent" and "first token" — elapsed time fills
   // that gap. While a prose job is queued behind an archive, poll active jobs and show a
   // distinct label; reset the timer when prose actually starts (running or archive clears).
-  const [, forceTick] = useState(0);
+  const [, forceTick] = useState(0)
   useEffect(() => {
-    const waiting = Object.values(pendingReplies).some((p) => !p.text && !p.progress);
-    if (!waiting) return;
+    const waiting = Object.values(pendingReplies).some((p) => !p.text && !p.progress)
+    if (!waiting) return
 
-    let cancelled = false;
+    let cancelled = false
 
     async function pollQueuePhase() {
       try {
-        const jobs = await fetchActiveJobs(storyId);
-        if (cancelled) return;
-        setPendingReplies((prev) => syncPendingWaitPhases(prev, jobs));
+        const jobs = await fetchActiveJobs(storyId)
+        if (cancelled) return
+        setPendingReplies((prev) => syncPendingWaitPhases(prev, jobs))
       } catch (err) {
-        console.error("failed to poll queue phase", err);
+        console.error('failed to poll queue phase', err)
       }
     }
 
-    void pollQueuePhase();
+    void pollQueuePhase()
     const id = setInterval(() => {
-      void pollQueuePhase();
-      forceTick((n) => n + 1);
-    }, 1000);
+      void pollQueuePhase()
+      forceTick((n) => n + 1)
+    }, 1000)
     return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [storyId, pendingReplies]);
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [storyId, pendingReplies])
 
   // True while anything is generating, from any source (a queued send, kickoff, continue, or
   // retry) — gates the actions that need a stable, fully-resolved history to act on unambiguously
   // (Undo/Redo/Retry/Continue/Fork/Kickoff/Edit). The composer is deliberately NOT gated by this —
   // see the form below — so new messages can keep queuing up while earlier ones (including their
   // worldbook checks) are still resolving.
-  const busy = starting || Object.keys(pendingReplies).length > 0;
+  const busy = starting || Object.keys(pendingReplies).length > 0
 
   function watchJob(jobId: string, pageId: string, onDone?: () => void, startedAt?: number) {
-    setPendingReplies((prev) => ({ ...prev, [pageId]: { text: "", startedAt: startedAt ?? Date.now(), jobId } }));
+    setPendingReplies((prev) => ({
+      ...prev,
+      [pageId]: { text: '', startedAt: startedAt ?? Date.now(), jobId },
+    }))
     streamJob(storyId, jobId, (event) => {
-      if (event.type === "token") {
+      if (event.type === 'token') {
         setPendingReplies((prev) => {
-          const cur = prev[pageId];
-          return cur
-            ? { ...prev, [pageId]: { ...cur, text: cur.text + event.text, waitPhase: "generating", progress: undefined } }
-            : prev;
-        });
-      } else if (event.type === "thinking") {
-        setPendingReplies((prev) => {
-          const cur = prev[pageId];
+          const cur = prev[pageId]
           return cur
             ? {
                 ...prev,
                 [pageId]: {
                   ...cur,
-                  thinking: (cur.thinking ?? "") + event.text,
-                  waitPhase: cur.text.trim() ? "generating" : "reasoning",
+                  text: cur.text + event.text,
+                  waitPhase: 'generating',
                   progress: undefined,
                 },
               }
-            : prev;
-        });
-      } else if (event.type === "meta") {
+            : prev
+        })
+      } else if (event.type === 'thinking') {
         setPendingReplies((prev) => {
-          const cur = prev[pageId];
-          if (!cur) return prev;
-          const prefillEstimateSec = estimatePrefillSeconds(event.inputTokenEstimate);
+          const cur = prev[pageId]
+          return cur
+            ? {
+                ...prev,
+                [pageId]: {
+                  ...cur,
+                  thinking: (cur.thinking ?? '') + event.text,
+                  waitPhase: cur.text.trim() ? 'generating' : 'reasoning',
+                  progress: undefined,
+                },
+              }
+            : prev
+        })
+      } else if (event.type === 'meta') {
+        setPendingReplies((prev) => {
+          const cur = prev[pageId]
+          if (!cur) return prev
+          const prefillEstimateSec = estimatePrefillSeconds(event.inputTokenEstimate)
           const waitPhase =
-            cur.text.trim() || cur.thinking?.trim() ? cur.waitPhase : cur.waitPhase ?? "prefill";
+            cur.text.trim() || cur.thinking?.trim() ? cur.waitPhase : (cur.waitPhase ?? 'prefill')
           return {
             ...prev,
             [pageId]: {
@@ -635,40 +708,40 @@ export default function StoryView({
               prefillEstimateSec,
               waitPhase,
             },
-          };
-        });
-      } else if (event.type === "reset") {
-        setPendingReplies((prev) => {
-          const cur = prev[pageId];
-          if (!cur) return prev;
-          const next: PendingReply = { ...cur };
-          if (event.thinking) {
-            next.thinking = undefined;
-            next.waitPhase = next.text.trim() ? "generating" : "prefill";
           }
-          if (event.text) next.text = "";
-          if (event.label) next.progress = event.label;
-          else if (event.thinking || event.text) next.progress = undefined;
-          return { ...prev, [pageId]: next };
-        });
-      } else if (event.type === "progress") {
+        })
+      } else if (event.type === 'reset') {
         setPendingReplies((prev) => {
-          const cur = prev[pageId];
-          return cur ? { ...prev, [pageId]: { ...cur, progress: event.label } } : prev;
-        });
-      } else if (event.type === "sync") {
+          const cur = prev[pageId]
+          if (!cur) return prev
+          const next: PendingReply = { ...cur }
+          if (event.thinking) {
+            next.thinking = undefined
+            next.waitPhase = next.text.trim() ? 'generating' : 'prefill'
+          }
+          if (event.text) next.text = ''
+          if (event.label) next.progress = event.label
+          else if (event.thinking || event.text) next.progress = undefined
+          return { ...prev, [pageId]: next }
+        })
+      } else if (event.type === 'progress') {
+        setPendingReplies((prev) => {
+          const cur = prev[pageId]
+          return cur ? { ...prev, [pageId]: { ...cur, progress: event.label } } : prev
+        })
+      } else if (event.type === 'sync') {
         // Replay of whatever the job had already produced before this connection opened —
         // sets rather than appends, since it's a full snapshot, not an incremental token.
         setPendingReplies((prev) => {
-          const cur = prev[pageId];
-          if (!cur) return prev;
-          const hasText = !!event.text.trim();
-          const hasThinking = !!event.thinking?.trim();
-          const waitPhase = hasText ? "generating" : hasThinking ? "reasoning" : cur.waitPhase;
+          const cur = prev[pageId]
+          if (!cur) return prev
+          const hasText = !!event.text.trim()
+          const hasThinking = !!event.thinking?.trim()
+          const waitPhase = hasText ? 'generating' : hasThinking ? 'reasoning' : cur.waitPhase
           const prefillEstimateSec =
             event.inputTokenEstimate != null
               ? estimatePrefillSeconds(event.inputTokenEstimate)
-              : cur.prefillEstimateSec;
+              : cur.prefillEstimateSec
           return {
             ...prev,
             [pageId]: {
@@ -680,12 +753,12 @@ export default function StoryView({
               prefillEstimateSec,
               waitPhase,
             },
-          };
-        });
-      } else if (event.type === "done") {
+          }
+        })
+      } else if (event.type === 'done') {
         setPendingReplies((prev) => {
-          const cur = prev[pageId];
-          if (cur?.thinking?.trim()) saveReasoningTrace(storyId, pageId, cur.thinking);
+          const cur = prev[pageId]
+          if (cur?.thinking?.trim()) saveReasoningTrace(storyId, pageId, cur.thinking)
           // Don't drop the pending entry yet — entries[] still has this page's content as null
           // (refresh() below hasn't landed), so removing it here would flip shown.map's render to
           // its "…" placeholder for one render, collapsing the last post's height and, while
@@ -694,134 +767,134 @@ export default function StoryView({
           // instead of a style change. Keeping the full streamed text on screen until refresh()
           // actually has the real content means the pending→shown handoff never has a gap to fall
           // into in the first place.
-          return prev;
-        });
-        setTraceCacheVersion((v) => v + 1);
+          return prev
+        })
+        setTraceCacheVersion((v) => v + 1)
         setHiddenPending((prev) => {
-          if (!prev.has(pageId)) return prev;
-          const next = new Set(prev);
-          next.delete(pageId);
-          return next;
-        });
+          if (!prev.has(pageId)) return prev
+          const next = new Set(prev)
+          next.delete(pageId)
+          return next
+        })
         void refresh().then(() => {
           setPendingReplies((prev) => {
-            const { [pageId]: _done, ...rest } = prev;
-            return rest;
-          });
-          setStarting(false);
-        });
+            const { [pageId]: _done, ...rest } = prev
+            return rest
+          })
+          setStarting(false)
+        })
         // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring
         // message may have been queued as a direct consequence of this one finishing. Chain a
         // watch onto it so it streams in and gets highlighted live, instead of a generic poll.
-        if (event.followUp) watchJob(event.followUp.jobId, event.followUp.pageId);
-        onDone?.();
-      } else if (event.type === "error") {
+        if (event.followUp) watchJob(event.followUp.jobId, event.followUp.pageId)
+        onDone?.()
+      } else if (event.type === 'error') {
         setPendingReplies((prev) => {
-          const { [pageId]: _failed, ...rest } = prev;
-          return rest;
-        });
+          const { [pageId]: _failed, ...rest } = prev
+          return rest
+        })
         setHiddenPending((prev) => {
-          if (!prev.has(pageId)) return prev;
-          const next = new Set(prev);
-          next.delete(pageId);
-          return next;
-        });
-        setError(event.message);
-        setStarting(false);
-      } else if (event.type === "cancelled") {
+          if (!prev.has(pageId)) return prev
+          const next = new Set(prev)
+          next.delete(pageId)
+          return next
+        })
+        setError(event.message)
+        setStarting(false)
+      } else if (event.type === 'cancelled') {
         setPendingReplies((prev) => {
-          const { [pageId]: _cancelled, ...rest } = prev;
-          return rest;
-        });
+          const { [pageId]: _cancelled, ...rest } = prev
+          return rest
+        })
         setHiddenPending((prev) => {
-          if (!prev.has(pageId)) return prev;
-          const next = new Set(prev);
-          next.delete(pageId);
-          return next;
-        });
-        setStarting(false);
+          if (!prev.has(pageId)) return prev
+          const next = new Set(prev)
+          next.delete(pageId)
+          return next
+        })
+        setStarting(false)
       }
-    });
+    })
   }
 
   async function handleSubmit(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (!draft.trim() || editingPageId) return;
+    e?.preventDefault()
+    if (!draft.trim() || editingPageId) return
 
-    const content = draft.trim();
-    setDraft("");
-    setError(null);
+    const content = draft.trim()
+    setDraft('')
+    setError(null)
 
     try {
-      const genOpts = mode === "play" ? toggles.generationOptions() : undefined;
+      const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
       const { jobId, agentPageId } =
-        mode === "guide"
+        mode === 'guide'
           ? await postSetupMessage(storyId, content)
-          : await postMessage(storyId, content, genOpts);
-      await refresh();
-      watchJob(jobId, agentPageId);
+          : await postMessage(storyId, content, genOpts)
+      await refresh()
+      watchJob(jobId, agentPageId)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   async function handleKickoff() {
-    setStarting(true);
-    setError(null);
+    setStarting(true)
+    setError(null)
     try {
-      const { jobId, agentPageId } = await kickoff(storyId);
-      await refresh();
+      const { jobId, agentPageId } = await kickoff(storyId)
+      await refresh()
       watchJob(jobId, agentPageId, () => {
-        setMode("play");
-        onKickedOff?.();
-      });
+        setMode('play')
+        onKickedOff?.()
+      })
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
-      setStarting(false);
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
+      setStarting(false)
     }
   }
 
   async function handleContinue(guidance?: string) {
-    setStarting(true);
-    setError(null);
+    setStarting(true)
+    setError(null)
     try {
-      const genOpts = mode === "play" ? toggles.generationOptions() : undefined;
-      const { jobId, agentPageId } = await continuePost(storyId, guidance, genOpts);
-      await refresh();
-      watchJob(jobId, agentPageId);
+      const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
+      const { jobId, agentPageId } = await continuePost(storyId, guidance, genOpts)
+      await refresh()
+      watchJob(jobId, agentPageId)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
-      setStarting(false);
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
+      setStarting(false)
     }
   }
 
   async function handleRetry(pageId: string, guidance?: string) {
-    setStarting(true);
-    setError(null);
+    setStarting(true)
+    setError(null)
     try {
-      const genOpts = mode === "play" ? toggles.generationOptions() : undefined;
-      const { jobId } = await retryPost(storyId, pageId, guidance, genOpts);
-      watchJob(jobId, pageId);
+      const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
+      const { jobId } = await retryPost(storyId, pageId, guidance, genOpts)
+      watchJob(jobId, pageId)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
-      setStarting(false);
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
+      setStarting(false)
     }
   }
 
   function handleContinueClick() {
-    const guidance = draft.trim() || undefined;
-    setDraft("");
-    void handleContinue(guidance);
+    const guidance = draft.trim() || undefined
+    setDraft('')
+    void handleContinue(guidance)
   }
 
   function handleRetryClick(pageId: string) {
-    const guidance = draft.trim() || undefined;
-    setDraft("");
-    void handleRetry(pageId, guidance);
+    const guidance = draft.trim() || undefined
+    setDraft('')
+    void handleRetry(pageId, guidance)
   }
 
   /** Delegated on .log rather than a per-entry onClick — a per-entry closure prop would defeat
@@ -829,52 +902,53 @@ export default function StoryView({
    * regardless of whether content actually changed), which matters here since every streamed
    * token re-renders the whole list via the pendingReplies effect above. */
   function handleLogClick(e: React.MouseEvent<HTMLDivElement>) {
-    if (editingPageId || busy) return;
-    const contentEl = (e.target as HTMLElement).closest<HTMLElement>(".entry-content");
-    if (!contentEl) return;
-    const entryEl = contentEl.closest<HTMLElement>(".entry");
-    const pageId = entryEl?.dataset.pageId;
-    if (!entryEl || !pageId) return;
-    const entry = shown.find((en) => en.pageId === pageId);
-    if (!entry) return;
-    const content = entry.content ?? "";
-    const clicked = resolveClickOffset(e.clientX, e.clientY, contentEl);
-    pendingCaretRef.current = clicked !== null ? Math.max(0, Math.min(clicked, content.length)) : content.length;
-    setEditingPageId(pageId);
-    setEditDraft(content);
-    setEditInitialHeight(contentEl.offsetHeight);
+    if (editingPageId || busy) return
+    const contentEl = (e.target as HTMLElement).closest<HTMLElement>('.entry-content')
+    if (!contentEl) return
+    const entryEl = contentEl.closest<HTMLElement>('.entry')
+    const pageId = entryEl?.dataset.pageId
+    if (!entryEl || !pageId) return
+    const entry = shown.find((en) => en.pageId === pageId)
+    if (!entry) return
+    const content = entry.content ?? ''
+    const clicked = resolveClickOffset(e.clientX, e.clientY, contentEl)
+    pendingCaretRef.current =
+      clicked !== null ? Math.max(0, Math.min(clicked, content.length)) : content.length
+    setEditingPageId(pageId)
+    setEditDraft(content)
+    setEditInitialHeight(contentEl.offsetHeight)
   }
 
   function cancelEdit() {
-    setEditingPageId(null);
-    setEditDraft("");
-    setEditInitialHeight(undefined);
-    editTextareaRef.current = null;
-    pendingCaretRef.current = null;
+    setEditingPageId(null)
+    setEditDraft('')
+    setEditInitialHeight(undefined)
+    editTextareaRef.current = null
+    pendingCaretRef.current = null
   }
 
   async function saveEdit() {
-    const pageId = editingPageId;
-    if (!pageId) return;
-    const entry = shown.find((en) => en.pageId === pageId);
-    const changed = !!entry && editDraft !== (entry.content ?? "");
-    cancelEdit();
+    const pageId = editingPageId
+    if (!pageId) return
+    const entry = shown.find((en) => en.pageId === pageId)
+    const changed = !!entry && editDraft !== (entry.content ?? '')
+    cancelEdit()
     if (changed) {
       try {
-        await editPost(storyId, pageId, editDraft);
-        await refresh();
+        await editPost(storyId, pageId, editDraft)
+        await refresh()
       } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : String(err));
+        console.error(err)
+        setError(err instanceof Error ? err.message : String(err))
       }
     }
   }
 
   async function forkFromEdit() {
-    const pageId = editingPageId;
-    if (!pageId) return;
-    cancelEdit();
-    await handleFork(pageId);
+    const pageId = editingPageId
+    if (!pageId) return
+    cancelEdit()
+    await handleFork(pageId)
   }
 
   /** Performs an actual forward-delete in the single open edit box, bypassing whatever native
@@ -883,47 +957,50 @@ export default function StoryView({
    * direct value splice, since only edits made that way register in the browser's own undo stack
    * — a plain state update wouldn't be Ctrl+Z-able the way a real keypress is. */
   function handleDeleteKey() {
-    const el = editTextareaRef.current;
-    if (!el) return;
-    el.focus();
-    const hasSelection = el.selectionStart !== el.selectionEnd;
-    const handled = document.execCommand(hasSelection ? "delete" : "forwardDelete");
+    const el = editTextareaRef.current
+    if (!el) return
+    el.focus()
+    const hasSelection = el.selectionStart !== el.selectionEnd
+    const handled = document.execCommand(hasSelection ? 'delete' : 'forwardDelete')
     if (handled) {
-      setEditDraft(el.value);
-      return;
+      setEditDraft(el.value)
+      return
     }
     // Fallback for environments without execCommand support — same net result, just not undoable.
-    const start = el.selectionStart ?? editDraft.length;
-    const end = el.selectionEnd ?? editDraft.length;
-    const next = start === end ? editDraft.slice(0, start) + editDraft.slice(start + 1) : editDraft.slice(0, start) + editDraft.slice(end);
-    setEditDraft(next);
+    const start = el.selectionStart ?? editDraft.length
+    const end = el.selectionEnd ?? editDraft.length
+    const next =
+      start === end
+        ? editDraft.slice(0, start) + editDraft.slice(start + 1)
+        : editDraft.slice(0, start) + editDraft.slice(end)
+    setEditDraft(next)
     requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(start, start);
-    });
+      el.focus()
+      el.setSelectionRange(start, start)
+    })
   }
 
   async function handleUndo() {
     try {
-      const pos = await undoPosition(storyId);
-      setPosition(pos);
-      const page = await refresh();
-      await ensurePageLoaded(pos.currentPageId, page.entries, page.hasMore);
+      const pos = await undoPosition(storyId)
+      setPosition(pos)
+      const page = await refresh()
+      await ensurePageLoaded(pos.currentPageId, page.entries, page.hasMore)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   async function handleRedo() {
     try {
-      const pos = await redoPosition(storyId);
-      setPosition(pos);
-      const page = await refresh();
-      await ensurePageLoaded(pos.currentPageId, page.entries, page.hasMore);
+      const pos = await redoPosition(storyId)
+      setPosition(pos)
+      const page = await refresh()
+      await ensurePageLoaded(pos.currentPageId, page.entries, page.hasMore)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -935,47 +1012,54 @@ export default function StoryView({
    * actually reached story phase.
    */
   async function handleEnterOoc() {
-    if (phase !== "setup") {
+    if (phase !== 'setup') {
       try {
-        await startOocSession(storyId);
+        await startOocSession(storyId)
       } catch (err) {
-        console.error(err);
-        setError(err instanceof Error ? err.message : String(err));
-        return;
+        console.error(err)
+        setError(err instanceof Error ? err.message : String(err))
+        return
       }
     }
-    setMode("guide");
+    setMode('guide')
   }
 
   async function handleFork(pageId: string) {
     try {
-      const forked = await forkStory(storyId, pageId);
-      setError(null);
-      alert(`Forked as "${forked.name}". Switch stories to play it (Saves UI isn't built yet).`);
+      const forked = await forkStory(storyId, pageId)
+      setError(null)
+      alert(`Forked as "${forked.name}". Switch stories to play it (Saves UI isn't built yet).`)
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  const pendingIds = new Set(Object.keys(pendingReplies));
+  const pendingIds = new Set(Object.keys(pendingReplies))
   // Every OOC/setup page is hidden the moment it's created, whether that's the original
   // pre-kickoff conversation or a later resumed one — and no IC page ever is (see
   // POST /:id/setup/messages). So Play/IC and Guide/OOC are exact mirror-opposite filters on the
   // same flag: this is what keeps a resumed OOC chat from also showing the interleaved IC story
   // it now shares a page chain with, and vice versa.
-  const visible = entries.filter((e) => (mode === "play" ? !e.hidden : e.hidden) && !pendingIds.has(e.pageId));
-  const currentIdx = position?.currentPageId ? visible.findIndex((e) => e.pageId === position.currentPageId) : -1;
+  const visible = entries.filter(
+    (e) => (mode === 'play' ? !e.hidden : e.hidden) && !pendingIds.has(e.pageId),
+  )
+  const currentIdx = position?.currentPageId
+    ? visible.findIndex((e) => e.pageId === position.currentPageId)
+    : -1
   // Rewound past this point? Don't render what comes after — Redo is the only way forward.
-  const shown = currentIdx >= 0 ? visible.slice(0, currentIdx + 1) : visible;
-  const lastEntry = shown[shown.length - 1];
-  const canRetry = !!lastEntry && lastEntry.role === "agent";
+  const shown = currentIdx >= 0 ? visible.slice(0, currentIdx + 1) : visible
+  const lastEntry = shown[shown.length - 1]
+  const canRetry = !!lastEntry && lastEntry.role === 'agent'
   // Queued sends whose agent page already exists (created synchronously) but hasn't resolved yet —
   // rendered after `shown` in the same relative order they were created, live-updated by whichever
   // are actually streaming right now via pendingReplies.
   const pendingEntries = entries.filter(
-    (e) => pendingIds.has(e.pageId) && (mode === "play" ? !e.hidden : e.hidden) && !hiddenPending.has(e.pageId)
-  );
+    (e) =>
+      pendingIds.has(e.pageId) &&
+      (mode === 'play' ? !e.hidden : e.hidden) &&
+      !hiddenPending.has(e.pageId),
+  )
 
   return (
     <div className="story-view">
@@ -983,52 +1067,58 @@ export default function StoryView({
         {hasMoreEntries && (
           <div className="log-load-earlier">
             <button type="button" onClick={() => void loadEarlier()} disabled={loadingEarlier}>
-              {loadingEarlier ? "Loading…" : "Load earlier"}
+              {loadingEarlier ? 'Loading…' : 'Load earlier'}
             </button>
           </div>
         )}
         {shown.map((entry) => {
           const cachedTrace =
-            entry.role === "agent" ? reasoningTraces[entry.pageId]?.trim() : undefined;
+            entry.role === 'agent' ? reasoningTraces[entry.pageId]?.trim() : undefined
           return (
-          <div key={entry.pageId} data-page-id={entry.pageId} className={`entry entry-${entry.role}`}>
-            <RoleLabel role={entry.role} mode={mode} />
-            {entry.pageId === editingPageId ? (
-              <>
-                <AutoGrowTextarea
-                  className="edit-box-textarea"
-                  value={editDraft}
-                  onChange={setEditDraft}
-                  onFocus={(e) => {
-                    const el = e.currentTarget;
-                    editTextareaRef.current = el;
-                    if (pendingCaretRef.current !== null) {
-                      el.setSelectionRange(pendingCaretRef.current, pendingCaretRef.current);
-                      pendingCaretRef.current = null;
-                    }
-                  }}
-                  initialHeight={editInitialHeight}
-                  protectScrollRef={logRef}
-                />
-              </>
-            ) : (
-              <>
-                {cachedTrace ? (
-                  <ReasoningTracePanel thinking={cachedTrace} expanded={reasoningExpanded} />
-                ) : null}
-                <EntryContent content={entry.content ?? "…"} highlightBlocks={mode === "guide"} />
-              </>
-            )}
-          </div>
-          );
+            <div
+              key={entry.pageId}
+              data-page-id={entry.pageId}
+              className={`entry entry-${entry.role}`}
+            >
+              <RoleLabel role={entry.role} mode={mode} />
+              {entry.pageId === editingPageId ? (
+                <>
+                  <AutoGrowTextarea
+                    className="edit-box-textarea"
+                    value={editDraft}
+                    onChange={setEditDraft}
+                    onFocus={(e) => {
+                      const el = e.currentTarget
+                      editTextareaRef.current = el
+                      if (pendingCaretRef.current !== null) {
+                        el.setSelectionRange(pendingCaretRef.current, pendingCaretRef.current)
+                        pendingCaretRef.current = null
+                      }
+                    }}
+                    initialHeight={editInitialHeight}
+                    protectScrollRef={logRef}
+                  />
+                </>
+              ) : (
+                <>
+                  {cachedTrace ? (
+                    <ReasoningTracePanel thinking={cachedTrace} expanded={reasoningExpanded} />
+                  ) : null}
+                  <EntryContent content={entry.content ?? '…'} highlightBlocks={mode === 'guide'} />
+                </>
+              )}
+            </div>
+          )
         })}
         {pendingEntries.map((entry) => {
-          const pending = pendingReplies[entry.pageId];
+          const pending = pendingReplies[entry.pageId]
           return (
             <div key={entry.pageId} className="entry entry-agent entry-pending">
               <RoleLabel role="agent" mode={mode} />
               {!pending?.text?.trim() ? (
-                <p className="pending-thinking">{pending ? pendingStatusLabel(pending) : "Thinking…"}</p>
+                <p className="pending-thinking">
+                  {pending ? pendingStatusLabel(pending) : 'Thinking…'}
+                </p>
               ) : null}
               {showReasoning && pending?.thinking?.trim() ? (
                 <ReasoningTracePanel
@@ -1038,7 +1128,7 @@ export default function StoryView({
                 />
               ) : null}
               {pending?.text?.trim() ? (
-                <EntryContent content={pending.text} highlightBlocks={mode === "guide"} />
+                <EntryContent content={pending.text} highlightBlocks={mode === 'guide'} />
               ) : null}
               {pending?.jobId && (
                 <button
@@ -1051,9 +1141,12 @@ export default function StoryView({
                       // than leaving the "Thinking…" bubble stuck with a failed stop, hide it
                       // locally; the job keeps running in the background and the reply reappears
                       // on its own once it resolves.
-                      console.error(err);
-                      setHiddenPending((prev) => new Set(prev).add(entry.pageId));
-                      toast.info("Still running in the background — it'll reappear when it finishes.", "Can't stop this job");
+                      console.error(err)
+                      setHiddenPending((prev) => new Set(prev).add(entry.pageId))
+                      toast.info(
+                        "Still running in the background — it'll reappear when it finishes.",
+                        "Can't stop this job",
+                      )
                     })
                   }
                 >
@@ -1061,148 +1154,179 @@ export default function StoryView({
                 </button>
               )}
             </div>
-          );
+          )
         })}
       </div>
 
       <div className="story-view-footer">
-      {error && (
-        <div className="error-banner">
-          <span>{error}</span>
-          <button type="button" className="error-banner-dismiss" onClick={() => setError(null)} aria-label="Dismiss">
-            ×
-          </button>
-        </div>
-      )}
-
-      <div className="play-toolbar">
-        {editingPageId ? (
-          <>
-            <button type="button" onClick={() => void saveEdit()}>Save</button>
-            <button type="button" onClick={cancelEdit}>Cancel</button>
-            <button type="button" onClick={() => void forkFromEdit()}>Fork</button>
-            <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={handleDeleteKey}>Del</button>
-          </>
-        ) : (
-          <ButtonContainerRow
-            storageScope="input"
-            containers={toolbarContainers}
-            resolveLabel={(id, fallback) => {
-              if (id === "toggle.length") return `Length: ${toggles.labels.length}`;
-              if (id === "toggle.mood") return `Mood: ${toggles.labels.mood}`;
-              if (id === "toggle.param") return `Param: ${toggles.labels.param}`;
-              if (id === "toggle.model") return `Model: ${toggles.labels.model}`;
-              if (id === "toggle.effort") return `Effort: ${toggles.labels.effort}`;
-              if (id === "toggle.reasoning.show") return showReasoning ? "Trace: On" : "Trace: Off";
-              if (id === "toggle.reasoning.expand") return reasoningExpanded ? "Trace: Open" : "Trace: Closed";
-              return fallback ?? id;
-            }}
-            getButtonProps={(id) => {
-              if (busy && !id.startsWith("mode.")) {
-                // mode switches disabled when busy; toggles too
-              }
-              if (id === "mode.ooc") {
-                return {
-                  onClick: () => void handleEnterOoc(),
-                  active: mode === "guide",
-                  disabled: busy || !!editingPageId,
-                  className: mode === "guide" ? "active" : undefined,
-                };
-              }
-              if (id === "mode.ic") {
-                return {
-                  onClick: () => setMode("play"),
-                  active: mode === "play",
-                  disabled: busy || !!editingPageId,
-                  className: mode === "play" ? "active" : undefined,
-                };
-              }
-              if (id === "action.undo") {
-                return { onClick: () => void handleUndo(), disabled: busy || !position?.canUndo };
-              }
-              if (id === "action.redo") {
-                return { onClick: () => void handleRedo(), disabled: busy || !position?.canRedo };
-              }
-              if (id === "action.retry") {
-                return {
-                  onClick: () => lastEntry && handleRetryClick(lastEntry.pageId),
-                  disabled: busy || !canRetry,
-                };
-              }
-              if (id === "action.continue") {
-                return { onClick: handleContinueClick, disabled: busy };
-              }
-              if (id === "toggle.length") {
-                return { onClick: toggles.cycleLength, disabled: busy || mode !== "play" };
-              }
-              if (id === "toggle.mood") {
-                return { onClick: toggles.cycleMood, disabled: busy || mode !== "play" };
-              }
-              if (id === "toggle.param") {
-                return { onClick: toggles.cycleParam, disabled: busy || mode !== "play" };
-              }
-              if (id === "toggle.model") {
-                return { onClick: toggles.cycleModel, disabled: busy || mode !== "play" };
-              }
-              if (id === "toggle.length" || id === "toggle.mood" || id === "toggle.param" || id === "toggle.model") {
-                return null;
-              }
-              if (id === "toggle.effort") {
-                return { onClick: toggles.cycleEffort, disabled: busy || mode !== "play" };
-              }
-              if (id === "toggle.reasoning.show") {
-                return { onClick: toggleShowReasoning, disabled: mode !== "play" };
-              }
-              if (id === "toggle.reasoning.expand") {
-                return { onClick: toggleReasoningExpanded, disabled: mode !== "play" || !showReasoning };
-              }
-              return null;
-            }}
-            trailing={
-              <>
-                {mode === "guide" && phase === "setup" && (
-                  <button type="button" onClick={() => void handleKickoff()} disabled={busy || !!editingPageId}>
-                    Kickoff →
-                  </button>
-                )}
-              </>
-            }
-          />
+        {error && (
+          <div className="error-banner">
+            <span>{error}</span>
+            <button
+              type="button"
+              className="error-banner-dismiss"
+              onClick={() => setError(null)}
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
         )}
-      </div>
 
-      <form className="composer" onSubmit={handleSubmit}>
-        <AutoGrowTextarea
-          value={draft}
-          onChange={setDraft}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (editingPageId) return;
-              if (draft.trim()) {
-                void handleSubmit();
-              } else if (!busy) {
-                // Continue (unlike Send) isn't queueable — it acts on "whatever's current" once
-                // an existing reply resolves, so it stays serialized behind anything pending.
-                handleContinueClick();
+        <div className="play-toolbar">
+          {editingPageId ? (
+            <>
+              <button type="button" onClick={() => void saveEdit()}>
+                Save
+              </button>
+              <button type="button" onClick={cancelEdit}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void forkFromEdit()}>
+                Fork
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleDeleteKey}
+              >
+                Del
+              </button>
+            </>
+          ) : (
+            <ButtonContainerRow
+              storageScope="input"
+              containers={toolbarContainers}
+              resolveLabel={(id, fallback) => {
+                if (id === 'toggle.length') return `Length: ${toggles.labels.length}`
+                if (id === 'toggle.mood') return `Mood: ${toggles.labels.mood}`
+                if (id === 'toggle.param') return `Param: ${toggles.labels.param}`
+                if (id === 'toggle.model') return `Model: ${toggles.labels.model}`
+                if (id === 'toggle.effort') return `Effort: ${toggles.labels.effort}`
+                if (id === 'toggle.reasoning.show')
+                  return showReasoning ? 'Trace: On' : 'Trace: Off'
+                if (id === 'toggle.reasoning.expand')
+                  return reasoningExpanded ? 'Trace: Open' : 'Trace: Closed'
+                return fallback ?? id
+              }}
+              getButtonProps={(id) => {
+                if (busy && !id.startsWith('mode.')) {
+                  // mode switches disabled when busy; toggles too
+                }
+                if (id === 'mode.ooc') {
+                  return {
+                    onClick: () => void handleEnterOoc(),
+                    active: mode === 'guide',
+                    disabled: busy || !!editingPageId,
+                    className: mode === 'guide' ? 'active' : undefined,
+                  }
+                }
+                if (id === 'mode.ic') {
+                  return {
+                    onClick: () => setMode('play'),
+                    active: mode === 'play',
+                    disabled: busy || !!editingPageId,
+                    className: mode === 'play' ? 'active' : undefined,
+                  }
+                }
+                if (id === 'action.undo') {
+                  return { onClick: () => void handleUndo(), disabled: busy || !position?.canUndo }
+                }
+                if (id === 'action.redo') {
+                  return { onClick: () => void handleRedo(), disabled: busy || !position?.canRedo }
+                }
+                if (id === 'action.retry') {
+                  return {
+                    onClick: () => lastEntry && handleRetryClick(lastEntry.pageId),
+                    disabled: busy || !canRetry,
+                  }
+                }
+                if (id === 'action.continue') {
+                  return { onClick: handleContinueClick, disabled: busy }
+                }
+                if (id === 'toggle.length') {
+                  return { onClick: toggles.cycleLength, disabled: busy || mode !== 'play' }
+                }
+                if (id === 'toggle.mood') {
+                  return { onClick: toggles.cycleMood, disabled: busy || mode !== 'play' }
+                }
+                if (id === 'toggle.param') {
+                  return { onClick: toggles.cycleParam, disabled: busy || mode !== 'play' }
+                }
+                if (id === 'toggle.model') {
+                  return { onClick: toggles.cycleModel, disabled: busy || mode !== 'play' }
+                }
+                if (
+                  id === 'toggle.length' ||
+                  id === 'toggle.mood' ||
+                  id === 'toggle.param' ||
+                  id === 'toggle.model'
+                ) {
+                  return null
+                }
+                if (id === 'toggle.effort') {
+                  return { onClick: toggles.cycleEffort, disabled: busy || mode !== 'play' }
+                }
+                if (id === 'toggle.reasoning.show') {
+                  return { onClick: toggleShowReasoning, disabled: mode !== 'play' }
+                }
+                if (id === 'toggle.reasoning.expand') {
+                  return {
+                    onClick: toggleReasoningExpanded,
+                    disabled: mode !== 'play' || !showReasoning,
+                  }
+                }
+                return null
+              }}
+              trailing={
+                <>
+                  {mode === 'guide' && phase === 'setup' && (
+                    <button
+                      type="button"
+                      onClick={() => void handleKickoff()}
+                      disabled={busy || !!editingPageId}
+                    >
+                      Kickoff →
+                    </button>
+                  )}
+                </>
               }
+            />
+          )}
+        </div>
+
+        <form className="composer" onSubmit={handleSubmit}>
+          <AutoGrowTextarea
+            value={draft}
+            onChange={setDraft}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                if (editingPageId) return
+                if (draft.trim()) {
+                  void handleSubmit()
+                } else if (!busy) {
+                  // Continue (unlike Send) isn't queueable — it acts on "whatever's current" once
+                  // an existing reply resolves, so it stays serialized behind anything pending.
+                  handleContinueClick()
+                }
+              }
+            }}
+            placeholder={
+              position && !position.atHead
+                ? 'Viewing an earlier point'
+                : mode === 'guide'
+                  ? 'Tell the Editor about your story… (Enter on an empty box continues; also used as guidance for Retry/Continue)'
+                  : 'Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)'
             }
-          }}
-          placeholder={
-            position && !position.atHead
-              ? "Viewing an earlier point"
-              : mode === "guide"
-                ? "Tell the Editor about your story… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
-                : "Say something… (Enter on an empty box continues; also used as guidance for Retry/Continue)"
-          }
-          disabled={!!editingPageId}
-          protectScrollRef={logRef}
-        />
-        <button type="submit" disabled={!!editingPageId || !draft.trim()}>
-          Send
-        </button>
-      </form>
+            disabled={!!editingPageId}
+            protectScrollRef={logRef}
+          />
+          <button type="submit" disabled={!!editingPageId || !draft.trim()}>
+            Send
+          </button>
+        </form>
       </div>
     </div>
-  );
+  )
 }

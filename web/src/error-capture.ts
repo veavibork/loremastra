@@ -1,19 +1,24 @@
-import { toast } from "./toast";
+import { toast } from './toast'
 
-const NETWORK_FAILURE_SIGNATURES = ["Failed to fetch", "NetworkError", "ERR_CONNECTION", "ERR_NETWORK"];
+const NETWORK_FAILURE_SIGNATURES = [
+  'Failed to fetch',
+  'NetworkError',
+  'ERR_CONNECTION',
+  'ERR_NETWORK',
+]
 
 function stringifyArg(arg: unknown): string {
-  if (arg instanceof Error) return arg.stack ?? arg.message;
-  if (typeof arg === "string") return arg;
+  if (arg instanceof Error) return arg.stack ?? arg.message
+  if (typeof arg === 'string') return arg
   try {
-    return JSON.stringify(arg);
+    return JSON.stringify(arg)
   } catch {
-    return String(arg);
+    return String(arg)
   }
 }
 
 function isNetworkFailure(message: string): boolean {
-  return NETWORK_FAILURE_SIGNATURES.some((sig) => message.includes(sig));
+  return NETWORK_FAILURE_SIGNATURES.some((sig) => message.includes(sig))
 }
 
 /**
@@ -22,23 +27,23 @@ function isNetworkFailure(message: string): boolean {
  * try/catch entirely (uncaught exceptions, unhandled promise rejections).
  */
 export function installGlobalErrorCapture(): void {
-  const originalConsoleError = console.error.bind(console);
+  const originalConsoleError = console.error.bind(console)
   console.error = (...args: unknown[]) => {
-    originalConsoleError(...args);
-    const message = args.map(stringifyArg).join(" ");
+    originalConsoleError(...args)
+    const message = args.map(stringifyArg).join(' ')
     if (isNetworkFailure(message)) {
-      toast.critical(message, "Backend unreachable");
+      toast.critical(message, 'Backend unreachable')
     } else {
-      toast.error(message);
+      toast.error(message)
     }
-  };
+  }
 
-  window.addEventListener("error", (event) => {
-    toast.critical(event.message, "Uncaught error");
-  });
+  window.addEventListener('error', (event) => {
+    toast.critical(event.message, 'Uncaught error')
+  })
 
-  window.addEventListener("unhandledrejection", (event) => {
-    const message = event.reason instanceof Error ? event.reason.message : String(event.reason);
-    toast.critical(message, "Unhandled rejection");
-  });
+  window.addEventListener('unhandledrejection', (event) => {
+    const message = event.reason instanceof Error ? event.reason.message : String(event.reason)
+    toast.critical(message, 'Unhandled rejection')
+  })
 }

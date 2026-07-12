@@ -22,47 +22,43 @@ installed and run separately.
 From the repo root (per `README.md`):
 
 1. Install both packages' dependencies:
-npm install
-cd web && npm install
-
+   npm install
+   cd web && npm install
 
 2. Copy `.env.example` to `.env` and set `APP_MASTER_KEY` (32-byte hex; used to
-encrypt per-user API keys at rest). Provider API keys are set per user in the
-app's Agents tab, not in `.env`.
+   encrypt per-user API keys at rest). Provider API keys are set per user in the
+   app's Agents tab, not in `.env`.
 3. Initialize the database:
-npm run db:init
-
+   npm run db:init
 
 4. Create a user account (there is no self-serve signup):
-npm run user:create -- <name> <password>
-
-
+   npm run user:create -- <name> <password>
 
 ## Run / dev / build commands
 
 Backend (run from repo root):
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start backend in watch mode (`tsx watch src/index.ts`). Listens on `http://localhost:4113` (override with `PORT`). |
-| `npm run build` | Compile backend TypeScript to `dist/` (`tsc -p tsconfig.json`). |
-| `npm start` | Run the compiled backend (`node dist/src/index.js`). |
-| `npm run typecheck` | Type-check the backend, no emit (`tsc -p tsconfig.json --noEmit`). |
-| `npm run db:init` | Initialize the database (`tsx scripts/init-db.ts`). |
-| `npm run user:create -- <name> <password>` | Create a user (`tsx scripts/create-user.ts`). |
-| `npm run server:restart` | Restart the dev backend process (`node scripts/dev-restart.mjs`). |
-| `npm run server:reset-db` | Reset the local database (`node scripts/dev-reset-db.mjs`). |
-| `npm run server:fresh` | Reset DB, then restart backend. |
-| `npm run mcp` | Run the dev-tools MCP server (`tsx src/mcp/dev-server.ts`). |
+| Command                                    | What it does                                                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `npm run dev`                              | Start backend in watch mode (`tsx watch src/index.ts`). Listens on `http://localhost:4113` (override with `PORT`). |
+| `npm run build`                            | Compile backend TypeScript to `dist/` (`tsc -p tsconfig.json`).                                                    |
+| `npm start`                                | Run the compiled backend (`node dist/src/index.js`).                                                               |
+| `npm run typecheck`                        | Type-check the backend, no emit (`tsc -p tsconfig.json --noEmit`).                                                 |
+| `npm run db:init`                          | Initialize the database (`tsx scripts/init-db.ts`).                                                                |
+| `npm run user:create -- <name> <password>` | Create a user (`tsx scripts/create-user.ts`).                                                                      |
+| `npm run server:restart`                   | Restart the dev backend process (`node scripts/dev-restart.mjs`).                                                  |
+| `npm run server:reset-db`                  | Reset the local database (`node scripts/dev-reset-db.mjs`).                                                        |
+| `npm run server:fresh`                     | Reset DB, then restart backend.                                                                                    |
+| `npm run mcp`                              | Run the dev-tools MCP server (`tsx src/mcp/dev-server.ts`).                                                        |
 
 Frontend (run from `web/`):
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start the Vite dev server. It proxies `/api` to `http://localhost:4113`, so the backend must also be running. |
-| `npm run build` | Type-check then build (`tsc -b && vite build`). |
-| `npm run preview` | Serve the production build locally (`vite preview`). |
-| `npm run lint` | Lint the frontend (`oxlint`). |
+| Command           | What it does                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`     | Start the Vite dev server. It proxies `/api` to `http://localhost:4113`, so the backend must also be running. |
+| `npm run build`   | Type-check then build (`tsc -b && vite build`).                                                               |
+| `npm run preview` | Serve the production build locally (`vite preview`).                                                          |
+| `npm run lint`    | Lint the frontend (`oxlint`).                                                                                 |
 
 ## Testing
 
@@ -71,8 +67,6 @@ etc.). Automated checks are standalone TypeScript scripts in `scripts/`, run
 individually with `tsx`. Examples cited in `README.md`:
 
 npx tsx scripts/test-memory-pipeline-smoke.ts
-
-
 
 - Scripts prefixed `test-` (e.g. `test-memory-pipeline-smoke.ts`,
   `test-content-store.ts`) are smoke/integration checks.

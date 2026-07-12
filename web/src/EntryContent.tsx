@@ -1,5 +1,5 @@
-import { memo, type ReactNode } from "react";
-import { WORLDBOOK_BLOCK_PATTERN } from "./worldbookBlocks";
+import { memo, type ReactNode } from 'react'
+import { WORLDBOOK_BLOCK_PATTERN } from './worldbookBlocks'
 
 /**
  * Shared renderer for post/reply content — KoboldAI-Lite style: content renders in a
@@ -14,7 +14,7 @@ import { WORLDBOOK_BLOCK_PATTERN } from "./worldbookBlocks";
  * worldbook entry — bracket tags stay visible inside the mark rather than stripped, to make it
  * unambiguous exactly which text triggers extraction.
  */
-const INLINE_PATTERN = /\*\*([^*\n]+)\*\*|\*([^*\n]+)\*/g;
+const INLINE_PATTERN = /\*\*([^*\n]+)\*\*|\*([^*\n]+)\*/g
 
 /**
  * `base` is this run's starting offset in the *original* source string (not the rendered text) —
@@ -23,54 +23,68 @@ const INLINE_PATTERN = /\*\*([^*\n]+)\*\*|\*([^*\n]+)\*/g;
  * bold/italic markers are stripped from what's actually rendered.
  */
 function renderInline(text: string, keyPrefix: string, base: number): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  let lastIndex = 0;
+  const nodes: ReactNode[] = []
+  let lastIndex = 0
   for (const match of text.matchAll(INLINE_PATTERN)) {
     if (match.index! > lastIndex) {
       nodes.push(
         <span key={`${keyPrefix}-t${lastIndex}`} data-src-start={base + lastIndex}>
           {text.slice(lastIndex, match.index)}
-        </span>
-      );
+        </span>,
+      )
     }
     if (match[1] !== undefined) {
       nodes.push(
-        <strong key={`${keyPrefix}-${match.index}`} data-src-start={base + match.index! + 2 /* skip opening "**" */}>
+        <strong
+          key={`${keyPrefix}-${match.index}`}
+          data-src-start={base + match.index! + 2 /* skip opening "**" */}
+        >
           {match[1]}
-        </strong>
-      );
+        </strong>,
+      )
     } else {
       nodes.push(
-        <em key={`${keyPrefix}-${match.index}`} data-src-start={base + match.index! + 1 /* skip opening "*" */}>
+        <em
+          key={`${keyPrefix}-${match.index}`}
+          data-src-start={base + match.index! + 1 /* skip opening "*" */}
+        >
           {match[2]}
-        </em>
-      );
+        </em>,
+      )
     }
-    lastIndex = match.index! + match[0].length;
+    lastIndex = match.index! + match[0].length
   }
   if (lastIndex < text.length) {
     nodes.push(
       <span key={`${keyPrefix}-t${lastIndex}`} data-src-start={base + lastIndex}>
         {text.slice(lastIndex)}
-      </span>
-    );
+      </span>,
+    )
   }
-  return nodes;
+  return nodes
 }
 
-function EntryContent({ content, highlightBlocks }: { content: string; highlightBlocks?: boolean }) {
+function EntryContent({
+  content,
+  highlightBlocks,
+}: {
+  content: string
+  highlightBlocks?: boolean
+}) {
   if (!highlightBlocks) {
-    return <div className="entry-content">{renderInline(content, "i", 0)}</div>;
+    return <div className="entry-content">{renderInline(content, 'i', 0)}</div>
   }
 
-  const segments: { text: string; type: string | null; start: number }[] = [];
-  let lastIndex = 0;
+  const segments: { text: string; type: string | null; start: number }[] = []
+  let lastIndex = 0
   for (const match of content.matchAll(WORLDBOOK_BLOCK_PATTERN)) {
-    if (match.index! > lastIndex) segments.push({ text: content.slice(lastIndex, match.index), type: null, start: lastIndex });
-    segments.push({ text: match[0], type: match[1].toLowerCase(), start: match.index! });
-    lastIndex = match.index! + match[0].length;
+    if (match.index! > lastIndex)
+      segments.push({ text: content.slice(lastIndex, match.index), type: null, start: lastIndex })
+    segments.push({ text: match[0], type: match[1].toLowerCase(), start: match.index! })
+    lastIndex = match.index! + match[0].length
   }
-  if (lastIndex < content.length) segments.push({ text: content.slice(lastIndex), type: null, start: lastIndex });
+  if (lastIndex < content.length)
+    segments.push({ text: content.slice(lastIndex), type: null, start: lastIndex })
 
   return (
     <div className="entry-content">
@@ -81,10 +95,10 @@ function EntryContent({ content, highlightBlocks }: { content: string; highlight
           </mark>
         ) : (
           <span key={i}>{renderInline(seg.text, `s${i}`, seg.start)}</span>
-        )
+        ),
       )}
     </div>
-  );
+  )
 }
 
 // StoryView re-renders the whole log on every streamed token (pendingReplies changes) or click
@@ -92,4 +106,4 @@ function EntryContent({ content, highlightBlocks }: { content: string; highlight
 // this component never takes a non-primitive prop that would defeat the comparison below).
 // content/highlightBlocks are plain string/boolean, so the default shallow-equal check is enough
 // to skip the regex re-parse for every already-settled post that isn't the one actually changing.
-export default memo(EntryContent);
+export default memo(EntryContent)

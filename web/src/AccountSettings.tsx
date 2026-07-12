@@ -1,64 +1,67 @@
-import { useEffect, useState } from "react";
-import { changePassword, fetchAccount, updateDisplayName } from "./api";
-import "./AccountSettings.css";
+import { useEffect, useState } from 'react'
+import { changePassword, fetchAccount, updateDisplayName } from './api'
+import './AccountSettings.css'
 
 export default function AccountSettings() {
-  const [displayName, setDisplayName] = useState("");
-  const [savedDisplayName, setSavedDisplayName] = useState<string | null>(null);
-  const [nameStatus, setNameStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const [savingName, setSavingName] = useState(false);
+  const [displayName, setDisplayName] = useState('')
+  const [savedDisplayName, setSavedDisplayName] = useState<string | null>(null)
+  const [nameStatus, setNameStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  const [savingName, setSavingName] = useState(false)
 
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordStatus, setPasswordStatus] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const [savingPassword, setSavingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordStatus, setPasswordStatus] = useState<{
+    kind: 'ok' | 'error'
+    text: string
+  } | null>(null)
+  const [savingPassword, setSavingPassword] = useState(false)
 
   useEffect(() => {
     void fetchAccount().then((account) => {
-      setDisplayName(account.displayName);
-      setSavedDisplayName(account.displayName);
-    });
-  }, []);
+      setDisplayName(account.displayName)
+      setSavedDisplayName(account.displayName)
+    })
+  }, [])
 
   async function handleSaveName() {
-    const trimmed = displayName.trim();
-    if (!trimmed || trimmed === savedDisplayName) return;
-    setSavingName(true);
-    setNameStatus(null);
+    const trimmed = displayName.trim()
+    if (!trimmed || trimmed === savedDisplayName) return
+    setSavingName(true)
+    setNameStatus(null)
     try {
-      const account = await updateDisplayName(trimmed);
-      setDisplayName(account.displayName);
-      setSavedDisplayName(account.displayName);
-      setNameStatus({ kind: "ok", text: "Display name updated." });
+      const account = await updateDisplayName(trimmed)
+      setDisplayName(account.displayName)
+      setSavedDisplayName(account.displayName)
+      setNameStatus({ kind: 'ok', text: 'Display name updated.' })
     } catch (err) {
-      setNameStatus({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+      setNameStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {
-      setSavingName(false);
+      setSavingName(false)
     }
   }
 
   async function handleSavePassword() {
-    setPasswordStatus(null);
+    setPasswordStatus(null)
     if (newPassword.length < 8) {
-      setPasswordStatus({ kind: "error", text: "New password must be at least 8 characters." });
-      return;
+      setPasswordStatus({ kind: 'error', text: 'New password must be at least 8 characters.' })
+      return
     }
     if (newPassword !== confirmPassword) {
-      setPasswordStatus({ kind: "error", text: "New password and confirmation don't match." });
-      return;
+      setPasswordStatus({ kind: 'error', text: "New password and confirmation don't match." })
+      return
     }
-    setSavingPassword(true);
+    setSavingPassword(true)
     try {
-      await changePassword(currentPassword, newPassword);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setPasswordStatus({ kind: "ok", text: "Password updated." });
+      await changePassword(currentPassword, newPassword)
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setPasswordStatus({ kind: 'ok', text: 'Password updated.' })
     } catch (err) {
-      setPasswordStatus({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+      setPasswordStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
     } finally {
-      setSavingPassword(false);
+      setSavingPassword(false)
     }
   }
 
@@ -83,7 +86,11 @@ export default function AccountSettings() {
             Save
           </button>
         </div>
-        {nameStatus && <p className={`account-settings-status account-settings-status-${nameStatus.kind}`}>{nameStatus.text}</p>}
+        {nameStatus && (
+          <p className={`account-settings-status account-settings-status-${nameStatus.kind}`}>
+            {nameStatus.text}
+          </p>
+        )}
       </div>
 
       <div className="account-settings-field">
@@ -119,9 +126,11 @@ export default function AccountSettings() {
           Update password
         </button>
         {passwordStatus && (
-          <p className={`account-settings-status account-settings-status-${passwordStatus.kind}`}>{passwordStatus.text}</p>
+          <p className={`account-settings-status account-settings-status-${passwordStatus.kind}`}>
+            {passwordStatus.text}
+          </p>
         )}
       </div>
     </section>
-  );
+  )
 }

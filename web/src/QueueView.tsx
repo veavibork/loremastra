@@ -1,55 +1,57 @@
-import { useEffect, useState } from "react";
-import { fetchJobs, fetchSlots, type Job } from "./api";
-import type { PanelProps } from "./panel-types";
-import "./LogsView.css";
+import { useEffect, useState } from 'react'
+import { fetchJobs, fetchSlots, type Job } from './api'
+import type { PanelProps } from './panel-types'
+import './LogsView.css'
 
 function jobElapsed(job: Job): string {
-  if (job.elapsedMs != null) return `${(job.elapsedMs / 1000).toFixed(1)}s`;
-  if (!job.startedAt) return "—";
-  const end = job.finishedAt ? new Date(job.finishedAt) : new Date();
-  const start = new Date(job.startedAt);
-  return `${((end.getTime() - start.getTime()) / 1000).toFixed(1)}s`;
+  if (job.elapsedMs != null) return `${(job.elapsedMs / 1000).toFixed(1)}s`
+  if (!job.startedAt) return '—'
+  const end = job.finishedAt ? new Date(job.finishedAt) : new Date()
+  const start = new Date(job.startedAt)
+  return `${((end.getTime() - start.getTime()) / 1000).toFixed(1)}s`
 }
 
 function jobResponse(job: Job): string {
-  if (job.status === "failed") return job.error ? `error — ${job.error}` : "error";
-  if (job.status === "done" && job.resultSummary) return job.resultSummary;
-  if (job.status === "done") return "200 OK";
-  if (job.status === "cancelled") return "cancelled";
-  return "—";
+  if (job.status === 'failed') return job.error ? `error — ${job.error}` : 'error'
+  if (job.status === 'done' && job.resultSummary) return job.resultSummary
+  if (job.status === 'done') return '200 OK'
+  if (job.status === 'cancelled') return 'cancelled'
+  return '—'
 }
 
 export default function QueueView({ story }: PanelProps) {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [slots, setSlots] = useState<{ used: number; max: number } | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [slots, setSlots] = useState<{ used: number; max: number } | null>(null)
 
   useEffect(() => {
-    if (!story) return;
-    let cancelled = false;
+    if (!story) return
+    let cancelled = false
 
     async function poll(opts?: { background?: boolean }) {
-      if (!story) return;
-      const [j, s] = await Promise.all([fetchJobs(story.id, opts), fetchSlots(opts)]);
+      if (!story) return
+      const [j, s] = await Promise.all([fetchJobs(story.id, opts), fetchSlots(opts)])
       if (!cancelled) {
-        setJobs(j);
-        setSlots(s);
+        setJobs(j)
+        setSlots(s)
       }
     }
 
-    void poll();
-    const interval = setInterval(() => void poll({ background: true }), 2000);
+    void poll()
+    const interval = setInterval(() => void poll({ background: true }), 2000)
     return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [story]);
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [story])
 
-  if (!story) return <div className="logs-view">No active story.</div>;
+  if (!story) return <div className="logs-view">No active story.</div>
 
   return (
     <div className="logs-view">
       <h2>Queue</h2>
-      <div className="logs-slots-bar">Concurrency slots: {slots ? `${slots.used} / ${slots.max}` : "…"}</div>
+      <div className="logs-slots-bar">
+        Concurrency slots: {slots ? `${slots.used} / ${slots.max}` : '…'}
+      </div>
       <table className="logs-table logs-jobs-table">
         <thead>
           <tr>
@@ -70,12 +72,14 @@ export default function QueueView({ story }: PanelProps) {
               <td>{new Date(job.createdAt).toLocaleString()}</td>
               <td>{job.jobType}</td>
               <td>{job.status}</td>
-              <td className="logs-job-model">{job.model ?? "—"}</td>
-              <td>{job.tokenEstimate ?? "—"}</td>
+              <td className="logs-job-model">{job.model ?? '—'}</td>
+              <td>{job.tokenEstimate ?? '—'}</td>
               <td>{job.priority}</td>
               <td>{job.slotCost}</td>
               <td>{jobElapsed(job)}</td>
-              <td className={`logs-job-response ${job.status === "failed" ? "logs-job-response-error" : ""}`}>
+              <td
+                className={`logs-job-response ${job.status === 'failed' ? 'logs-job-response-error' : ''}`}
+              >
                 {jobResponse(job)}
               </td>
             </tr>
@@ -83,5 +87,5 @@ export default function QueueView({ story }: PanelProps) {
         </tbody>
       </table>
     </div>
-  );
+  )
 }

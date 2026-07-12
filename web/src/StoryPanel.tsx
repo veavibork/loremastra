@@ -1,14 +1,14 @@
-import StoryView from "./StoryView";
-import type { PanelProps } from "./panel-types";
+import StoryView from './StoryView'
+import type { PanelProps } from './panel-types'
 
 export default function StoryPanel({ story, phase, onPhaseChange, inputBar }: PanelProps) {
-  if (!story || !phase) return null;
+  if (!story || !phase) return null
   return (
     <StoryView
       storyId={story.id}
       phase={phase}
-      onKickedOff={() => onPhaseChange("story")}
+      onKickedOff={() => onPhaseChange('story')}
       inputBar={inputBar}
     />
-  );
+  )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react'
 import {
   createModelConfig,
   deleteModelConfig,
@@ -9,200 +9,203 @@ import {
   type CatalogModel,
   type ModelConfig,
   type ModelConfigPatch,
-} from "./api";
-import ApiKeysSection from "./ApiKeysSection";
-import "./AgentsView.css";
+} from './api'
+import ApiKeysSection from './ApiKeysSection'
+import './AgentsView.css'
 
 function numOrUndefined(value: string): number | undefined {
-  if (value.trim() === "") return undefined;
-  const n = Number(value);
-  return Number.isNaN(n) ? undefined : n;
+  if (value.trim() === '') return undefined
+  const n = Number(value)
+  return Number.isNaN(n) ? undefined : n
 }
 
 export default function AgentsView() {
-  const [configs, setConfigs] = useState<ModelConfig[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [featherlessCatalog, setFeatherlessCatalog] = useState<CatalogModel[] | null>(null);
-  const [hordeCatalog, setHordeCatalog] = useState<CatalogModel[] | null>(null);
+  const [configs, setConfigs] = useState<ModelConfig[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [featherlessCatalog, setFeatherlessCatalog] = useState<CatalogModel[] | null>(null)
+  const [hordeCatalog, setHordeCatalog] = useState<CatalogModel[] | null>(null)
   // Unsaved edits, keyed by row id — nothing here reaches the server until "Save changes" is
   // clicked, mirroring the Settings tab's draft/save/cancel pattern instead of committing every
   // field on blur/change.
-  const [drafts, setDrafts] = useState<Record<string, ModelConfigPatch>>({});
-  const [saving, setSaving] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, ModelConfigPatch>>({})
+  const [saving, setSaving] = useState(false)
   // Row order, like every other field, is a draft until "Save changes" — reordering used to call
   // reorderModelConfigs immediately, committing instantly while every other edit on the same row
   // still sat unsaved. Null means "no pending reorder."
-  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null);
+  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null)
   // Delete used to fire immediately on click, with no confirmation and no way to back out —
   // the only field on this whole screen that didn't wait for "Save changes." Now it's a
   // two-step inline confirm (mirroring SavesView's delete UX) that just stages the row for
   // removal; the actual deleteModelConfig call happens in handleSaveAll like everything else,
   // and "Cancel" un-stages it same as any other draft.
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
-  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    void reload();
-  }, []);
+    void reload()
+  }, [])
 
   async function reload() {
-    setConfigs(await fetchModelConfigs());
+    setConfigs(await fetchModelConfigs())
   }
 
   function getVal<K extends keyof ModelConfig>(cfg: ModelConfig, key: K): ModelConfig[K] {
-    const draft = drafts[cfg.id];
-    if (draft && key in draft) return draft[key as keyof ModelConfigPatch] as ModelConfig[K];
-    return cfg[key];
+    const draft = drafts[cfg.id]
+    if (draft && key in draft) return draft[key as keyof ModelConfigPatch] as ModelConfig[K]
+    return cfg[key]
   }
 
   function setDraft(id: string, fields: ModelConfigPatch) {
-    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...fields } }));
+    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...fields } }))
   }
 
   function isDirty(id: string): boolean {
-    return !!drafts[id] && Object.keys(drafts[id]).length > 0;
+    return !!drafts[id] && Object.keys(drafts[id]).length > 0
   }
 
-  const dirty = Object.keys(drafts).some(isDirty) || pendingOrder !== null || pendingDeletes.size > 0;
+  const dirty =
+    Object.keys(drafts).some(isDirty) || pendingOrder !== null || pendingDeletes.size > 0
 
   async function handleSaveAll() {
-    setError(null);
-    setSaving(true);
-    const failures: string[] = [];
+    setError(null)
+    setSaving(true)
+    const failures: string[] = []
 
     for (const id of pendingDeletes) {
       try {
-        await deleteModelConfig(id);
-        setConfigs((prev) => (prev ? prev.filter((c) => c.id !== id) : prev));
+        await deleteModelConfig(id)
+        setConfigs((prev) => (prev ? prev.filter((c) => c.id !== id) : prev))
         setDrafts((prev) => {
-          if (!(id in prev)) return prev;
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+          if (!(id in prev)) return prev
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
       } catch (err) {
-        console.error(err);
-        failures.push(id);
+        console.error(err)
+        failures.push(id)
       }
     }
-    setPendingDeletes(new Set());
+    setPendingDeletes(new Set())
 
-    const ids = Object.keys(drafts).filter((id) => isDirty(id) && !pendingDeletes.has(id));
+    const ids = Object.keys(drafts).filter((id) => isDirty(id) && !pendingDeletes.has(id))
     for (const id of ids) {
-      const pending: ModelConfigPatch = { ...drafts[id] };
-      if (typeof pending.model === "string") pending.model = pending.model.trim();
+      const pending: ModelConfigPatch = { ...drafts[id] }
+      if (typeof pending.model === 'string') pending.model = pending.model.trim()
       try {
-        const updated = await updateModelConfig(id, pending);
-        setConfigs((prev) => (prev ? prev.map((c) => (c.id === id ? updated : c)) : prev));
+        const updated = await updateModelConfig(id, pending)
+        setConfigs((prev) => (prev ? prev.map((c) => (c.id === id ? updated : c)) : prev))
         setDrafts((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
+          const next = { ...prev }
+          delete next[id]
+          return next
+        })
       } catch (err) {
-        console.error(err);
-        failures.push(id);
+        console.error(err)
+        failures.push(id)
       }
     }
     if (pendingOrder) {
       try {
-        setConfigs(await reorderModelConfigs(pendingOrder.filter((id) => !pendingDeletes.has(id))));
-        setPendingOrder(null);
+        setConfigs(await reorderModelConfigs(pendingOrder.filter((id) => !pendingDeletes.has(id))))
+        setPendingOrder(null)
       } catch (err) {
-        console.error(err);
-        failures.push("order");
+        console.error(err)
+        failures.push('order')
       }
     }
-    setSaving(false);
-    if (failures.length) setError(`Failed to save ${failures.length} change(s) — see console for details.`);
+    setSaving(false)
+    if (failures.length)
+      setError(`Failed to save ${failures.length} change(s) — see console for details.`)
   }
 
   async function handleCancelAll() {
-    setDrafts({});
-    setError(null);
-    setConfirmingDeleteId(null);
-    const hadPendingDeletes = pendingDeletes.size > 0;
-    setPendingDeletes(new Set());
+    setDrafts({})
+    setError(null)
+    setConfirmingDeleteId(null)
+    const hadPendingDeletes = pendingDeletes.size > 0
+    setPendingDeletes(new Set())
     if (pendingOrder || hadPendingDeletes) {
-      setPendingOrder(null);
-      await reload();
+      setPendingOrder(null)
+      await reload()
     }
   }
 
   async function handleAdd() {
     try {
-      const created = await createModelConfig();
-      setConfigs((prev) => (prev ? [...prev, created] : [created]));
+      const created = await createModelConfig()
+      setConfigs((prev) => (prev ? [...prev, created] : [created]))
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   function stageDelete(id: string) {
-    setConfirmingDeleteId(null);
-    setPendingDeletes((prev) => new Set(prev).add(id));
+    setConfirmingDeleteId(null)
+    setPendingDeletes((prev) => new Set(prev).add(id))
   }
 
   function unstageDelete(id: string) {
     setPendingDeletes((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
   }
 
   // Looks up the just-selected model in whichever catalog is loaded for the row's provider, and
   // if Featherless reported a real concurrency cost for it, carries that into the same draft —
   // the point of this whole column is that cost is a property of the model, not something to
   // leave at whatever the row happened to default to.
-  function applyModel(id: string, provider: ModelConfig["provider"], model: string) {
-    const catalog = provider === "horde" ? hordeCatalog : featherlessCatalog;
-    const match = catalog?.find((m) => m.id === model);
+  function applyModel(id: string, provider: ModelConfig['provider'], model: string) {
+    const catalog = provider === 'horde' ? hordeCatalog : featherlessCatalog
+    const match = catalog?.find((m) => m.id === model)
     setDraft(id, {
       model,
       ...(match?.concurrencyCost != null ? { concurrencyCost: match.concurrencyCost } : {}),
-    });
+    })
   }
 
   async function handleFetchFeatherlessModels() {
     try {
-      setFeatherlessCatalog(await fetchModelCatalog("featherless"));
+      setFeatherlessCatalog(await fetchModelCatalog('featherless'))
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   async function handleFetchHordeModels() {
     try {
-      setHordeCatalog(await fetchModelCatalog("horde"));
+      setHordeCatalog(await fetchModelCatalog('horde'))
     } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : String(err));
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
   function move(index: number, direction: -1 | 1) {
-    if (!configs) return;
-    const target = index + direction;
-    if (target < 0 || target >= configs.length) return;
-    const next = [...configs];
-    [next[index], next[target]] = [next[target], next[index]];
-    setConfigs(next);
-    setPendingOrder(next.map((c) => c.id));
+    if (!configs) return
+    const target = index + direction
+    if (target < 0 || target >= configs.length) return
+    const next = [...configs]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    setConfigs(next)
+    setPendingOrder(next.map((c) => c.id))
   }
 
-  if (!configs) return <div className="agents-view">Loading…</div>;
+  if (!configs) return <div className="agents-view">Loading…</div>
 
   return (
     <div className="agents-view">
       <h2>Agents</h2>
       <p className="agents-note">
-        Each row is a model call profile. Check which agent role(s) it's eligible for; within a role,
-        active rows are tried top to bottom — the first is primary, the rest are ranked fallbacks. Row
-        order is shared across all three roles, so reordering affects every role's fallback chain at once.
-        Field edits are drafts until you click "Save changes" below the table.
+        Each row is a model call profile. Check which agent role(s) it's eligible for; within a
+        role, active rows are tried top to bottom — the first is primary, the rest are ranked
+        fallbacks. Row order is shared across all three roles, so reordering affects every role's
+        fallback chain at once. Field edits are drafts until you click "Save changes" below the
+        table.
       </p>
       {error && <div className="error-banner">{error}</div>}
 
@@ -218,7 +221,9 @@ export default function AgentsView() {
         <button type="button" onClick={handleFetchHordeModels}>
           Fetch Horde models
         </button>
-        {hordeCatalog && <span className="catalog-status">{hordeCatalog.length} models loaded.</span>}
+        {hordeCatalog && (
+          <span className="catalog-status">{hordeCatalog.length} models loaded.</span>
+        )}
       </div>
       <datalist id="featherless-model-catalog">
         {(featherlessCatalog ?? []).map((m) => (
@@ -263,15 +268,20 @@ export default function AgentsView() {
               <tr
                 key={cfg.id}
                 className={[
-                  getVal(cfg, "active") ? "" : "row-inactive",
-                  isDirty(cfg.id) ? "row-dirty" : "",
-                  pendingDeletes.has(cfg.id) ? "row-pending-delete" : "",
+                  getVal(cfg, 'active') ? '' : 'row-inactive',
+                  isDirty(cfg.id) ? 'row-dirty' : '',
+                  pendingDeletes.has(cfg.id) ? 'row-pending-delete' : '',
                 ]
-                  .join(" ")
+                  .join(' ')
                   .trim()}
               >
                 <td className="reorder-cell">
-                  <button type="button" onClick={() => move(index, -1)} disabled={index === 0} title="Move up">
+                  <button
+                    type="button"
+                    onClick={() => move(index, -1)}
+                    disabled={index === 0}
+                    title="Move up"
+                  >
                     ▲
                   </button>
                   <button
@@ -285,8 +295,10 @@ export default function AgentsView() {
                 </td>
                 <td>
                   <select
-                    value={getVal(cfg, "provider")}
-                    onChange={(e) => setDraft(cfg.id, { provider: e.target.value as ModelConfig["provider"] })}
+                    value={getVal(cfg, 'provider')}
+                    onChange={(e) =>
+                      setDraft(cfg.id, { provider: e.target.value as ModelConfig['provider'] })
+                    }
                   >
                     <option value="featherless">Featherless</option>
                     <option value="horde">Horde</option>
@@ -295,10 +307,14 @@ export default function AgentsView() {
                 <td>
                   <input
                     className="model-input"
-                    list={getVal(cfg, "provider") === "horde" ? "horde-model-catalog" : "featherless-model-catalog"}
-                    value={getVal(cfg, "model")}
+                    list={
+                      getVal(cfg, 'provider') === 'horde'
+                        ? 'horde-model-catalog'
+                        : 'featherless-model-catalog'
+                    }
+                    value={getVal(cfg, 'model')}
                     placeholder="provider/Model-Name"
-                    onChange={(e) => applyModel(cfg.id, getVal(cfg, "provider"), e.target.value)}
+                    onChange={(e) => applyModel(cfg.id, getVal(cfg, 'provider'), e.target.value)}
                   />
                 </td>
                 <td>
@@ -306,7 +322,7 @@ export default function AgentsView() {
                     type="number"
                     step="0.1"
                     className="num-input"
-                    value={getVal(cfg, "temperature")}
+                    value={getVal(cfg, 'temperature')}
                     onChange={(e) => setDraft(cfg.id, { temperature: Number(e.target.value) })}
                   />
                 </td>
@@ -314,7 +330,7 @@ export default function AgentsView() {
                   <input
                     type="number"
                     className="num-input"
-                    value={getVal(cfg, "responseLimit")}
+                    value={getVal(cfg, 'responseLimit')}
                     onChange={(e) => setDraft(cfg.id, { responseLimit: Number(e.target.value) })}
                   />
                 </td>
@@ -322,7 +338,7 @@ export default function AgentsView() {
                   <input
                     type="number"
                     className="num-input"
-                    value={getVal(cfg, "contextLimit")}
+                    value={getVal(cfg, 'contextLimit')}
                     onChange={(e) => setDraft(cfg.id, { contextLimit: Number(e.target.value) })}
                   />
                 </td>
@@ -331,8 +347,10 @@ export default function AgentsView() {
                     type="number"
                     step="0.1"
                     className="num-input narrow"
-                    value={getVal(cfg, "presencePenalty") ?? ""}
-                    onChange={(e) => setDraft(cfg.id, { presencePenalty: numOrUndefined(e.target.value) ?? null })}
+                    value={getVal(cfg, 'presencePenalty') ?? ''}
+                    onChange={(e) =>
+                      setDraft(cfg.id, { presencePenalty: numOrUndefined(e.target.value) ?? null })
+                    }
                   />
                 </td>
                 <td>
@@ -340,8 +358,10 @@ export default function AgentsView() {
                     type="number"
                     step="0.1"
                     className="num-input narrow"
-                    value={getVal(cfg, "frequencyPenalty") ?? ""}
-                    onChange={(e) => setDraft(cfg.id, { frequencyPenalty: numOrUndefined(e.target.value) ?? null })}
+                    value={getVal(cfg, 'frequencyPenalty') ?? ''}
+                    onChange={(e) =>
+                      setDraft(cfg.id, { frequencyPenalty: numOrUndefined(e.target.value) ?? null })
+                    }
                   />
                 </td>
                 <td>
@@ -349,8 +369,12 @@ export default function AgentsView() {
                     type="number"
                     step="0.1"
                     className="num-input narrow"
-                    value={getVal(cfg, "repetitionPenalty") ?? ""}
-                    onChange={(e) => setDraft(cfg.id, { repetitionPenalty: numOrUndefined(e.target.value) ?? null })}
+                    value={getVal(cfg, 'repetitionPenalty') ?? ''}
+                    onChange={(e) =>
+                      setDraft(cfg.id, {
+                        repetitionPenalty: numOrUndefined(e.target.value) ?? null,
+                      })
+                    }
                   />
                 </td>
                 <td>
@@ -358,16 +382,20 @@ export default function AgentsView() {
                     type="number"
                     step="0.05"
                     className="num-input narrow"
-                    value={getVal(cfg, "topP") ?? ""}
-                    onChange={(e) => setDraft(cfg.id, { topP: numOrUndefined(e.target.value) ?? null })}
+                    value={getVal(cfg, 'topP') ?? ''}
+                    onChange={(e) =>
+                      setDraft(cfg.id, { topP: numOrUndefined(e.target.value) ?? null })
+                    }
                   />
                 </td>
                 <td>
                   <input
                     type="number"
                     className="num-input narrow"
-                    value={getVal(cfg, "topK") ?? ""}
-                    onChange={(e) => setDraft(cfg.id, { topK: numOrUndefined(e.target.value) ?? null })}
+                    value={getVal(cfg, 'topK') ?? ''}
+                    onChange={(e) =>
+                      setDraft(cfg.id, { topK: numOrUndefined(e.target.value) ?? null })
+                    }
                   />
                 </td>
                 <td>
@@ -375,8 +403,10 @@ export default function AgentsView() {
                     type="number"
                     step="0.01"
                     className="num-input narrow"
-                    value={getVal(cfg, "minP") ?? ""}
-                    onChange={(e) => setDraft(cfg.id, { minP: numOrUndefined(e.target.value) ?? null })}
+                    value={getVal(cfg, 'minP') ?? ''}
+                    onChange={(e) =>
+                      setDraft(cfg.id, { minP: numOrUndefined(e.target.value) ?? null })
+                    }
                   />
                 </td>
                 <td>
@@ -384,36 +414,38 @@ export default function AgentsView() {
                     type="number"
                     step="1"
                     className="num-input narrow"
-                    value={getVal(cfg, "concurrencyCost") ?? ""}
+                    value={getVal(cfg, 'concurrencyCost') ?? ''}
                     placeholder="auto"
-                    onChange={(e) => setDraft(cfg.id, { concurrencyCost: numOrUndefined(e.target.value) ?? null })}
+                    onChange={(e) =>
+                      setDraft(cfg.id, { concurrencyCost: numOrUndefined(e.target.value) ?? null })
+                    }
                   />
                 </td>
                 <td className="checkbox-cell">
                   <input
                     type="checkbox"
-                    checked={getVal(cfg, "useAuthor")}
+                    checked={getVal(cfg, 'useAuthor')}
                     onChange={(e) => setDraft(cfg.id, { useAuthor: e.target.checked })}
                   />
                 </td>
                 <td className="checkbox-cell">
                   <input
                     type="checkbox"
-                    checked={getVal(cfg, "useEditor")}
+                    checked={getVal(cfg, 'useEditor')}
                     onChange={(e) => setDraft(cfg.id, { useEditor: e.target.checked })}
                   />
                 </td>
                 <td className="checkbox-cell">
                   <input
                     type="checkbox"
-                    checked={getVal(cfg, "useWorker")}
+                    checked={getVal(cfg, 'useWorker')}
                     onChange={(e) => setDraft(cfg.id, { useWorker: e.target.checked })}
                   />
                 </td>
                 <td className="checkbox-cell">
                   <input
                     type="checkbox"
-                    checked={getVal(cfg, "active")}
+                    checked={getVal(cfg, 'active')}
                     onChange={(e) => setDraft(cfg.id, { active: e.target.checked })}
                   />
                 </td>
@@ -441,7 +473,11 @@ export default function AgentsView() {
                       </button>
                     </div>
                   ) : (
-                    <button type="button" className="danger" onClick={() => setConfirmingDeleteId(cfg.id)}>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => setConfirmingDeleteId(cfg.id)}
+                    >
                       Delete
                     </button>
                   )}
@@ -455,7 +491,7 @@ export default function AgentsView() {
       {dirty && (
         <div className="agents-savebar">
           <button type="button" onClick={handleSaveAll} disabled={saving}>
-            {saving ? "Saving…" : "Save changes"}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
           <button type="button" onClick={handleCancelAll} disabled={saving}>
             Cancel
@@ -467,5 +503,5 @@ export default function AgentsView() {
         + New model
       </button>
     </div>
-  );
+  )
 }

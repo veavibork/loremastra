@@ -13,15 +13,15 @@ single place to look when setting up Cline on a new machine or onboarding a coll
 Each `.md` file in `.clinerules/` is injected into Cline's context at the start of every
 conversation. Keep these focused — context budget matters.
 
-| File | What it covers |
-|---|---|
-| `collaboration.md` | Discuss-before-act posture, checkpoint cadence, when to act autonomously |
-| `stack.md` | Full stack reference: languages, frameworks, commands, directory map, linting |
-| `database.md` | SQLite patterns: two-tier model, ad-hoc migrations, `ensureColumn`, `skipRecovery`, retired columns |
-| `dev-workflow.md` | Dev server lifecycle, MCP dev server tool list, environment variables, post-DB-edit protocol |
-| `frontend.md` | React 19 + Vite 8 patterns, component naming, CSS conventions, oxlint rules |
-| `testing.md` | No test framework; script prefixes, key test scripts, when to add new scripts, DB-safety rules |
-| `worker-usage.md` | When to use `ask_worker` vs. reading files in-context; how to call the cline-worker MCP tools |
+| File               | What it covers                                                                                      |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| `collaboration.md` | Discuss-before-act posture, checkpoint cadence, when to act autonomously                            |
+| `stack.md`         | Full stack reference: languages, frameworks, commands, directory map, linting                       |
+| `database.md`      | SQLite patterns: two-tier model, ad-hoc migrations, `ensureColumn`, `skipRecovery`, retired columns |
+| `dev-workflow.md`  | Dev server lifecycle, MCP dev server tool list, environment variables, post-DB-edit protocol        |
+| `frontend.md`      | React 19 + Vite 8 patterns, component naming, CSS conventions, oxlint rules                         |
+| `testing.md`       | No test framework; script prefixes, key test scripts, when to add new scripts, DB-safety rules      |
+| `worker-usage.md`  | When to use `ask_worker` vs. reading files in-context; how to call the cline-worker MCP tools       |
 
 ### Global rules
 
@@ -80,34 +80,34 @@ TypeScript SDK pinned to the workspace's `node_modules/typescript/lib`.
 
 Common dev commands exposed as VS Code tasks (Ctrl+Shift+P -> "Run Task"):
 
-| Task label | Command |
-|---|---|
-| `dev (backend)` | `npm run dev` |
-| `dev (frontend)` | `npm run dev` (in `web/`) |
-| `typecheck` | `npm run typecheck` |
-| `build (backend)` | `npm run build` |
+| Task label         | Command                     |
+| ------------------ | --------------------------- |
+| `dev (backend)`    | `npm run dev`               |
+| `dev (frontend)`   | `npm run dev` (in `web/`)   |
+| `typecheck`        | `npm run typecheck`         |
+| `build (backend)`  | `npm run build`             |
 | `build (frontend)` | `npm run build` (in `web/`) |
-| `lint (frontend)` | `npm run lint` (in `web/`) |
-| `db:init` | `npm run db:init` |
-| `server:restart` | `npm run server:restart` |
-| `server:reset-db` | `npm run server:reset-db` |
-| `server:fresh` | `npm run server:fresh` |
-| `mcp` | `npm run mcp` |
+| `lint (frontend)`  | `npm run lint` (in `web/`)  |
+| `db:init`          | `npm run db:init`           |
+| `server:restart`   | `npm run server:restart`    |
+| `server:reset-db`  | `npm run server:reset-db`   |
+| `server:fresh`     | `npm run server:fresh`      |
+| `mcp`              | `npm run mcp`               |
 
 ### `extensions.json`
 
 Recommended extensions surfaced to anyone opening the workspace:
 
-| Extension | Purpose |
-|---|---|
-| `ms-vscode.typescript-language-features` | TypeScript language support |
-| `oxc.oxc` | oxlint integration for frontend linting |
-| `qwtel.sqlite-viewer` | Inspect dev SQLite databases in `data/` |
-| `yzhang.markdown-all-in-one` | Markdown editing / preview |
-| `mikestead.dotenv` | `.env` file syntax |
-| `stevencl.addDoc-comments` | JSDoc comment generation |
-| `eamodio.gitlens` | Git history and blame (useful for vibe-coded repo) |
-| `saoudrizwan.claude-dev` | Cline itself |
+| Extension                                | Purpose                                            |
+| ---------------------------------------- | -------------------------------------------------- |
+| `ms-vscode.typescript-language-features` | TypeScript language support                        |
+| `oxc.oxc`                                | oxlint integration for frontend linting            |
+| `qwtel.sqlite-viewer`                    | Inspect dev SQLite databases in `data/`            |
+| `yzhang.markdown-all-in-one`             | Markdown editing / preview                         |
+| `mikestead.dotenv`                       | `.env` file syntax                                 |
+| `stevencl.addDoc-comments`               | JSDoc comment generation                           |
+| `eamodio.gitlens`                        | Git history and blame (useful for vibe-coded repo) |
+| `saoudrizwan.claude-dev`                 | Cline itself                                       |
 
 Prettier is explicitly listed as an **unwanted recommendation** — no formatter is
 configured in this repo and one should not be introduced without a decision.

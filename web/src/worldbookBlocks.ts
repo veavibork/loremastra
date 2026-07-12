@@ -5,21 +5,21 @@
 // no path aliases, no workspace tooling). If you change the bracket regex in one, change
 // it in the other.
 
-export type WorldbookEntryType = "content" | "roster" | "memory";
+export type WorldbookEntryType = 'content' | 'roster' | 'memory'
 
 export interface ExtractedBlock {
-  entryType: WorldbookEntryType;
-  content: string;
+  entryType: WorldbookEntryType
+  content: string
 }
 
-export const WORLDBOOK_BLOCK_PATTERN = /\[(CONTENT|ROSTER|MEMORY)\]([\s\S]*?)\[\/\1\]/g;
+export const WORLDBOOK_BLOCK_PATTERN = /\[(CONTENT|ROSTER|MEMORY)\]([\s\S]*?)\[\/\1\]/g
 
 export function extractWorldbookBlocks(text: string): ExtractedBlock[] {
-  const blocks: ExtractedBlock[] = [];
+  const blocks: ExtractedBlock[] = []
   for (const match of text.matchAll(WORLDBOOK_BLOCK_PATTERN)) {
-    const entryType = match[1].toLowerCase() as WorldbookEntryType;
-    const content = match[2].trim();
-    if (content) blocks.push({ entryType, content });
+    const entryType = match[1].toLowerCase() as WorldbookEntryType
+    const content = match[2].trim()
+    if (content) blocks.push({ entryType, content })
   }
-  return blocks;
+  return blocks
 }

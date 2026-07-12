@@ -1,13 +1,13 @@
-import { API_BASE, getSessionId } from "./api";
+import { API_BASE, getSessionId } from './api'
 
-export type ToastSeverity = "info" | "warning" | "error" | "critical";
+export type ToastSeverity = 'info' | 'warning' | 'error' | 'critical'
 
 export interface Toast {
-  id: string;
-  severity: ToastSeverity;
-  title?: string;
-  message: string;
-  createdAt: number;
+  id: string
+  severity: ToastSeverity
+  title?: string
+  message: string
+  createdAt: number
 }
 
 const AUTO_DISMISS_MS: Record<ToastSeverity, number | null> = {
@@ -15,29 +15,29 @@ const AUTO_DISMISS_MS: Record<ToastSeverity, number | null> = {
   warning: 6000,
   error: 8000,
   critical: null,
-};
+}
 
-type ToastListener = (toasts: Toast[]) => void;
+type ToastListener = (toasts: Toast[]) => void
 
-let toasts: Toast[] = [];
-const listeners: ToastListener[] = [];
+let toasts: Toast[] = []
+const listeners: ToastListener[] = []
 
 function emit(): void {
-  for (const listener of listeners) listener(toasts);
+  for (const listener of listeners) listener(toasts)
 }
 
 export function subscribeToasts(listener: ToastListener): () => void {
-  listeners.push(listener);
-  listener(toasts);
+  listeners.push(listener)
+  listener(toasts)
   return () => {
-    const i = listeners.indexOf(listener);
-    if (i !== -1) listeners.splice(i, 1);
-  };
+    const i = listeners.indexOf(listener)
+    if (i !== -1) listeners.splice(i, 1)
+  }
 }
 
 export function dismissToast(id: string): void {
-  toasts = toasts.filter((t) => t.id !== id);
-  emit();
+  toasts = toasts.filter((t) => t.id !== id)
+  emit()
 }
 
 /**
@@ -47,12 +47,12 @@ export function dismissToast(id: string): void {
  * must never cascade into another toast/log attempt.
  */
 function reportToBackend(toast: Toast): void {
-  if (toast.severity === "info") return;
-  const sessionId = getSessionId();
-  const headers = new Headers({ "Content-Type": "application/json" });
-  if (sessionId) headers.set("X-Loremaster-Session", sessionId);
+  if (toast.severity === 'info') return
+  const sessionId = getSessionId()
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  if (sessionId) headers.set('X-Loremaster-Session', sessionId)
   fetch(`${API_BASE}/api/client-errors`, {
-    method: "POST",
+    method: 'POST',
     headers,
     body: JSON.stringify({
       severity: toast.severity,
@@ -60,30 +60,35 @@ function reportToBackend(toast: Toast): void {
       url: location.href,
       userAgent: navigator.userAgent,
     }),
-  }).catch(() => {});
+  }).catch(() => {})
 }
 
-export function pushToast(input: { severity: ToastSeverity; message: string; title?: string }): void {
+export function pushToast(input: {
+  severity: ToastSeverity
+  message: string
+  title?: string
+}): void {
   const toast: Toast = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     severity: input.severity,
     title: input.title,
     message: input.message,
     createdAt: Date.now(),
-  };
-  toasts = [toast, ...toasts];
-  emit();
-  reportToBackend(toast);
+  }
+  toasts = [toast, ...toasts]
+  emit()
+  reportToBackend(toast)
 
-  const duration = AUTO_DISMISS_MS[toast.severity];
+  const duration = AUTO_DISMISS_MS[toast.severity]
   if (duration !== null) {
-    setTimeout(() => dismissToast(toast.id), duration);
+    setTimeout(() => dismissToast(toast.id), duration)
   }
 }
 
 export const toast = {
-  info: (message: string, title?: string) => pushToast({ severity: "info", message, title }),
-  warning: (message: string, title?: string) => pushToast({ severity: "warning", message, title }),
-  error: (message: string, title?: string) => pushToast({ severity: "error", message, title }),
-  critical: (message: string, title?: string) => pushToast({ severity: "critical", message, title }),
-};
+  info: (message: string, title?: string) => pushToast({ severity: 'info', message, title }),
+  warning: (message: string, title?: string) => pushToast({ severity: 'warning', message, title }),
+  error: (message: string, title?: string) => pushToast({ severity: 'error', message, title }),
+  critical: (message: string, title?: string) =>
+    pushToast({ severity: 'critical', message, title }),
+}

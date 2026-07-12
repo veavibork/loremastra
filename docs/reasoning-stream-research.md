@@ -8,12 +8,12 @@ field names or SillyTavern/KAI behavior without re-probing on the actual provide
 
 ## Probe scripts
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/probe-deepseek-raw.ts` | Raw SSE dump — every delta key, no assumptions |
-| `scripts/summarize-raw-stream.ts` | Neutral stats on a raw jsonl file |
-| `scripts/probe-thinking-kwargs.ts` | Matrix of `enable_thinking` / `thinking_budget` / prefill (simple prompt) |
-| `scripts/probe-thinking-production.ts` | Same matrix on a **production-scale** Author prompt (~18.7k tokens) |
+| Script                                 | Purpose                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| `scripts/probe-deepseek-raw.ts`        | Raw SSE dump — every delta key, no assumptions                            |
+| `scripts/summarize-raw-stream.ts`      | Neutral stats on a raw jsonl file                                         |
+| `scripts/probe-thinking-kwargs.ts`     | Matrix of `enable_thinking` / `thinking_budget` / prefill (simple prompt) |
+| `scripts/probe-thinking-production.ts` | Same matrix on a **production-scale** Author prompt (~18.7k tokens)       |
 
 Production prompt source: latest `streamInference` entry in VM `data/outbound-requests.log`, or
 `assembleAuthorPrompt()` for story `019f25e0-…` (falls back if local DB incomplete).
@@ -35,23 +35,23 @@ Not observed on Featherless V4-Pro: XML `<think>` tags in streamed text;
 
 ## `chat_template_kwargs` matrix (simple prompt, max_tokens=500)
 
-| Prefill | enable_thinking | thinking_budget | Reasoning channel | Content | We retry? |
-|---------|-----------------|-----------------|-------------------|---------|-----------|
-| ✓ | *(none)* | — | meta (~378c) | IC | No |
-| ✓ | **false** | — | **IC prose only** | **0** | **Yes** ← bug |
-| ✗ | false | — | 0 | IC | No |
-| ✓ | — | 100 | 0 | IC | No |
-| ✓ | true | 100 | 0 | IC | No |
-| ✓ | false | 100 | 0 | IC | No |
+| Prefill | enable_thinking | thinking_budget | Reasoning channel | Content | We retry?     |
+| ------- | --------------- | --------------- | ----------------- | ------- | ------------- |
+| ✓       | _(none)_        | —               | meta (~378c)      | IC      | No            |
+| ✓       | **false**       | —               | **IC prose only** | **0**   | **Yes** ← bug |
+| ✗       | false           | —               | 0                 | IC      | No            |
+| ✓       | —               | 100             | 0                 | IC      | No            |
+| ✓       | true            | 100             | 0                 | IC      | No            |
+| ✓       | false           | 100             | 0                 | IC      | No            |
 
 ## Production prompt results (2026-07-04, ~18.7k prompt tokens)
 
-| Case | Result |
-|------|--------|
-| **enable_thinking: false + prefill** | **RETRY** — 1000 chars IC in `delta.reasoning` only |
-| **thinking_budget: 100** | Wall timeout (300s) on prod prompt — hung (works on simple prompt) |
-| **baseline prefill** | OK — reasoning (2072c, mixed meta/prose) → content (1086c) |
-| **enable_thinking: true ×3** | All OK — meta or mixed reasoning → content; non-deterministic style |
+| Case                                 | Result                                                              |
+| ------------------------------------ | ------------------------------------------------------------------- |
+| **enable_thinking: false + prefill** | **RETRY** — 1000 chars IC in `delta.reasoning` only                 |
+| **thinking_budget: 100**             | Wall timeout (300s) on prod prompt — hung (works on simple prompt)  |
+| **baseline prefill**                 | OK — reasoning (2072c, mixed meta/prose) → content (1086c)          |
+| **enable_thinking: true ×3**         | All OK — meta or mixed reasoning → content; non-deterministic style |
 
 **Hermes-3-8B (worker):** never emits `delta.reasoning`; `enable_thinking` is a no-op for stream
 shape. Forced prefill causes chat-template token leak into IC — do not prefill non-reasoning models.
@@ -98,7 +98,7 @@ extended to dump recent `prose` job replies (`text.gen_package`) across all stor
 review.
 
 **Root cause:** the 2026-07-04 Effort-Off fix (`proseStreamUsesReasoningTrace` returning `false`
-when `chat_template_kwargs.enable_thinking === false`) assumed that on Effort Off, *all* of
+when `chat_template_kwargs.enable_thinking === false`) assumed that on Effort Off, _all_ of
 `delta.reasoning` is actually misrouted IC prose, so `streamWithFallback`'s `emitReasoningDelta`
 (`src/queue/pipeline-runner.ts`) unconditionally sends it to `emitAnswer` instead of
 `emitThinking` in that mode. That assumption is only sometimes true. Confirmed live: with Effort
@@ -111,17 +111,17 @@ prepended straight into the stored reply.
 Three real examples from one session (2026-07-05, ~21:44–21:54 UTC), all `toggles.effort.enableThinking: false`:
 
 - Job `019f343d-83f2-74f9-b1c1-a3dbda15d169` — stored reply, in full: `article\nOkay, I need to
-  continue this story from where it left off. The user wants me to write in the same erotic pulp
-  fantasy style, with punchy prose, continuing the` — this one is also `truncated: true` (the user
+continue this story from where it left off. The user wants me to write in the same erotic pulp
+fantasy style, with punchy prose, continuing the` — this one is also `truncated: true` (the user
   hit Stop while the model was still inside the leaked reasoning ramble; the "commit partial
   streamed content when stopping mid-generation" feature (`4021006`) then saved that raw
   meta-commentary as if it were a real partial reply).
 - Job `019f343e-a81f-718b-9e8b-d0e8653200c6` — stored reply starts ` articleWell, this is a rich
-  moment. Lex just named the core dynamic—the bar is incredibly low...` (a full paragraph of
+moment. Lex just named the core dynamic—the bar is incredibly low...` (a full paragraph of
   scene-planning commentary), then transitions mid-string into actual IC dialogue (`"The bar is in
-  hell," Sloane agreed...`) with no separator.
+hell," Sloane agreed...`) with no separator.
 - Job `019f3446-4130-7383-8964-ffe445dc8b56` — stored reply starts mid-sentence, ` phrase "using
-  every part of the deer" first—which turns it into a restaurant metaphor...`, i.e. the tail end of
+every part of the deer" first—which turns it into a restaurant metaphor...`, i.e. the tail end of
   a reasoning paragraph whose opening got cut off by the splitter's tag-hold logic, followed by
   more planning prose, then the real IC scene.
 
@@ -182,7 +182,7 @@ the next token with a leading space in this tokenizer family) reads like a speci
 whose text surface form happens to be "article" — consistent with a leaked internal channel or
 role marker (the way some other providers' chat templates expose named channels, e.g.
 "analysis"/"final") that Featherless doesn't strip before forwarding `delta.reasoning` when
-`enable_thinking: false` and no prefill is sent. Content quality *inside* that channel then ranges
+`enable_thinking: false` and no prefill is sent. Content quality _inside_ that channel then ranges
 across the full spectrum seen in the 13 examples: coherent English meta-commentary ("Okay, I need
 to continue this story from where it left off..."), degrading mid-stream into fragments ("Sharp
 call map output rearrange picks drop pitfalls backward forward extract Next they tighter"), all
@@ -214,7 +214,7 @@ non-prose-looking text) instead of accepting it as a valid "done" completion.
 ## Investigated, not confirmed (2026-07-05): toggling Effort between retries of the same post
 
 User's separate suspicion: generating a post in one Effort mode, then flipping the toggle and
-retrying the *same* post, might carry stale instructions/state from one mode into the other.
+retrying the _same_ post, might carry stale instructions/state from one mode into the other.
 Traced the full plumbing on both sides — found no shared-state mechanism that would cause this:
 
 - Server: `POST /:id/posts/:pageId/retry` (`src/routes/stories.ts`) creates a brand-new job with

@@ -32,7 +32,7 @@ rating rather than a hard filter). `always`: `modalities=text`. `never`: `modali
 `capabilities=image-generation`/`video-generation`, `families=bert`/`nomic-bert`/`xlm-roberta` — all
 structurally non-generative or non-text, not soft judgment calls.
 
-**Important limitation:** this only helps *search* for candidate models — the `/v1/models` list response
+**Important limitation:** this only helps _search_ for candidate models — the `/v1/models` list response
 doesn't echo back which tags a given model actually has, so there's no way to score an already-fetched
 model against these ratings after the fact, only to bias the query itself.
 

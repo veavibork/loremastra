@@ -14,11 +14,11 @@ talks to the backend through the same origin — no CORS configuration needed in
 
 ### Restart vs. reset
 
-| Command | What it does |
-|---|---|
-| `npm run server:restart` | Kill and restart the dev backend process (keeps data) |
-| `npm run server:reset-db` | Wipe the local SQLite databases (does not restart) |
-| `npm run server:fresh` | Reset DB + restart backend in one step |
+| Command                   | What it does                                          |
+| ------------------------- | ----------------------------------------------------- |
+| `npm run server:restart`  | Kill and restart the dev backend process (keeps data) |
+| `npm run server:reset-db` | Wipe the local SQLite databases (does not restart)    |
+| `npm run server:fresh`    | Reset DB + restart backend in one step                |
 
 `dev-server.log` in the repo root captures backend stdout/stderr (written by
 `scripts/dev-restart.mjs`). The MCP tool `tail_dev_server_log` can read it without
@@ -32,20 +32,20 @@ Cline. Run manually with `npm run mcp`.
 
 Available MCP tools (all read-only except where noted):
 
-| Tool | Purpose |
-|---|---|
-| `list_stories` | All stories with id, name, phase |
-| `get_worldbook` | Worldbook entries for a story (including hidden) |
-| `get_queue_status` | Live queue + concurrency slots for a story |
-| `get_recent_log` | Recent log entries (posts) for a story |
-| `tail_dev_server_log` | Tail `dev-server.log` |
-| `get_recent_outbound_requests` | Rolling log of outbound provider requests |
-| `get_memory_summary` | Compact memory health check |
-| `get_memory_manifest` | Per-post memory diagnostics |
-| `get_prompt_preview` | Assembled Author prompt at current position (read-only) |
-| `enqueue_memory_jobs` | Queue eligible compress/archive jobs |
-| `backfill_memory` | Repair memory pipeline after direct DB edits |
-| `notify_direct_mutation` | Invalidate browser session after out-of-band DB writes |
+| Tool                           | Purpose                                                 |
+| ------------------------------ | ------------------------------------------------------- |
+| `list_stories`                 | All stories with id, name, phase                        |
+| `get_worldbook`                | Worldbook entries for a story (including hidden)        |
+| `get_queue_status`             | Live queue + concurrency slots for a story              |
+| `get_recent_log`               | Recent log entries (posts) for a story                  |
+| `tail_dev_server_log`          | Tail `dev-server.log`                                   |
+| `get_recent_outbound_requests` | Rolling log of outbound provider requests               |
+| `get_memory_summary`           | Compact memory health check                             |
+| `get_memory_manifest`          | Per-post memory diagnostics                             |
+| `get_prompt_preview`           | Assembled Author prompt at current position (read-only) |
+| `enqueue_memory_jobs`          | Queue eligible compress/archive jobs                    |
+| `backfill_memory`              | Repair memory pipeline after direct DB edits            |
+| `notify_direct_mutation`       | Invalidate browser session after out-of-band DB writes  |
 
 ### When to use what
 

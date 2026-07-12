@@ -1,31 +1,31 @@
-import { useEffect } from "react";
-import { fetchSettingsSpace } from "./api";
+import { useEffect } from 'react'
+import { fetchSettingsSpace } from './api'
 
-export const GLOBAL_CSS_SPACE = "global-css";
+export const GLOBAL_CSS_SPACE = 'global-css'
 
 export interface GlobalCssColors {
-  text: string;
-  textH: string;
-  bg: string;
-  border: string;
-  codeBg: string;
-  accent: string;
-  accentBg: string;
-  accentBorder: string;
+  text: string
+  textH: string
+  bg: string
+  border: string
+  codeBg: string
+  accent: string
+  accentBg: string
+  accentBorder: string
 }
 
 export interface GlobalCssSettings {
-  light: GlobalCssColors;
-  dark: GlobalCssColors;
-  rootFontSize: number;
-  rootFontSizeNarrow: number;
-  narrowBreakpoint: number;
+  light: GlobalCssColors
+  dark: GlobalCssColors
+  rootFontSize: number
+  rootFontSizeNarrow: number
+  narrowBreakpoint: number
 }
 
-const STYLE_TAG_ID = "global-css-overrides";
+const STYLE_TAG_ID = 'global-css-overrides'
 
 function colorVars(colors: GlobalCssColors): string {
-  return `--text: ${colors.text}; --text-h: ${colors.textH}; --bg: ${colors.bg}; --border: ${colors.border}; --code-bg: ${colors.codeBg}; --accent: ${colors.accent}; --accent-bg: ${colors.accentBg}; --accent-border: ${colors.accentBorder};`;
+  return `--text: ${colors.text}; --text-h: ${colors.textH}; --bg: ${colors.bg}; --border: ${colors.border}; --code-bg: ${colors.codeBg}; --accent: ${colors.accent}; --accent-bg: ${colors.accentBg}; --accent-border: ${colors.accentBorder};`
 }
 
 /**
@@ -35,11 +35,11 @@ function colorVars(colors: GlobalCssColors): string {
  * on app load (persisted value) and live from Settings while editing (unsaved preview).
  */
 export function applyGlobalCssSettings(settings: GlobalCssSettings): void {
-  let tag = document.getElementById(STYLE_TAG_ID) as HTMLStyleElement | null;
+  let tag = document.getElementById(STYLE_TAG_ID) as HTMLStyleElement | null
   if (!tag) {
-    tag = document.createElement("style");
-    tag.id = STYLE_TAG_ID;
-    document.head.appendChild(tag);
+    tag = document.createElement('style')
+    tag.id = STYLE_TAG_ID
+    document.head.appendChild(tag)
   }
   tag.textContent = `
 :root {
@@ -54,7 +54,7 @@ export function applyGlobalCssSettings(settings: GlobalCssSettings): void {
     ${colorVars(settings.dark)}
   }
 }
-`.trim();
+`.trim()
 }
 
 /**
@@ -64,7 +64,9 @@ export function applyGlobalCssSettings(settings: GlobalCssSettings): void {
  */
 export function useGlobalCssSettings(enabled: boolean): void {
   useEffect(() => {
-    if (!enabled) return;
-    void fetchSettingsSpace<GlobalCssSettings>(GLOBAL_CSS_SPACE).then(applyGlobalCssSettings).catch(() => {});
-  }, [enabled]);
+    if (!enabled) return
+    void fetchSettingsSpace<GlobalCssSettings>(GLOBAL_CSS_SPACE)
+      .then(applyGlobalCssSettings)
+      .catch(() => {})
+  }, [enabled])
 }

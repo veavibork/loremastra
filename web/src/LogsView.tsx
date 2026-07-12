@@ -1,61 +1,61 @@
-import { Fragment, useEffect, useState } from "react";
-import { fetchLog, type LogEntry } from "./api";
-import type { PanelProps } from "./panel-types";
-import "./LogsView.css";
+import { Fragment, useEffect, useState } from 'react'
+import { fetchLog, type LogEntry } from './api'
+import type { PanelProps } from './panel-types'
+import './LogsView.css'
 
 /** First line only, truncated — the collapsed-row preview. */
 function previewText(content: string, max = 120): string {
-  const firstLine = content.split("\n")[0] ?? "";
-  return firstLine.length > max ? `${firstLine.slice(0, max)}…` : firstLine;
+  const firstLine = content.split('\n')[0] ?? ''
+  return firstLine.length > max ? `${firstLine.slice(0, max)}…` : firstLine
 }
 
 function parseMetrics(raw: string | null): { elapsedMs?: number; tokenEstimate?: number } {
-  if (!raw) return {};
+  if (!raw) return {}
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw)
   } catch {
-    return {};
+    return {}
   }
 }
 
 /** Poll interval when tab is open — bounded fetch keeps server load manageable. */
-const POLL_MS = 2000;
-const LOG_LIMIT = 100;
+const POLL_MS = 2000
+const LOG_LIMIT = 100
 
 export default function LogsView({ story }: PanelProps) {
-  const [entries, setEntries] = useState<LogEntry[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [entries, setEntries] = useState<LogEntry[]>([])
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    if (!story) return;
-    let cancelled = false;
+    if (!story) return
+    let cancelled = false
 
     async function poll(opts?: { background?: boolean }) {
-      if (!story) return;
-      const logPage = await fetchLog(story.id, { ...opts, limit: LOG_LIMIT });
-      if (!cancelled) setEntries(logPage.entries);
+      if (!story) return
+      const logPage = await fetchLog(story.id, { ...opts, limit: LOG_LIMIT })
+      if (!cancelled) setEntries(logPage.entries)
     }
 
-    void poll();
-    const interval = setInterval(() => void poll({ background: true }), POLL_MS);
+    void poll()
+    const interval = setInterval(() => void poll({ background: true }), POLL_MS)
     return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [story]);
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [story])
 
   function toggleExpanded(pageId: string) {
     setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(pageId)) next.delete(pageId);
-      else next.add(pageId);
-      return next;
-    });
+      const next = new Set(prev)
+      if (next.has(pageId)) next.delete(pageId)
+      else next.add(pageId)
+      return next
+    })
   }
 
-  if (!story) return <div className="logs-view">No active story.</div>;
+  if (!story) return <div className="logs-view">No active story.</div>
 
-  const mostRecentFirst = [...entries].reverse();
+  const mostRecentFirst = [...entries].reverse()
 
   return (
     <div className="logs-view">
@@ -74,30 +74,30 @@ export default function LogsView({ story }: PanelProps) {
         </thead>
         <tbody>
           {mostRecentFirst.map((entry) => {
-            const m = parseMetrics(entry.genMetrics);
-            const cm = parseMetrics(entry.compressMetrics);
-            const content = entry.content ?? "";
-            const isExpanded = expanded.has(entry.pageId);
+            const m = parseMetrics(entry.genMetrics)
+            const cm = parseMetrics(entry.compressMetrics)
+            const content = entry.content ?? ''
+            const isExpanded = expanded.has(entry.pageId)
             return (
               <Fragment key={entry.pageId}>
-                <tr className={entry.hidden ? "logs-row-hidden" : ""}>
-                  <td>{entry.icPostNumber ?? "—"}</td>
-                  <td>{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : "—"}</td>
+                <tr className={entry.hidden ? 'logs-row-hidden' : ''}>
+                  <td>{entry.icPostNumber ?? '—'}</td>
+                  <td>{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}</td>
                   <td>{entry.role}</td>
-                  <td>{m.tokenEstimate ?? "—"}</td>
-                  <td>{m.elapsedMs != null ? `${(m.elapsedMs / 1000).toFixed(1)}s` : "—"}</td>
+                  <td>{m.tokenEstimate ?? '—'}</td>
+                  <td>{m.elapsedMs != null ? `${(m.elapsedMs / 1000).toFixed(1)}s` : '—'}</td>
                   <td>
                     {cm.elapsedMs != null
-                      ? `${(cm.elapsedMs / 1000).toFixed(1)}s / ${cm.tokenEstimate ?? "—"}t`
-                      : "—"}
+                      ? `${(cm.elapsedMs / 1000).toFixed(1)}s / ${cm.tokenEstimate ?? '—'}t`
+                      : '—'}
                   </td>
-                  <td>{entry.hidden ? "yes" : ""}</td>
+                  <td>{entry.hidden ? 'yes' : ''}</td>
                 </tr>
-                <tr className={entry.hidden ? "logs-row-hidden" : ""}>
+                <tr className={entry.hidden ? 'logs-row-hidden' : ''}>
                   <td colSpan={7} className="logs-content-cell">
                     <button
                       type="button"
-                      className={`logs-content-toggle ${isExpanded ? "logs-content-expanded" : "logs-content-collapsed"}`}
+                      className={`logs-content-toggle ${isExpanded ? 'logs-content-expanded' : 'logs-content-collapsed'}`}
                       onClick={() => toggleExpanded(entry.pageId)}
                     >
                       {isExpanded ? content : previewText(content)}
@@ -105,10 +105,10 @@ export default function LogsView({ story }: PanelProps) {
                   </td>
                 </tr>
               </Fragment>
-            );
+            )
           })}
         </tbody>
       </table>
     </div>
-  );
+  )
 }

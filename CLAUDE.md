@@ -7,28 +7,28 @@ sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ig
 **If you are an AI coding assistant reading this:**
 
 - Act as a senior engineer and mentor, not just a code executor. Surface simpler or
-cheaper alternatives before building what's literally asked for.
+  cheaper alternatives before building what's literally asked for.
 - The person you're working with has ADHD. Work one step at a time. Do not move on
-to the next step until the current one is confirmed working. A "step" can be a series
-of actions in one place, platform, or process — one click path.
+  to the next step until the current one is confirmed working. A "step" can be a series
+  of actions in one place, platform, or process — one click path.
 - Confirm intent before building. The author may use a technical term from general
-knowledge rather than industry precision. When a request is ambiguous, restate your
-interpretation and get confirmation before proceeding.
+  knowledge rather than industry precision. When a request is ambiguous, restate your
+  interpretation and get confirmation before proceeding.
 - This person is not an expert. They have strong big-picture instincts but may
-propose a heavy lift without realizing it. Make sure you're aligned on what they're
-actually trying to achieve.
+  propose a heavy lift without realizing it. Make sure you're aligned on what they're
+  actually trying to achieve.
 - When you join a session, your first job is to read this file and `loremaster.md`, then
-produce a short state-of-the-world summary: what exists, what's next, what's unresolved.
-Do not begin building until that summary is confirmed.
+  produce a short state-of-the-world summary: what exists, what's next, what's unresolved.
+  Do not begin building until that summary is confirmed.
 
 ## Paired Documents
 
-| Document | Purpose |
-|---|---|
-| `loremaster.md` | Authoritative project reference: mission, architecture, terminology, story flow, memory pipeline, UI structure, security model, provider abstraction |
-| `docs/omp-setup.md` | OMP-specific tooling reference, model recommendations, and the Cline-to-OMP migration notes |
-| `docs/cline-setup.md` | Cline-specific tooling reference (kept for reference; superseded by this document for OMP sessions) |
-| `.clinerules/` | Cline rules directory (kept for Cline sessions; ignored by OMP) |
+| Document              | Purpose                                                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loremaster.md`       | Authoritative project reference: mission, architecture, terminology, story flow, memory pipeline, UI structure, security model, provider abstraction |
+| `docs/omp-setup.md`   | OMP-specific tooling reference, model recommendations, and the Cline-to-OMP migration notes                                                          |
+| `docs/cline-setup.md` | Cline-specific tooling reference (kept for reference; superseded by this document for OMP sessions)                                                  |
+| `.clinerules/`        | Cline rules directory (kept for Cline sessions; ignored by OMP)                                                                                      |
 
 ## Stack
 
@@ -45,27 +45,27 @@ Do not begin building until that summary is confirmed.
 
 ### Backend (repo root)
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start backend in watch mode (`tsx watch src/index.ts`), listens on `http://localhost:4113` |
-| `npm run build` | Compile to `dist/` (`tsc -p tsconfig.json`) |
-| `npm run typecheck` | Type-check, no emit — the only enforced backend check |
-| `npm start` | Run compiled backend (`node dist/src/index.js`) |
-| `npm run db:init` | Initialize the database (`tsx scripts/init-db.ts`) |
-| `npm run user:create -- <name> <password>` | Create a user account |
-| `npm run server:restart` | Restart dev backend (keeps data) |
-| `npm run server:reset-db` | Wipe local SQLite databases |
-| `npm run server:fresh` | Reset DB + restart backend |
-| `npm run mcp` | Run the dev-tools MCP server (`tsx src/mcp/dev-server.ts`) |
+| Command                                    | What it does                                                                               |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `npm run dev`                              | Start backend in watch mode (`tsx watch src/index.ts`), listens on `http://localhost:4113` |
+| `npm run build`                            | Compile to `dist/` (`tsc -p tsconfig.json`)                                                |
+| `npm run typecheck`                        | Type-check, no emit — the only enforced backend check                                      |
+| `npm start`                                | Run compiled backend (`node dist/src/index.js`)                                            |
+| `npm run db:init`                          | Initialize the database (`tsx scripts/init-db.ts`)                                         |
+| `npm run user:create -- <name> <password>` | Create a user account                                                                      |
+| `npm run server:restart`                   | Restart dev backend (keeps data)                                                           |
+| `npm run server:reset-db`                  | Wipe local SQLite databases                                                                |
+| `npm run server:fresh`                     | Reset DB + restart backend                                                                 |
+| `npm run mcp`                              | Run the dev-tools MCP server (`tsx src/mcp/dev-server.ts`)                                 |
 
 ### Frontend (from `web/`)
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | Start Vite dev server (proxies `/api` to `http://localhost:4113`) |
-| `npm run build` | Type-check then build (`tsc -b && vite build`) |
-| `npm run preview` | Serve production build locally |
-| `npm run lint` | Lint with `oxlint` |
+| Command           | What it does                                                      |
+| ----------------- | ----------------------------------------------------------------- |
+| `npm run dev`     | Start Vite dev server (proxies `/api` to `http://localhost:4113`) |
+| `npm run build`   | Type-check then build (`tsc -b && vite build`)                    |
+| `npm run preview` | Serve production build locally                                    |
+| `npm run lint`    | Lint with `oxlint`                                                |
 
 ### Testing
 
@@ -114,6 +114,7 @@ just do them.
 ### Dev server lifecycle
 
 Both servers must run simultaneously in dev:
+
 - Backend: `npm run dev` (repo root) → `http://localhost:4113`
 - Frontend: `npm run dev` (in `web/`) → Vite proxy passes `/api` to backend
 
@@ -133,27 +134,27 @@ server afterward to invalidate browser sessions.
 
 Registered in `.mcp.json`:
 
-| Server | Source | Purpose |
-|---|---|---|
-| `loremaster-dev` | `src/mcp/dev-server.ts` | Live state inspection: stories, worldbook, queue, logs, memory, prompt preview |
-| `context7` | `@upstash/context7-mcp` | Up-to-date library docs (Hono, React 19, better-sqlite3, MCP SDK) |
-| `cline-worker` | `src/mcp/cline-worker.ts` | Cheap 1-slot Featherless model for code lookup / Q&A (`ask_worker`, `list_worker_models`) |
+| Server           | Source                    | Purpose                                                                                   |
+| ---------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| `loremaster-dev` | `src/mcp/dev-server.ts`   | Live state inspection: stories, worldbook, queue, logs, memory, prompt preview            |
+| `context7`       | `@upstash/context7-mcp`   | Up-to-date library docs (Hono, React 19, better-sqlite3, MCP SDK)                         |
+| `cline-worker`   | `src/mcp/cline-worker.ts` | Cheap 1-slot Featherless model for code lookup / Q&A (`ask_worker`, `list_worker_models`) |
 
 ## OMP Tool Mapping
 
-| Concern | Cline | OMP |
-|---|---|---|
-| Context injection | `.clinerules/` auto-injected | `CLAUDE.md` auto-read (this file) |
-| File read | `read_file` | `read` |
-| File write | `write_to_file` | `write` |
-| File edit | `replace_in_file` | `edit` |
-| Search content | `search_files` | `grep` (Rust regex) |
-| Find files | `search_files` | `glob` |
-| Shell commands | `execute_command` | `bash` |
-| Code intelligence | N/A | `lsp` |
-| AST search | N/A | `ast_grep` / `ast_edit` |
-| Sub-agents | N/A | `task` |
-| Worker model | `ask_worker` MCP tool | Same MCP tool, or OMP `completion`/`agent` |
+| Concern           | Cline                        | OMP                                        |
+| ----------------- | ---------------------------- | ------------------------------------------ |
+| Context injection | `.clinerules/` auto-injected | `CLAUDE.md` auto-read (this file)          |
+| File read         | `read_file`                  | `read`                                     |
+| File write        | `write_to_file`              | `write`                                    |
+| File edit         | `replace_in_file`            | `edit`                                     |
+| Search content    | `search_files`               | `grep` (Rust regex)                        |
+| Find files        | `search_files`               | `glob`                                     |
+| Shell commands    | `execute_command`            | `bash`                                     |
+| Code intelligence | N/A                          | `lsp`                                      |
+| AST search        | N/A                          | `ast_grep` / `ast_edit`                    |
+| Sub-agents        | N/A                          | `task`                                     |
+| Worker model      | `ask_worker` MCP tool        | Same MCP tool, or OMP `completion`/`agent` |
 
 ## Frontend Patterns
 

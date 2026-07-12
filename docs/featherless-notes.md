@@ -82,19 +82,19 @@ were unaffected — this only showed up with multiple simultaneous tool calls in
 
 ## Error codes (from docs, plus one observed live: 404)
 
-| Code | Meaning | Guidance |
-|---|---|---|
-| 400 | Model cold, not loaded into GPU yet | Can take 5min–1hr to warm; retry after waiting |
-| 401 | Bad/missing API key | Fatal — fix credentials, don't retry |
-| 403 | Model is gated, needs unlock on Featherless's site | Retry after unlocking |
-| 404 | Model id doesn't exist (`model_not_found`) — **not in Featherless's own docs**, hit live 2026-07-01 testing ranked-choice fallback with a deliberately bad model id | Same bucket as 400/403/503 — this model id is unusable, try a different one |
-| 500 | Featherless-side failure | Retry with backoff |
-| 503 | Insufficient model capacity (overloaded) | Retry with backoff; after 3 failures, consider a different model |
+| Code | Meaning                                                                                                                                                             | Guidance                                                                    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 400  | Model cold, not loaded into GPU yet                                                                                                                                 | Can take 5min–1hr to warm; retry after waiting                              |
+| 401  | Bad/missing API key                                                                                                                                                 | Fatal — fix credentials, don't retry                                        |
+| 403  | Model is gated, needs unlock on Featherless's site                                                                                                                  | Retry after unlocking                                                       |
+| 404  | Model id doesn't exist (`model_not_found`) — **not in Featherless's own docs**, hit live 2026-07-01 testing ranked-choice fallback with a deliberately bad model id | Same bucket as 400/403/503 — this model id is unusable, try a different one |
+| 500  | Featherless-side failure                                                                                                                                            | Retry with backoff                                                          |
+| 503  | Insufficient model capacity (overloaded)                                                                                                                            | Retry with backoff; after 3 failures, consider a different model            |
 
 Wired into `src/inference/featherless.ts` as of 2026-07-01: `FeatherlessError` carries the HTTP
 status, and `withModelFallback` treats 400/403/404/503 as "try the next model in
 `AgentProfile.fallbackModels`" — everything else (401, network errors, empty replies) fails
-immediately since a different model wouldn't fix those. Status-code-aware *retry/backoff* (as
+immediately since a different model wouldn't fix those. Status-code-aware _retry/backoff_ (as
 opposed to model fallback) for 500/503 specifically is still open — right now a 500/503 either
 succeeds on a fallback model or fails the job outright, with no same-model retry-after-wait.
 
@@ -121,8 +121,8 @@ KAI: stopping and retrying a generation there produced concurrency warnings cons
 original request still being counted server-side.
 
 Practical implication: any client-side abort (a `fetch` `AbortController`, whether from
-`armTimeout`'s idle timeout or a deliberate cancel) stops *us* from waiting on or displaying unwanted
-output, and frees *our own* local slot counter (`src/queue/slots.ts`) immediately — but does **not**
+`armTimeout`'s idle timeout or a deliberate cancel) stops _us_ from waiting on or displaying unwanted
+output, and frees _our own_ local slot counter (`src/queue/slots.ts`) immediately — but does **not**
 free the real Featherless-side concurrency slot, which stays occupied until the original generation
 finishes on its own. This is exactly the drift scenario the section above already warned about,
 except now confirmed to be actively happening on every timeout/abort we already do today, not just a
@@ -136,7 +136,7 @@ TODO below (switch to real `/account/concurrency` polling) is closer to "load-be
 **Tested live 2026-07-02 — does not match docs.** POST `{ model, text }` → `{ count, model }` only.
 No `tokens` array, with or without `return_tokens: true` / `add_special_tokens: false` (both accepted
 and silently ignored). There is no way to get real per-token ids out of this endpoint as it actually
-behaves, only a token *count* — contradicts the (never-before-verified) note this replaces. Practical
+behaves, only a token _count_ — contradicts the (never-before-verified) note this replaces. Practical
 effect: `stop_token_ids` on chat completions can't be populated from anything this API exposes; only
 the string-based `stop` parameter is usable for reject-on-phrase behavior (Settings' banned
 words/phrases feature, `src/services/stop-list.ts`, uses `stop` only for this reason). Revisit only if
@@ -161,7 +161,7 @@ generation:
 
 **Conclusion: there is no way to get real per-token generation control (ban/bias a specific token
 without halting the response) through Featherless's exposed API, full stop.** This isn't a "wrong
-token id" problem — the test didn't depend on knowing the right id, since banning the *entire* low
+token id" problem — the test didn't depend on knowing the right id, since banning the _entire_ low
 end of the vocab would break any tokenizer's ability to produce ordinary English if the param were
 honored at all. Combined with `/v1/tokenize` never returning real token ids (see above) and
 `logprobs` not echoing tokens either, there is no path — direct or indirect — to token-level control
@@ -183,7 +183,7 @@ refusal" idea: `src/services/refusal-detection.ts` catalogs the GCG paper's `tes
 list and prefix-matches it against background memory summaries where refusal detection is wired
 (e.g. legacy compress path in `pipeline-runner.ts`; story-to-date worker may add this later) — summaries
 feed memory silently, so a refusal masquerading as a recap needs to fail the job rather than poison
-stored lore. Deliberately *not* applied to Author prose or the Editor's setup replies, which
+stored lore. Deliberately _not_ applied to Author prose or the Editor's setup replies, which
 stay untouched and visible to the user via the existing manual Stop/Retry controls — watching a
 refusal play out there is itself useful signal for judging a model's prudishness.
 
@@ -195,14 +195,14 @@ SSE line and full JSON payload to `data/experiments/deepseek-raw/*.jsonl`. Summa
 
 **With production prefill** (`assistant: "<think>\\n"`), one live run showed:
 
-| Phase | Wall time | What arrived |
-|---|---|---|
-| HTTP 200 | +1961ms | headers |
-| SSE comment | +1963ms | `: FEATHERLESS PROCESSING` |
-| First data | +2221ms | `choices[0].delta.role` + **`delta.reasoning`** (not `reasoning_content`) |
-| Reasoning stream | +2221ms → ~+10078ms | ~124 tokens in **`delta.reasoning`** chunks only |
-| IC prose | +10078ms onward | **`delta.content`** chunks only |
-| Stop | +20238ms | `delta.reasoning: null`, then `usage.completion_tokens_details.reasoning_tokens: 124` |
+| Phase            | Wall time           | What arrived                                                                          |
+| ---------------- | ------------------- | ------------------------------------------------------------------------------------- |
+| HTTP 200         | +1961ms             | headers                                                                               |
+| SSE comment      | +1963ms             | `: FEATHERLESS PROCESSING`                                                            |
+| First data       | +2221ms             | `choices[0].delta.role` + **`delta.reasoning`** (not `reasoning_content`)             |
+| Reasoning stream | +2221ms → ~+10078ms | ~124 tokens in **`delta.reasoning`** chunks only                                      |
+| IC prose         | +10078ms onward     | **`delta.content`** chunks only                                                       |
+| Stop             | +20238ms            | `delta.reasoning: null`, then `usage.completion_tokens_details.reasoning_tokens: 124` |
 
 No `redacted_thinking` XML tags appear in streamed text. Reasoning and answer use **separate delta
 fields**, not tag-wrapped `content`.

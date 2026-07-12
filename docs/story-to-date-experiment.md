@@ -8,28 +8,28 @@ Related: [loremaster.md](../loremaster.md) Story-to-Date Memory Pipeline, assemb
 
 ## Production behavior
 
-| Setting | Value |
-|---------|-------|
-| **Trigger** | Assembled Author prompt ≥ **80%** of usable context |
-| **Editor input** | **80%** full log to trigger point |
-| **Coverage** | Absolute IC post number; `[COVERAGE]N[/COVERAGE]` |
-| **Seam gate** | If coverage == input ceiling → one retry with step-back prompt |
-| **Assembly** | system → worldbook → merged `[STORY TO DATE]` → verbose posts after last coverage only |
-| **Invalidation** | Edit/fork inside coverage window deletes affected segments |
-| **Scene titles** | Worker `archive-name` jobs on filled segments — **Archives tab only** |
-| **Legacy archives** | `archive` / `archive_member` rows purged on story DB open |
+| Setting             | Value                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| **Trigger**         | Assembled Author prompt ≥ **80%** of usable context                                    |
+| **Editor input**    | **80%** full log to trigger point                                                      |
+| **Coverage**        | Absolute IC post number; `[COVERAGE]N[/COVERAGE]`                                      |
+| **Seam gate**       | If coverage == input ceiling → one retry with step-back prompt                         |
+| **Assembly**        | system → worldbook → merged `[STORY TO DATE]` → verbose posts after last coverage only |
+| **Invalidation**    | Edit/fork inside coverage window deletes affected segments                             |
+| **Scene titles**    | Worker `archive-name` jobs on filled segments — **Archives tab only**                  |
+| **Legacy archives** | `archive` / `archive_member` rows purged on story DB open                              |
 
 Implementation:
 
-| Area | Path |
-|------|------|
-| Trigger / enqueue | `src/services/story-to-date.ts` |
-| Editor worker | `src/services/story-to-date-worker.ts` |
-| Corpus / merge / parse | `src/services/story-to-date-corpus.ts` |
-| Store | `src/db/story-to-date-store.ts` |
-| Assembly | `src/services/history.ts` |
-| Archives UI | `web/src/ArchivesView.tsx` |
-| HTTP | `GET/POST/PATCH /api/stories/:id/story-to-date/*` |
+| Area                   | Path                                              |
+| ---------------------- | ------------------------------------------------- |
+| Trigger / enqueue      | `src/services/story-to-date.ts`                   |
+| Editor worker          | `src/services/story-to-date-worker.ts`            |
+| Corpus / merge / parse | `src/services/story-to-date-corpus.ts`            |
+| Store                  | `src/db/story-to-date-store.ts`                   |
+| Assembly               | `src/services/history.ts`                         |
+| Archives UI            | `web/src/ArchivesView.tsx`                        |
+| HTTP                   | `GET/POST/PATCH /api/stories/:id/story-to-date/*` |
 
 ---
 
@@ -59,12 +59,12 @@ Each run writes prompts, raw responses, extracted blocks, and merged `[STORY TO 
 
 ## Tuning notes (from 2026-07-04 experiments)
 
-| Pattern | Observation |
-|---------|-------------|
-| **Begins** | ~400–455 words for ~71 posts (~6 words/post) |
-| **Continues (good seam)** | ~600 words for ~80 new posts (~7–8 words/post) |
-| **Ceiling-hitting** | Coverage = ceiling → bloat or verbatim tails; seam retry fixes most cases |
-| **Sweet spot** | ~500–650 words per continues block on the test story |
+| Pattern                   | Observation                                                               |
+| ------------------------- | ------------------------------------------------------------------------- |
+| **Begins**                | ~400–455 words for ~71 posts (~6 words/post)                              |
+| **Continues (good seam)** | ~600 words for ~80 new posts (~7–8 words/post)                            |
+| **Ceiling-hitting**       | Coverage = ceiling → bloat or verbatim tails; seam retry fixes most cases |
+| **Sweet spot**            | ~500–650 words per continues block on the test story                      |
 
 `extractStoryName` rejects chat-template token leaks and colon-and-tagline titles so scene names stay short labels.
 

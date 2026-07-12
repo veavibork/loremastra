@@ -1,24 +1,24 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { fetchSettingsSpace } from "./api";
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { fetchSettingsSpace } from './api'
 
-export const PLAY_TAB_SPACE = "play-tab";
+export const PLAY_TAB_SPACE = 'play-tab'
 
 export interface PlayTabSettings {
-  fontSize: number;
-  showUserLabel: boolean;
-  showEditorLabel: boolean;
-  showAuthorLabel: boolean;
-  userLabel: string;
-  editorLabel: string;
-  authorLabel: string;
-  italicizeEditor: boolean;
+  fontSize: number
+  showUserLabel: boolean
+  showEditorLabel: boolean
+  showAuthorLabel: boolean
+  userLabel: string
+  editorLabel: string
+  authorLabel: string
+  italicizeEditor: boolean
   /** Empty string means "inherit the theme's text color" — see applyPlayTabCssVars. */
-  userTextColor: string;
-  agentTextColor: string;
-  userBubbleEnabled: boolean;
-  agentBubbleEnabled: boolean;
-  userBubbleColor: string;
-  agentBubbleColor: string;
+  userTextColor: string
+  agentTextColor: string
+  userBubbleEnabled: boolean
+  agentBubbleEnabled: boolean
+  userBubbleColor: string
+  agentBubbleColor: string
 }
 
 export const DEFAULT_PLAY_TAB_SETTINGS: PlayTabSettings = {
@@ -26,37 +26,43 @@ export const DEFAULT_PLAY_TAB_SETTINGS: PlayTabSettings = {
   showUserLabel: true,
   showEditorLabel: true,
   showAuthorLabel: true,
-  userLabel: "user",
-  editorLabel: "editor",
-  authorLabel: "author",
+  userLabel: 'user',
+  editorLabel: 'editor',
+  authorLabel: 'author',
   italicizeEditor: true,
-  userTextColor: "",
-  agentTextColor: "",
+  userTextColor: '',
+  agentTextColor: '',
   userBubbleEnabled: false,
   agentBubbleEnabled: false,
-  userBubbleColor: "#33394a",
-  agentBubbleColor: "#3a2f3a",
-};
+  userBubbleColor: '#33394a',
+  agentBubbleColor: '#3a2f3a',
+}
 
 interface PlayTabContextValue {
-  settings: PlayTabSettings;
+  settings: PlayTabSettings
   /** Also used for local live preview while editing in Settings — see SettingsView.tsx. */
-  setSettings: (settings: PlayTabSettings) => void;
+  setSettings: (settings: PlayTabSettings) => void
 }
 
 const PlayTabContext = createContext<PlayTabContextValue>({
   settings: DEFAULT_PLAY_TAB_SETTINGS,
   setSettings: () => {},
-});
+})
 
 function applyPlayTabCssVars(settings: PlayTabSettings): void {
-  const root = document.documentElement.style;
-  root.setProperty("--entry-font-size", `${settings.fontSize}px`);
-  root.setProperty("--entry-editor-style", settings.italicizeEditor ? "italic" : "normal");
-  root.setProperty("--entry-user-text-color", settings.userTextColor || "inherit");
-  root.setProperty("--entry-agent-text-color", settings.agentTextColor || "inherit");
-  root.setProperty("--entry-user-bubble-bg", settings.userBubbleEnabled ? settings.userBubbleColor : "transparent");
-  root.setProperty("--entry-agent-bubble-bg", settings.agentBubbleEnabled ? settings.agentBubbleColor : "transparent");
+  const root = document.documentElement.style
+  root.setProperty('--entry-font-size', `${settings.fontSize}px`)
+  root.setProperty('--entry-editor-style', settings.italicizeEditor ? 'italic' : 'normal')
+  root.setProperty('--entry-user-text-color', settings.userTextColor || 'inherit')
+  root.setProperty('--entry-agent-text-color', settings.agentTextColor || 'inherit')
+  root.setProperty(
+    '--entry-user-bubble-bg',
+    settings.userBubbleEnabled ? settings.userBubbleColor : 'transparent',
+  )
+  root.setProperty(
+    '--entry-agent-bubble-bg',
+    settings.agentBubbleEnabled ? settings.agentBubbleColor : 'transparent',
+  )
 }
 
 /**
@@ -66,25 +72,27 @@ function applyPlayTabCssVars(settings: PlayTabSettings): void {
  * higher up and has to guard against the pre-claim gate itself.
  */
 export function PlayTabProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<PlayTabSettings>(DEFAULT_PLAY_TAB_SETTINGS);
+  const [settings, setSettings] = useState<PlayTabSettings>(DEFAULT_PLAY_TAB_SETTINGS)
 
   useEffect(() => {
     void fetchSettingsSpace<Partial<PlayTabSettings>>(PLAY_TAB_SPACE)
       .then((saved) => setSettings({ ...DEFAULT_PLAY_TAB_SETTINGS, ...saved }))
-      .catch(() => {});
-  }, []);
+      .catch(() => {})
+  }, [])
 
-  useEffect(() => applyPlayTabCssVars(settings), [settings]);
+  useEffect(() => applyPlayTabCssVars(settings), [settings])
 
-  return <PlayTabContext.Provider value={{ settings, setSettings }}>{children}</PlayTabContext.Provider>;
+  return (
+    <PlayTabContext.Provider value={{ settings, setSettings }}>{children}</PlayTabContext.Provider>
+  )
 }
 
 export function usePlayTabSettings(): PlayTabSettings {
-  return useContext(PlayTabContext).settings;
+  return useContext(PlayTabContext).settings
 }
 
 export function useSetPlayTabSettings(): (settings: PlayTabSettings) => void {
-  return useContext(PlayTabContext).setSettings;
+  return useContext(PlayTabContext).setSettings
 }
 
 /**
@@ -92,16 +100,20 @@ export function useSetPlayTabSettings(): (settings: PlayTabSettings) => void {
  * show it at all and its display text. The DB role is always "agent" regardless of Guide vs.
  * Play; mode is what decides whether that's displayed as the Editor or the Author.
  */
-export function RoleLabel({ role, mode }: { role: string; mode: "guide" | "play" }) {
-  const settings = usePlayTabSettings();
-  if (role === "user") {
-    return settings.showUserLabel ? <span className="entry-role">{settings.userLabel}</span> : null;
+export function RoleLabel({ role, mode }: { role: string; mode: 'guide' | 'play' }) {
+  const settings = usePlayTabSettings()
+  if (role === 'user') {
+    return settings.showUserLabel ? <span className="entry-role">{settings.userLabel}</span> : null
   }
-  if (role === "agent") {
-    if (mode === "guide") {
-      return settings.showEditorLabel ? <span className="entry-role">{settings.editorLabel}</span> : null;
+  if (role === 'agent') {
+    if (mode === 'guide') {
+      return settings.showEditorLabel ? (
+        <span className="entry-role">{settings.editorLabel}</span>
+      ) : null
     }
-    return settings.showAuthorLabel ? <span className="entry-role">{settings.authorLabel}</span> : null;
+    return settings.showAuthorLabel ? (
+      <span className="entry-role">{settings.authorLabel}</span>
+    ) : null
   }
-  return <span className="entry-role">{role}</span>;
+  return <span className="entry-role">{role}</span>
 }

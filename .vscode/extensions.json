@@ -9,7 +9,5 @@
     "eamodio.gitlens",
     "saoudrizwan.claude-dev"
   ],
-  "unwantedRecommendations": [
-    "esbenp.prettier-vscode"
-  ]
+  "unwantedRecommendations": ["esbenp.prettier-vscode"]
 }

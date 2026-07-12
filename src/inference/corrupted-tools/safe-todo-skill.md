@@ -11,7 +11,10 @@ GLM-family models emit tool calls as XML (`<arg_key>k</arg_key><arg_value>v</arg
 to split at a tag boundary, tag fragments leak into argument values:
 
 ```json
-{"op": "done</arg_key><arg_key>task</arg_key><arg_value>git status & check recent commits", "i": "..."}
+{
+  "op": "done</arg_key><arg_key>task</arg_key><arg_value>git status & check recent commits",
+  "i": "..."
+}
 ```
 
 - The broken boundary is **always between parameters** → single-param tools are structurally immune
@@ -26,12 +29,12 @@ The eval (Python kernel) tool `tool.<name>()` passes arguments as a Python dict.
 
 ## When to apply
 
-| Condition | Action |
-|---|---|
-| omp + GLM-family model + multi-param tool (todo's op+task etc.) | **default to eval-wrapped calls** |
+| Condition                                                         | Action                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------ |
+| omp + GLM-family model + multi-param tool (todo's op+task etc.)   | **default to eval-wrapped calls**                |
 | Saw corruption (validation error / `arg_key` fragments) even once | eval-wrapped for the rest of the session, always |
-| Single-param tools (bash, read) | call directly, they're fine |
-| Non-GLM models (DeepSeek etc.) | no corruption seen so far; call directly |
+| Single-param tools (bash, read)                                   | call directly, they're fine                      |
+| Non-GLM models (DeepSeek etc.)                                    | no corruption seen so far; call directly         |
 
 ## Usage
 
@@ -45,12 +48,12 @@ result = tool.todo({"op": "done", "task": "wrap-up"})
 print(result["text"][:200])
 ```
 
-| Operation | Call inside eval |
-|---|---|
-| init | `tool.todo({"op": "init", "list": [{"phase": "...", "items": ["..."]}]})` |
-| start / done / drop | `tool.todo({"op": "start", "task": "..."})` (same shape with phase) |
-| append | `tool.todo({"op": "append", "phase": "...", "items": ["..."]})` |
-| view / rm | `tool.todo({"op": "view"})` |
+| Operation           | Call inside eval                                                          |
+| ------------------- | ------------------------------------------------------------------------- |
+| init                | `tool.todo({"op": "init", "list": [{"phase": "...", "items": ["..."]}]})` |
+| start / done / drop | `tool.todo({"op": "start", "task": "..."})` (same shape with phase)       |
+| append              | `tool.todo({"op": "append", "phase": "...", "items": ["..."]})`           |
+| view / rm           | `tool.todo({"op": "view"})`                                               |
 
 Any other multi-param tool can be wrapped the same way: `tool.<name>({...})`.
 

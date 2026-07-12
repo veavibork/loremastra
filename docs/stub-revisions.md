@@ -27,7 +27,7 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
   prior context "Rook corners Vale by the punch bowl..." and post "I deck him", the
   compressed summary correctly came back "Rook is punched by Vale" — both the PC's "I" and
   the pronoun "him" grounded to real names. This is a different fix from the declined
-  "pronoun declarations per tag" idea below — that was about matching tags *on* pronouns;
+  "pronoun declarations per tag" idea below — that was about matching tags _on_ pronouns;
   this is about the Author/compress pipeline never emitting an unresolvable pronoun into
   text the tag system reads in the first place.
   **Resolved 2026-07-03:** compress context now pulls a name roster from all CONTENT entries plus
@@ -51,7 +51,7 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
   one model doing everything" — DeepSeek stayed conversational while a separate Worker-model
   pass (`runWorldbookExtraction`, `src/services/setup.ts`) recorded facts via looped, forced,
   single-entry-per-call tool calls. Its own noted gap proved decisive rather than tunable:
-  extraction *completeness* was inconsistent across identical retries (same exchange
+  extraction _completeness_ was inconsistent across identical retries (same exchange
   establishing Setting+PC+Register sometimes recorded all three, sometimes one, sometimes
   none) — a capability ceiling, not a mechanical bug, and prompt tweaks only partially
   helped. This confirmed the doc's own "if this keeps being annoying" prediction: the fix
@@ -61,7 +61,7 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
   regex (`src/services/worldbook-extraction.ts`), verbatim, no model-side tool call, no
   structured fields. `src/services/setup.ts` was deleted entirely; worldbook entries dropped
   from six typed schemas to three freeform types; tags lost their manual `worldbookPageId`
-  pointer and are now pure grep against post *and* worldbook content.
+  pointer and are now pure grep against post _and_ worldbook content.
   **New open question, not yet resolved:** extraction reliability now depends on the model
   consistently emitting well-formed bracket pairs rather than on tool-calling fidelity — a
   malformed or unclosed tag simply produces zero entries silently (by design: "no match, no
@@ -70,7 +70,7 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
   of real turns (one setup turn producing 1 CONTENT + 2 ROSTER + 1 MEMORY correctly, an
   update-session turn correctly finding zero), but not stress-tested across many turns or
   models yet — revisit if malformed/missing brackets turn out to be common in real use.
-  This *is* the structural prerequisite loremaster.md's deferred Horde/generic-endpoint
+  This _is_ the structural prerequisite loremaster.md's deferred Horde/generic-endpoint
   support (Future Phases appendix) needed — worldbook authoring no longer depends on the
   `tools`/`tool_calls` surface at all.
 
@@ -79,14 +79,14 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
 - **Input bar "weapon wheel"** (length/mood/param/model/effort toggles) — genuinely not
   started, doc's bespoke touch-first design deferred entirely in favor of plain controls.
 - **Settings gained a generic JSON-space tree editor** (2026-07-02, `web/src/JsonSpaceEditor.tsx`
-  + `src/db/settings-space-store.ts`) covering Banned words/phrases, Global CSS (light/dark
-  color vars, root font size, narrow-screen breakpoint), Play tab (post font size, user/editor
-  label visibility + text, editor-italics toggle), and Layout — collapsible tree view, a raw
-  "JSON edit" fallback, save/cancel only when dirty, and a decline-not-throw on invalid JSON.
-  Global CSS and Play tab also live-preview unsaved edits and one-step "revert to last saved."
-  Still no **preference-profile CRUD** (named snapshots of the full settings state,
-  `preference_profiles` table exists but unused) — that's the remaining gap from the original
-  item.
+  - `src/db/settings-space-store.ts`) covering Banned words/phrases, Global CSS (light/dark
+    color vars, root font size, narrow-screen breakpoint), Play tab (post font size, user/editor
+    label visibility + text, editor-italics toggle), and Layout — collapsible tree view, a raw
+    "JSON edit" fallback, save/cancel only when dirty, and a decline-not-throw on invalid JSON.
+    Global CSS and Play tab also live-preview unsaved edits and one-step "revert to last saved."
+    Still no **preference-profile CRUD** (named snapshots of the full settings state,
+    `preference_profiles` table exists but unused) — that's the remaining gap from the original
+    item.
 - **Debug is scoped to the current story only**, not a cross-story view.
 - **Logs telemetry only covers prose (story) posts.** `gen_metrics` isn't populated for
   background memory/naming jobs, so queue-wide telemetry is incomplete.
@@ -120,7 +120,7 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
   the SSE stream emits `{"type":"cancelled"}` — previously a cancelled job's stream was
   misreported as `{"type":"done"}` (same bug existed in `reconcile()`'s status check, plus a
   separate pre-existing bug there where `"queued"` never matched real `JobStatus` values;
-  both fixed alongside this).   **Only `prose`/`setup`/`setup-worldbook` jobs are abortable
+  both fixed alongside this). **Only `prose`/`setup`/`setup-worldbook` jobs are abortable
   mid-flight** — `story-to-date` and `archive-name` (non-streaming Editor/Worker calls) were
   deliberately left un-abortable as a scope cut; the cancel route returns 409 for those if
   attempted while running.
@@ -132,7 +132,7 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
   `/account/concurrency/stream` rework above should settle directly (watch `used_cost` drop
   in real time around a cancel) rather than inferring it from 429 behavior.
 - **No same-model retry-after-backoff for 500/503.** Ranked-choice fallback to a
-  *different* model exists and is tested; retrying the *same* model after a wait does not.
+  _different_ model exists and is tested; retrying the _same_ model after a wait does not.
 - **Cross-referencing HuggingFace's own tag API for real per-model tags** — deferred idea,
   not started; would need a ToS/rate-limit check first.
 - **Config > Agents rebuilt as a flat, reorderable model list** (2026-07-02,
@@ -151,7 +151,7 @@ Kept for archaeology only; do not use as a reason to rebuild compression.
   tool call bumped the right row's counters.
   **Known limitation:** `withModelFallback` still only swaps `.model` between candidates
   (pre-existing behavior, not new) — a fallback row's own temperature/limits/sampler params
-  are stored and shown in the UI, but a role's *primary* row's params are what's actually
+  are stored and shown in the UI, but a role's _primary_ row's params are what's actually
   used for every candidate in that role's chain at runtime, not each row's own. Rewriting
   `withModelFallback` to carry full per-candidate profiles would ripple through every retry
   loop in `pipeline-runner.ts`/`setup.ts`; out of scope for this pass, worth doing if
@@ -188,11 +188,11 @@ Ideas considered and explicitly decided against, recorded so they aren't re-liti
 without new information.
 
 - **Pronoun declarations per tag** (loremaster.md's own Future Phases appendix; evaluated
-  2026-07-01). The tag system (`src/services/tag-index.ts`) matches tag *names* via
+  2026-07-01). The tag system (`src/services/tag-index.ts`) matches tag _names_ via
   literal, case-insensitive, word-boundary regex against post text. Matching on declared
   pronouns ("she"/"her"/"he"/"they") would trigger on nearly every post regardless of
   which character is actually present, spamming false-positive tag matches and defeating
-  the entire point of tags as a *selective* promotion mechanism. Making this useful would
-  require real coreference resolution (knowing *which* "she" a pronoun refers to), not a
+  the entire point of tags as a _selective_ promotion mechanism. Making this useful would
+  require real coreference resolution (knowing _which_ "she" a pronoun refers to), not a
   small addition to the existing grep-based index. Revisit only if the tag-matching
   architecture itself changes.

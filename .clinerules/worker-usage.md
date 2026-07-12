@@ -7,12 +7,14 @@ and concurrency slots free for substantive work.
 ## When to use `ask_worker`
 
 **Use it for:**
+
 - "Where is X defined?" / "What does this function do?"
 - "Summarize what this file does"
 - "Find all uses of X and explain the call pattern"
 - Any single-question lookup where the answer is short and factual
 
 **Don't use it for:**
+
 - Multi-file refactoring (you need the full context yourself)
 - Design decisions requiring conversation history
 - Anything requiring your own model to see the code (edits, writes)

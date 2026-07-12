@@ -5,7 +5,7 @@ import App from './App.tsx'
 import ToastHost from './ToastHost.tsx'
 import { installGlobalErrorCapture } from './error-capture.ts'
 
-installGlobalErrorCapture();
+installGlobalErrorCapture()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

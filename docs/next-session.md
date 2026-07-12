@@ -66,13 +66,13 @@ Once logging and tests are in place, tackle the Should-fix items in priority ord
 
 ## Replacements to Consider
 
-| Hand-rolled | Proven alternative | Why |
-|---|---|---|
-| `outbound-log.ts` + `job-events.ts` | OpenLit / OpenTelemetry | Structured tracing, dashboards, no custom pub/sub |
-| `featherless.ts` streaming pipeline | Vercel AI SDK or similar | Streaming, retry, fallback, tool calls — solved problem |
-| `api-coordinator.ts` 409 handling | TanStack Query or SWR | Stale-while-revalidate, conflict resolution built-in |
-| Manual Zod-less route validation | Hono `zValidator` middleware | Already in the Hono ecosystem, zero new deps |
-| `toast.ts` hand-rolled | Sonner or react-hot-toast | Accessibility, animations, stacking — solved |
-| `useStoryLogScroll.ts` | Virtuoso or react-window | Virtualized scrolling for long chat logs |
+| Hand-rolled                         | Proven alternative           | Why                                                     |
+| ----------------------------------- | ---------------------------- | ------------------------------------------------------- |
+| `outbound-log.ts` + `job-events.ts` | OpenLit / OpenTelemetry      | Structured tracing, dashboards, no custom pub/sub       |
+| `featherless.ts` streaming pipeline | Vercel AI SDK or similar     | Streaming, retry, fallback, tool calls — solved problem |
+| `api-coordinator.ts` 409 handling   | TanStack Query or SWR        | Stale-while-revalidate, conflict resolution built-in    |
+| Manual Zod-less route validation    | Hono `zValidator` middleware | Already in the Hono ecosystem, zero new deps            |
+| `toast.ts` hand-rolled              | Sonner or react-hot-toast    | Accessibility, animations, stacking — solved            |
+| `useStoryLogScroll.ts`              | Virtuoso or react-window     | Virtualized scrolling for long chat logs                |
 
 **Rule:** before building infrastructure, check if OMP or the npm ecosystem already has it. This project's strength is its purpose-built domain logic (story-to-date, worldbook, memory pipeline) — not its plumbing.
