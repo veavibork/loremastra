@@ -608,3 +608,16 @@ performance, and UX edge cases surfaced by real VM sessions.
   in content stream) rejected instead of shown or stored.
 - **Craft vocabulary prompts** (`bb95b83`): vague prose direction replaced with specific craft-
   vocabulary terms from a systematic log audit — see `docs/prose-craft-vocabulary-cheat-sheet.md`.
+
+### Code quality tooling — ✅ done, 2026-07-12+
+
+- **Prettier** (`.prettierrc`, `.prettierignore`): `npm run format` in both root and `web/`. Run once
+  across the codebase — all files already conforming. `lint-staged` + `simple-git-hooks` pre-commit
+  hook auto-formats staged `*.{ts,tsx,js,jsx,json,css,md}` files.
+- **Lint:** oxlint configured for both packages (`npm run lint`). Backend clean (0 warnings as of
+  2026-07-12); frontend has 12 remaining warnings deferred for follow-up.
+- **Testing:** vitest (`npm test`, `vitest run`) and playwright (`npm run test:e2e`) configured.
+  Test directories: `tests/db/`, `tests/lib/`, `e2e/`.
+- Documentation updated to reflect current state: loremaster.md (archives contradiction resolved,
+  Provider Abstraction + Multi-User sections updated for shipped status), stack.md (formatter/test
+  framework claims corrected, new commands added), frontend.md, README.md, dev-workflow.md.

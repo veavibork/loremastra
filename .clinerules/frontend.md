@@ -35,7 +35,7 @@ It is strict-adjacent: `noUnusedLocals`, `noUnusedParameters`,
   - Plugins: `react`, `typescript`, `oxc`
   - Key rules: `react/rules-of-hooks: error`, `react/only-export-components: warn`
 - Run with `npm run lint` from `web/`.
-- No formatter is currently configured. This is not a settled decision — see docs/evaluation-roadmap.md F-026.
+- **Prettier** is configured for formatting (`.prettierrc`, `.prettierignore`). Run with `npm run format` from `web/`. A `lint-staged` pre-commit hook auto-formats staged files on commit.
 
 ## Build
 

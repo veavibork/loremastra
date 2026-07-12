@@ -69,15 +69,17 @@ sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ig
 
 ### Testing
 
-There is **no `npm test` command** and no test-runner framework. Run specific `tsx` scripts:
+**Unit / integration:** Vitest (`vitest.config.ts`). Tests in `tests/db/` and `tests/lib/`.
 
-```bash
-npx tsx scripts/test-memory-pipeline-smoke.ts
-```
+- `npm test` — single run
+- `npm run test:watch` — watch mode
+- `npm run test:coverage` — with coverage
 
-Script prefixes: `test-` (smoke/integration), `probe-` (diagnostic), `debug-` (debug tools),
-`inspect-`/`check-` (read-only inspection), `story-to-date-*` (memory experiments), `vm-*`
-(VM-sync diagnostics).
+**E2E:** Playwright (`playwright.config.ts`). Tests in `e2e/`.
+
+- `npm run test:e2e`
+
+**Smoke scripts:** `npx tsx scripts/test-memory-pipeline-smoke.ts`
 
 ## Database Patterns
 

@@ -109,8 +109,7 @@ Recommended extensions surfaced to anyone opening the workspace:
 | `eamodio.gitlens`                        | Git history and blame (useful for vibe-coded repo) |
 | `saoudrizwan.claude-dev`                 | Cline itself                                       |
 
-Prettier is explicitly listed as an **unwanted recommendation** — no formatter is
-configured in this repo and one should not be introduced without a decision.
+Prettier is configured (`.prettierrc`, `.prettierignore`) with a `lint-staged` pre-commit hook auto-formatting staged files on commit. Run `npm run format` from root or `web/` to format all files.
 
 ---
 

@@ -53,6 +53,11 @@ Other useful scripts:
 | `npm run typecheck`                             | Type-check the backend without emitting                                                                                                |
 | `npm run build`                                 | Compile the backend                                                                                                                    |
 | `npm run mcp`                                   | Dev-tools MCP server (queue, logs, worldbook, memory manifest, prompt preview)                                                         |
+| `npm run lint`                                  | Lint backend with oxlint                                                                                                               |
+| `npm run format`                                | Format all files with Prettier                                                                                                         |
+| `npm test`                                      | Run unit/integration tests (vitest)                                                                                                    |
+| `npm run test:coverage`                         | Run tests with coverage                                                                                                                |
+| `npm run test:e2e`                              | Run end-to-end tests (playwright)                                                                                                      |
 | `npm run server:restart`                        | Restart the dev backend process                                                                                                        |
 | `npm run server:reset-db`                       | Reset the local database                                                                                                               |
 | `npm run server:fresh`                          | Reset the database and restart the backend                                                                                             |

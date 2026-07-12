@@ -50,6 +50,12 @@ Backend (run from repo root):
 | `npm run server:reset-db`                  | Reset the local database (`node scripts/dev-reset-db.mjs`).                                                        |
 | `npm run server:fresh`                     | Reset DB, then restart backend.                                                                                    |
 | `npm run mcp`                              | Run the dev-tools MCP server (`tsx src/mcp/dev-server.ts`).                                                        |
+| `npm run lint`                             | Lint backend (`oxlint src scripts`).                                                                               |
+| `npm run format`                           | Format backend and root files (`prettier --write .`).                                                              |
+| `npm test`                                 | Run unit/integration tests (`vitest run`).                                                                         |
+| `npm run test:watch`                       | Run tests in watch mode (`vitest`).                                                                                |
+| `npm run test:coverage`                    | Run tests with coverage (`vitest run --coverage`).                                                                 |
+| `npm run test:e2e`                         | Run end-to-end tests (`playwright test`).                                                                          |
 
 Frontend (run from `web/`):
 
@@ -59,22 +65,27 @@ Frontend (run from `web/`):
 | `npm run build`   | Type-check then build (`tsc -b && vite build`).                                                               |
 | `npm run preview` | Serve the production build locally (`vite preview`).                                                          |
 | `npm run lint`    | Lint the frontend (`oxlint`).                                                                                 |
+| `npm run format`  | Format frontend (`prettier --write .`).                                                                       |
 
 ## Testing
 
-There is **no test-runner framework configured** (no Jest, Vitest, Playwright,
-etc.). Automated checks are standalone TypeScript scripts in `scripts/`, run
-individually with `tsx`. Examples cited in `README.md`:
+**Unit / integration:** Vitest, configured in `vitest.config.ts`. Run with:
 
-npx tsx scripts/test-memory-pipeline-smoke.ts
+- `npm test` — single run
+- `npm run test:watch` — watch mode
+- `npm run test:coverage` — with coverage
+
+**End-to-end:** Playwright, configured in `playwright.config.ts`. Run with:
+
+- `npm run test:e2e`
+
+**Smoke / diagnostic scripts:** Standalone TypeScript scripts in `scripts/`, run
+individually with `tsx`:
 
 - Scripts prefixed `test-` (e.g. `test-memory-pipeline-smoke.ts`,
   `test-content-store.ts`) are smoke/integration checks.
 - Scripts prefixed `probe-`, `debug-`, `inspect-`, `check-`, and the
-  `story-to-date-*` scripts are diagnostic/experiment tools, also run via
-  `npx tsx scripts/<name>.ts`.
-
-There is no aggregate `npm test` command — run the specific script you need.
+  `story-to-date-*` scripts are diagnostic/experiment tools.
 
 ## Linting / formatting
 
@@ -82,7 +93,7 @@ There is no aggregate `npm test` command — run the specific script you need.
   `typescript`, `oxc`; rules: `react/rules-of-hooks: error`,
   `react/only-export-components: warn`). Run with `npm run lint` from `web/`.
 - **Backend:** oxlint, configured in `.oxlintrc.json` (plugins: `typescript`, `oxc`). Run with `npm run lint` from repo root. The only other enforced check is `npm run typecheck`.
-- **Formatting:** no formatter is currently configured. This is not a settled decision — see evaluation-roadmap.md F-026.
+- **Formatting:** Prettier (`.prettierrc`, `.prettierignore`), run with `npm run format` from root or `web/`. A `lint-staged` pre-commit hook (via `simple-git-hooks`) auto-formats staged `*.{ts,tsx,js,jsx,json,css,md}` files on commit.
 
 ## Directory map
 
@@ -117,7 +128,7 @@ Backend `src/`:
 - `mcp/` — dev-tools MCP server (`dev-server.ts`, `single-instance.ts`)
 - `data/` — bundled data files (`featherless-tag-ratings.json`,
   `hf-model-tags.json`)
-- `experiments/` — experimental code
+- `experiments/` — experimental code (one stub file; not currently active)
 
 Frontend `web/src/`:
 

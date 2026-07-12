@@ -66,6 +66,16 @@ Available MCP tools (all read-only except where noted):
 - `DEV_BYPASS_SESSION_GUARD` — when set on the server, HTTP routes skip session
   authentication. Useful for curl-based testing; never set in production.
 
+## Linting and formatting
+
+- **Lint:** `npm run lint` (backend) or `npm run lint` from `web/` (frontend). Both use oxlint
+  with project-specific rule sets in `.oxlintrc.json` and `web/.oxlintrc.json`.
+- **Format:** `npm run format` (Prettier, applies to both packages). A `lint-staged` pre-commit
+  hook auto-formats staged files on commit — no manual step needed for formatting.
+- **Before committing:** run `npm run lint && npm test` to catch regressions. The pre-commit
+  hook handles formatting; lint and tests are manual by design (they're not fast enough for a
+  commit hook).
+
 ## After direct DB edits
 
 If you write to the database outside the HTTP API (ad-hoc script, manual SQL, MCP

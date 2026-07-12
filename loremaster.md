@@ -184,7 +184,7 @@ Each agent's capabilities are implemented as discrete tools — functions with e
 
 The Editor's worldbook authoring is a deliberate exception to mid-conversation tool calls: an earlier design had the Editor call a tool (e.g. `create_worldbook_entry`) on its own judgment. In practice this proved unreliable — schema/field-casing drift and inconsistent completeness across otherwise-identical conversations (see docs/stub-revisions.md) — so it was replaced (2026-07-03) with plain bracket-tagged prose the back end parses deterministically via regex, no tool call involved.
 
-**Retired (2026-07-04):** per-post compression and decad archive summarization previously used forced tool-calling (`submit_summary` / `submit_archive_summary`). That pipeline is removed; memory is `[STORY TO DATE]` Editor jobs instead. Phase 1 still benefits from providers with reliable chat completions; native function calling is no longer on the critical path for memory.
+**Retired (2026-07-04):** per-post compression previously used forced tool-calling (`submit_summary`). That pipeline is removed; memory is `[STORY TO DATE]` Editor jobs instead. Decad archive summarization (`submit_archive_summary`) was superseded by story-to-date segments, but the Archives tab and `archive-name` Worker jobs for scene titles remain active. Phase 1 still benefits from providers with reliable chat completions; native function calling is no longer on the critical path for memory.
 
 ### MCP Server (Developer-Facing)
 
@@ -246,9 +246,9 @@ When canonical text changes inside a segment's coverage window, affected story-t
 
 There is no per-post compression tier and no decad archive tier in assembly.
 
-### Retired: compression + decad archives
+### Retired: per-post compression
 
-Per-post compression (~20 tokens via Worker) and non-overlapping ten-post archive blocks (`[EVENT SUMMARY]`) were the Phase 1 design through 2026-07-03. **Retired 2026-07-04.** Legacy `archive` / `archive_member` rows and `gen_extract` columns may still exist in old DB files but are purged or ignored on open (`purgeLegacyArchives` in `src/db/story-db.ts`). Do not rebuild this path without an explicit new design.
+Per-post compression (~20 tokens via Worker) was the Phase 1 design through 2026-07-03. **Retired 2026-07-04.** Legacy `gen_extract` columns may still exist in old DB files but are ignored (`COMPRESSION_ENABLED = false`). Decad archive blocks (`[EVENT SUMMARY]`) were superseded by story-to-date segments at the same time — the Archives tab now manages story-to-date segments, and `archive-name` Worker jobs provide optional scene titles. Legacy `archive`/`archive_member` rows are purged on open (`purgeLegacyArchives` in `src/db/story-db.ts`). Do not rebuild either path without an explicit new design.
 
 ---
 
@@ -427,21 +427,18 @@ This is not a substitute for real security practices — it is a trust model app
 
 ## Provider Abstraction
 
-Phase 1 targets Featherless exclusively. This is a deliberate sequencing choice, not an oversight: LM's value proposition is tool use and agentic orchestration (see Tool Use and MCP Server), and that needs to be proven out against one known-good provider before taking on the complexity of a provider abstraction layer. Featherless uses an OpenAI-compatible API — requests are submitted and a response is awaited on the same connection — and is confirmed to support the function-calling the Editor's setup flow depends on.
+Featherless is the primary provider; the AI Horde was added as a second provider during the multi-user milestone (2026-07-03). Each user independently configures their own Featherless and Horde API keys from the Agents tab — both are encrypted at rest using the server's `APP_MASTER_KEY` (`AES-256-GCM`).
 
-Featherless ($25/mo tier) provides unlimited usage and threading of smaller models, capped at 32k context regardless of model native limit, with four simultaneous connections. Larger models (Editor/Author) consume all four slots. This concurrency ceiling is the reason the queue (see Story Flow) is a hard requirement rather than an optimization — without it, simultaneous requests from multiple users would exceed what Featherless allows.
+Featherless ($25/mo tier) uses an OpenAI-compatible API with streaming, capped at 32k context, four simultaneous connections per account. Larger models (Editor/Author) consume all four slots. The Horde is async submit-then-poll — no streaming, no account-wide concurrency signal — and uses its own dispatch path with a local cap on outstanding submissions rather than reusing the Featherless slot system. See the Multi-User & Second Provider Milestone section for integration details.
 
-The provider module should still be written as its own component rather than inlined into agent logic, since that boundary will matter once a second provider is added — but Phase 1 does not need to design or commit to an abstraction interface ahead of having a second real provider to abstract against. Speculative abstraction here would be guessing at a shape based on no evidence.
+Ranked-choice model fallback (trying a second model if the first is unavailable) works within each provider independently. Generic OpenAI-compatible endpoints and additional providers remain deferred.
 
-Ranked-choice model selection (falling back to a second Featherless model if the first is unavailable, or hotswapping models for different needs) is in scope for Phase 1, since it operates within a single provider.
-
-Multiple providers were originally planned as a deliberate Phase 2+ direction once Phase 1 proved out the tooling-first approach — that held until the multi-user milestone (see Multi-User & Second Provider Milestone) needed a second user's own local compute to be reachable without exposing their home network, which pulled the Horde forward specifically. Generic OpenAI-compatible endpoints and the wider range of providers remain deferred on their original timeline. The open question that motivated deferring this in the first place — how much of LM's tool-use dependency can be relaxed or routed around for providers that don't support native function calling (see Tool Use and MCP Server) — is now a live question for the Horde specifically, not just a future-phase abstraction. Existing market open-source implementations (SillyTavern, KoboldAI) are reference material for provider/model-specific endpoints, headers/bodies, internal prompt formatting, and tweaks.
-
+The provider boundary is cleanly separated at the module level: `src/inference/featherless.ts`, `src/inference/horde.ts`, and their respective config modules handle provider-specific transport. The pipeline runner branches on provider at the dispatch level; extracting a common adapter interface is a known improvement captured in `docs/evaluation-roadmap.md` (F-032).
 ---
 
 ## Multi-User & Second Provider Milestone
 
-This is the next concrete build target: taking LM from a single implicit user to real multi-user support, and adding the Horde as a second inference provider. Two independent problems that happen to be scoped together because the second provider only matters once a second real user exists to use it.
+Multi-user support and the Horde as a second provider shipped during the multi-user milestone (2026-07-03).
 
 **Login and account lifecycle.** The login screen is a Netflix-style row of profile slots, one per user. Creating, renaming, or deleting a user, and resetting a forgotten password, is operator-only and happens via an SSH-run script — there is no UI or API surface for any of it, deliberately, to keep that attack surface at zero. New users get the literal password "random" by default; changing it afterward is a normal in-app action.
 
@@ -494,7 +491,7 @@ Phase 1 is complete — Loremaster is a purpose-built TypeScript application, de
 - **Inference:** Featherless (primary) + AI Horde (secondary), per-user API keys encrypted at rest via `APP_MASTER_KEY`
 - **Memory:** Rolling `[STORY TO DATE]` Editor recaps (shipped 2026-07-04); per-post compression dormant, decad archives active
 - **Auth:** Password-gated login, per-user sessions, admin-provisioned accounts only (`npm run user:create`)
-- **Dev tooling:** MCP server (`npm run mcp`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
+- **Dev tooling:** MCP server (`npm run mcp`), testing (vitest + playwright — `npm test`, `npm run test:e2e`), linting (oxlint — `npm run lint`), formatting (Prettier — `npm run format`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
 
 Deferred from Phase 1: full encryption at rest for story content, preference-profile CRUD, input-bar weapon wheel, bespoke touch-first chrome. See `docs/roadmap.md` for the open backlog and `docs/stub-revisions.md` for known gaps.
 

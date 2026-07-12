@@ -1,9 +1,21 @@
 # Testing Conventions
 
-There is **no test-runner framework** (no Jest, Vitest, Playwright, etc.). Automated
-checks are standalone TypeScript scripts in `scripts/`, run individually with `tsx`.
+## Test runners
 
-## Script prefixes
+**Unit / integration:** Vitest, configured in `vitest.config.ts`. Tests in `tests/db/` (store tests)
+and `tests/lib/` (pure-logic tests).
+
+- `npm test` — single run
+- `npm run test:watch` — watch mode
+- `npm run test:coverage` — with coverage
+
+**E2E:** Playwright, configured in `playwright.config.ts`. Tests in `e2e/`.
+
+- `npm run test:e2e`
+
+## Smoke / diagnostic scripts
+
+Standalone TypeScript scripts in `scripts/`, run individually with `tsx`:
 
 | Prefix                | Purpose                                                         |
 | --------------------- | --------------------------------------------------------------- |
@@ -13,12 +25,6 @@ checks are standalone TypeScript scripts in `scripts/`, run individually with `t
 | `inspect-` / `check-` | Read-only inspection of DB or runtime state                     |
 | `story-to-date-*`     | Memory pipeline experiments and diagnostics                     |
 | `vm-*`                | VM-sync diagnostics (`.cjs`/`.mjs` variants for standalone use) |
-
-There is **no `npm test` command**. Run the specific script you need:
-
-```
-npx tsx scripts/test-memory-pipeline-smoke.ts
-```
 
 ## Key test scripts
 
@@ -37,8 +43,8 @@ npx tsx scripts/test-memory-pipeline-smoke.ts
   pass/fail, exit with status code.
 - **New `probe-`/`debug-` script** — when investigating a specific behavior. These are
   disposable; don't be afraid to write one, use it, and leave it for future reference.
-- **Do not** introduce a test framework without an explicit decision. The current
-  approach is deliberate for a project of this scale.
+- **New vitest test** — when adding a feature that warrants a repeatable unit/integration check.
+  Add to `tests/db/` or `tests/lib/` following the existing patterns.
 
 ## Before running scripts that touch the DB
 
