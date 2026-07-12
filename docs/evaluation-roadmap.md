@@ -9,26 +9,32 @@ Updated 2026-07-12: documentation reconciliation, formatting workflow, testing f
 
 Findings marked **[RESOLVED]** have been addressed. See the finding body for what changed.
 
-| Finding       | Severity     | Description                                                  | Status                                                                                                                                                        |
-| ------------- | ------------ | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F-025         | Should-fix   | Backend linter exists but docs claim it doesn't; 36 warnings | **[RESOLVED]** — Backend 0 warnings, stack.md updated. Frontend 12 warnings deferred.                                                                         |
-| F-026         | Nice-to-have | No formatter configured                                      | **[RESOLVED]** — Prettier configured with lint-staged pre-commit hook.                                                                                        |
-| F-020         | Should-fix   | Archives: docs say retired, code says active                 | **[RESOLVED]** — loremaster.md updated; archives confirmed active, per-post compression only retired.                                                         |
-| F-043         | Should-fix   | loremaster.md stale claims                                   | **[RESOLVED]** — Doc updated; archives + gen_extract status clarified.                                                                                        |
-| F-044         | Should-fix   | stack.md stale claims (no linter, no formatter)              | **[RESOLVED]** — Doc updated; both claims corrected.                                                                                                          |
-| F-001         | Info         | web/src/assets/ documented but missing                       | **[RESOLVED]** — Docs no longer reference the directory.                                                                                                      |
-| Testing (4.1) | —            | No test framework                                            | **[RESOLVED]** — Vitest + Playwright configured. Tests in `tests/db/`, `tests/lib/`, `e2e/`.                                                                  |
-| E2E (4.3)     | —            | No E2E tests                                                 | **[RESOLVED]** — Playwright configured with `npm run test:e2e`.                                                                                               |
-| Documentation | —            | Dated docs vs current reality                                | **[RESOLVED]** — 9 docs reconciled (loremaster.md, stack.md, frontend.md, testing.md, README.md, CLAUDE.md, dev-workflow.md, cline-setup.md, development.md). |
+| Finding       | Severity     | Description                                                  | Status                                                                                                                                                                     |
+| ------------- | ------------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-025         | Should-fix   | Backend linter exists but docs claim it doesn't; 36 warnings | **[RESOLVED]** — Backend 0 warnings, stack.md updated. Frontend 12 warnings deferred.                                                                                      |
+| F-026         | Nice-to-have | No formatter configured                                      | **[RESOLVED]** — Prettier configured with lint-staged pre-commit hook.                                                                                                     |
+| F-020         | Should-fix   | Archives: docs say retired, code says active                 | **[RESOLVED]** — Fully retired (2026-07-12 disambiguation): archive tables, workers, routes, and purgeLegacyArchives deleted. Segments tab manages story-to-date segments. |
+| F-043         | Should-fix   | loremaster.md stale claims                                   | **[RESOLVED]** — Doc updated; archives + gen_extract status clarified.                                                                                                     |
+| F-044         | Should-fix   | stack.md stale claims (no linter, no formatter)              | **[RESOLVED]** — Doc updated; both claims corrected.                                                                                                                       |
+| F-001         | Info         | web/src/assets/ documented but missing                       | **[RESOLVED]** — Docs no longer reference the directory.                                                                                                                   |
+| Testing (4.1) | —            | No test framework                                            | **[RESOLVED]** — Vitest + Playwright configured. Tests in `tests/db/`, `tests/lib/`, `e2e/`.                                                                               |
+| E2E (4.3)     | —            | No E2E tests                                                 | **[RESOLVED]** — Playwright configured with `npm run test:e2e`.                                                                                                            |
+| Documentation | —            | Dated docs vs current reality                                | **[RESOLVED]** — 9 docs reconciled (loremaster.md, stack.md, frontend.md, testing.md, README.md, CLAUDE.md, dev-workflow.md, cline-setup.md, development.md).              |
+| F-018         | Should-fix   | archive-worker.ts dead code                                  | **[RESOLVED]** — Deleted (2026-07-12 disambiguation, Phase 1).                                                                                                             |
+| F-023         | Should-fix   | Four frontend PascalCase violations                          | **[RESOLVED]** — Renamed (2026-07-12 disambiguation, Phase 5): PlayTabSettings, ReasoningDisplay, Registry, StoryToggles.                                                  |
+| F-006         | Should-fix   | compression.ts + compress-worker.ts dead code                | **[RESOLVED]** — Deleted (Phase 1).                                                                                                                                        |
+| F-009         | Info         | src/experiments/ dead directory                              | **[RESOLVED]** — Deleted (Phase 1).                                                                                                                                        |
+| F-020b        | Info         | gen_extract column dormant scaffolding                       | **[RESOLVED]** — Column removed from schema, store functions deleted (Phases 1, 3).                                                                                        |
+| F-020c        | Should-fix   | Compression naming collision                                 | **[RESOLVED]** — Compress/archive code deleted; `content-stamp` → `content-fingerprint`.                                                                                   |
+| F-008         | Nice-to-have | src/data/ namespace collision                                | **[RESOLVED]** — Renamed to `src/defaults/` (Phase 4).                                                                                                                     |
+| F-003         | Info         | Duplicate corrupted-tools/ locations                         | **[RESOLVED]** — Consolidated to root `corrupted-tools/` (Phase 4).                                                                                                        |
 
 ## Still Outstanding
 
-| Finding     | Severity   | Description                      |
-| ----------- | ---------- | -------------------------------- |
-| F-023       | Should-fix | 4 frontend PascalCase violations | User deferred.                       |
-| F-018       | Should-fix | archive-worker.ts dead code      | File still exists; not yet deleted.  |
-| F-004       | Info       | bun.lock present                 | Still exists at repo root.           |
-| F-005–F-048 | Varies     | All other findings               | Unaddressed; see findings log below. |
+| Finding                   | Severity | Description                                                                 |
+| ------------------------- | -------- | --------------------------------------------------------------------------- |
+| F-004                     | Info     | bun.lock present                                                            | Still exists at repo root. |
+| F-005, F-007, F-010–F-048 | Varies   | Remaining unaddressed findings (many resolved by 2026-07-12 disambiguation) |
 
 ---
 
@@ -219,12 +225,10 @@ Findings are appended as each phase completes. Format:
 **Finding:** The main inference provider integration. At 549 lines, it's the largest inference file. Provider integrations tend to accrete features (streaming, retry, model discovery, tag filtering). May be coherent, but worth checking for mixed concerns.
 **Recommendation:** Review in Phase 2 for separation of API transport vs model discovery vs streaming logic.
 
-### F-018: `archive-worker.ts` — dead code, never imported
+### F-018: `archive-worker.ts` — dead code, never imported **[RESOLVED]**
 
 **Phase:** 1. **Severity:** Should-fix
-**Files:** `src/services/archive-worker.ts`
-**Finding:** Zero imports across the entire codebase (src, web/src, scripts). Archive jobs are executed inline in `pipeline-runner.ts:dispatchWorkerJobs()`. This file exists alongside the active archive infrastructure but is completely unreferenced.
-**Recommendation:** Delete the file. If it contains logic the pipeline runner needs, verify it's been inlined there first.
+**Resolution (2026-07-12):** Deleted in Phase 1 of the disambiguation resolution along with other dead archive/compression files.
 
 ### F-019: `src/experiments/story-to-date-corpus.ts` — 122-byte stub
 
@@ -238,26 +242,22 @@ Findings are appended as each phase completes. Format:
 **Phase:** 1. **Severity:** Should-fix
 **Files:** `loremaster.md:37-38`, `src/services/archive.ts`, `src/services/archive-view.ts`, `src/services/archive-eligibility.ts`, `src/queue/pipeline-runner.ts:528,579`, `src/routes/stories.ts:318-334`
 **Finding:** `loremaster.md` states decad archive blocks are retired (2026-07-04). But the pipeline runner actively dispatches `archive-name` jobs, the routes expose `/memory/backfill` and `/memory/enqueue` endpoints that "enqueue compress/archive jobs", the MCP dev server has tools for archive jobs, and `archive.ts` has a full enqueue/dispatch/requeue API.
-**Resolution (2026-07-12):** loremaster.md updated. Per-post compression is retired; decad archive blocks (story-to-date segments + `archive-name` Worker jobs for scene titles) remain active. The Archives tab manages story-to-date segments.
+**Resolution (2026-07-12):** Fully retired in disambiguation resolution. Archive tables, `archive.ts`, `archive-view.ts`, `archive-eligibility.ts`, `purgeLegacyArchives` all deleted. `archive-name` job type → `segment-name`. Segments tab manages story-to-date segments; no archive infrastructure remains.
 
-### F-020b: `gen_extract` column — dormant scaffolding, not dead
+### F-020b: `gen_extract` column — dormant scaffolding, not dead **[RESOLVED]**
 
 **Phase:** 1. **Severity:** Info
-**Files:** `src/db/story-schema.ts:44`, `src/db/text-store.ts:19,35,52,70`, `src/db/page-store.ts:15-16`, `src/services/content-stamp.ts:4,15`, `src/services/log-view.ts:14,65`, `src/services/memory-manifest.ts:147`
-**Finding:** The `gen_extract` column remains in the schema with full store functions (`fillTextExtract`, `clearTextExtract`). Since `COMPRESSION_ENABLED = false`, the per-post compression path is dormant.
-**Recommendation:** Add a `TODO(2026-08-01): Remove gen_extract column and related functions` marker. The scaffolding serves a purpose during the transition window but must not become permanent.
+**Resolution (2026-07-12):** Column removed from schema, store functions (`fillTextExtract`, `clearTextExtract`) deleted, all read paths cleaned up in Phases 1-3 of the disambiguation resolution.
 
-### F-020c: Naming collision — "compression" means three different things
+### F-020c: Naming collision — "compression" means three different things **[RESOLVED]**
 
 **Phase:** 1. **Severity:** Should-fix
-**Files:** `src/services/compression.ts`, `src/services/compress-worker.ts`, `src/services/story-to-date.ts`, `src/services/story-to-date-fold-worker.ts`, `src/services/memory-config.ts`, `src/queue/pipeline-runner.ts`
-**Finding:** The word "compression" is overloaded across three distinct concepts: (1) retired per-post `gen_extract` compression, (2) active story-to-date rolling recap generation, and (3) deep-past story-to-date folding.
-**Recommendation:** Rename to disambiguate: `per-post-extract` (retired), `story-to-date-recap` (active), `story-to-date-fold` (active).
+**Resolution (2026-07-12):** Compress/archive code deleted in Phase 1; `content-stamp.ts` → `content-fingerprint.ts`; `COMPRESSION_ENABLED` removed. Remaining story-to-date concepts share a clear `story-to-date` prefix.
 
 ### F-021: Zero inline TODO/FIXME markers — deferred work tracked in natural-language comments
 
 **Phase:** 1. **Severity:** Info
-**Files:** `src/db/global-schema.ts:120`, `src/services/layout.ts:3`, `web/src/SettingsView.tsx:239`
+**Files:** `src/db/global-schema.ts:120`, `src/services/layout.ts:3`, `web/src/PreferencesView.tsx:239`
 **Finding:** No standard `TODO` or `FIXME` markers exist anywhere in the codebase.
 **Recommendation:** The absence of markers is neutral. The `error-titles.ts` reference is a phantom dependency — either create it or remove the comment.
 
@@ -268,19 +268,15 @@ Findings are appended as each phase completes. Format:
 **Finding:** `npm audit` reports zero vulnerabilities. `npm outdated` shows patch-level updates available. Backend TypeScript 5.9.3 vs frontend TypeScript 6.0.3 minor mismatch.
 **Recommendation:** Apply patch updates. Consider aligning TypeScript versions.
 
-### F-023: Four frontend components violate PascalCase convention
+### F-023: Four frontend components violate PascalCase convention **[RESOLVED]**
 
 **Phase:** 1. **Severity:** Should-fix
-**Files:** `web/src/playTabSettings.tsx`, `web/src/reasoningDisplay.tsx`, `web/src/registry.tsx`, `web/src/storyToggles.tsx`
-**Finding:** Four `.tsx` files use camelCase: `playTabSettings`, `reasoningDisplay`, `registry`, `storyToggles`.
-**Status:** User deferred (2026-07-12). Still outstanding.
+**Resolution (2026-07-12):** All 4 renamed in Phase 5: `playTabSettings.tsx` → `PlayTabSettings.tsx`, `reasoningDisplay.tsx` → `ReasoningDisplay.tsx`, `registry.tsx` → `Registry.tsx`, `storyToggles.tsx` → `StoryToggles.tsx`.
 
-### F-024: Naming confusion — compression/compress inconsistency
+### F-024: Naming confusion — compression/compress inconsistency **[RESOLVED]**
 
 **Phase:** 1. **Severity:** Nice-to-have
-**Files:** `src/services/compression.ts`, `src/services/compress-worker.ts`, `src/services/content-stamp.ts`, `src/services/memory-invalidation.ts`
-**Finding:** The prefix is inconsistent: `compression.ts` vs `compress-worker.ts`.
-**Recommendation:** Once the naming collision (F-020c) is resolved, standardize on a single prefix.
+**Resolution (2026-07-12):** `compression.ts` and `compress-worker.ts` deleted. `content-stamp.ts` → `content-fingerprint.ts`, `memory-invalidation.ts` → `context-invalidation.ts`.
 
 ### F-025: Backend linter exists but clinerules claim it doesn't — 36 warnings **[RESOLVED]**
 
@@ -296,17 +292,16 @@ Findings are appended as each phase completes. Format:
 **Finding:** Neither backend nor frontend had a formatter. `stack.md` stated "no formatter configured."
 **Resolution (2026-07-12):** Prettier configured (`.prettierrc`, `.prettierignore`) with `lint-staged` + `simple-git-hooks` pre-commit hook. `npm run format` available in both root and `web/`. All files formatted; zero changes needed.
 
-### F-027: Semantic naming confusion — six files with unclear purpose
+### F-027: Semantic naming confusion — six files with unclear purpose **[RESOLVED]**
 
 **Phase:** 1. **Severity:** Nice-to-have
-**Files:** `src/services/content-stamp.ts`, `src/services/memory-config.ts`, `src/services/play-tab.ts`, `src/services/toggle-presets.ts`, `src/services/worldbook-pc.ts`, `src/services/kickoff.ts`
-**Recommendation:** Low priority; rename opportunistically during services/ reorganization (F-005).
+**Resolution (2026-07-12):** All 6 renamed in Phase 2: `content-stamp.ts` → `content-fingerprint.ts`, `memory-config.ts` → deleted, `play-tab.ts` → `display-preferences.ts`, `toggle-presets.ts` → `generation-presets.ts`, `worldbook-pc.ts` → `worldbook-assembly.ts`, `kickoff.ts` → `story-transition.ts`.
 
 ---
 
 ### F-028–F-048
 
-See original findings at lines 294–457 of the previous revision. All remain unaddressed except where noted in the Resolution Status table above.
+Many findings in this range have been addressed by the 2026-07-12 disambiguation resolution (F-003, F-006, F-008, F-009, F-018, F-019, F-020b, F-020c, F-023, F-024, F-027). See Resolution Status table and individual finding bodies above for full details.
 
 ---
 
@@ -314,19 +309,19 @@ See original findings at lines 294–457 of the previous revision. All remain un
 
 ### Resolved (2026-07-12)
 
-F-025, F-026, F-020, F-043, F-044, F-001
+F-025, F-026, F-020, F-043, F-044, F-001, F-018, F-023, F-020c, F-006
 
 ### Should-fix (remaining)
 
-F-031, F-038, F-028, F-020c, F-032, F-005, F-011, F-039, F-029, F-018, F-023, F-006, F-046
+F-031, F-038, F-028, F-032, F-005, F-011, F-039, F-029, F-046
 
 ### Nice-to-have
 
-F-007, F-008, F-010, F-024, F-027, F-034, F-036, F-040, F-047, F-048
+F-007, F-010, F-034, F-036, F-040, F-047, F-048
 
 ### Info / Confirmation
 
-F-002-F-004, F-009, F-016-F-017, F-019, F-020b, F-021, F-022, F-030, F-033, F-035, F-037, F-041, F-045
+F-002, F-004, F-016-F-017, F-021, F-022, F-030, F-033, F-035, F-037, F-041, F-045
 
 ### Separate session
 
@@ -342,13 +337,15 @@ F-042 — React re-render profiling needs DevTools
 - [x] Add Prettier (F-026)
 - [x] Resolve archives contradiction (F-020)
 - [x] Reconcile all documentation (F-043, F-044, testing.md, README.md, CLAUDE.md, dev-workflow.md, frontend.md, cline-setup.md)
+- [x] Disambiguation resolution — 46 items: dead archive/compression (F-018, F-006, F-009, F-020b), PascalCase renames (F-023), compression disambiguation (F-020c), data/ → defaults/ (F-008), corrupted-tools/ consolidation (F-003), 12 file renames, tab/route renames
+- [x] Documentation reconciliation (post-disambiguation) — evaluation-roadmap.md + next-session.md updated
 
 ### Do first (this week)
 
 1. Fix 12 frontend lint warnings — remainder from F-025
-2. Delete archive-worker.ts (F-018) — confirmed dead, zero imports
-3. Fix 4 PascalCase component names (F-023) — or formally defer
-4. Rename to disambiguate compression (F-020c)
+2. Delete bun.lock (F-004) — still present
+3. Apply npm patch updates (F-022) — minor version debt
+4. Create src/lib/ for remaining root utilities (F-007) — time.ts moved, uuid.ts/crypto.ts remain
 
 ### Do next (this month)
 
@@ -362,9 +359,6 @@ F-042 — React re-render profiling needs DevTools
 
 ### Do later (when convenient)
 
-12. Apply npm patch updates (F-022)
-13. Add Zod validation to routes (F-034)
-14. Add global error handler (F-036)
-15. Create web/src/ subdirectories (F-040)
-16. Create src/lib/ for utilities (F-007)
-17. Delete bun.lock (F-004)
+12. Add Zod validation to routes (F-034)
+13. Add global error handler (F-036)
+14. Create web/src/ subdirectories (F-040)
