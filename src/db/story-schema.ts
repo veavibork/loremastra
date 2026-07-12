@@ -167,4 +167,4 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_text ON jobs(target_text_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_archive ON jobs(target_archive_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_story_to_date ON jobs(target_story_to_date_id);
-`;
+`

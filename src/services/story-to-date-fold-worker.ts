@@ -1,8 +1,8 @@
-import type Database from "better-sqlite3";
-import { completeChat } from "../inference/featherless.js";
+import type Database from 'better-sqlite3'
+import { completeChat } from '../inference/featherless.js'
 
 /** Large merged segments can legitimately take several minutes — still bounded. */
-export const STORY_TO_DATE_FOLD_TIMEOUT_MS = 10 * 60_000;
+export const STORY_TO_DATE_FOLD_TIMEOUT_MS = 10 * 60_000
 import {
   listStoryToDateSegments,
   getStoryToDateSegment,
@@ -10,8 +10,8 @@ import {
   setStoryToDateSegmentCoverage,
   setStoryToDateSegmentName,
   deleteStoryToDateSegment,
-} from "../db/story-to-date-store.js";
-import { getAgentProfile } from "./agent-config.js";
+} from '../db/story-to-date-store.js'
+import { getAgentProfile } from './agent-config.js'
 import {
   buildFoldSystem,
   selectFoldSet,
@@ -21,7 +21,7 @@ import {
   foldWordCount,
   looksFoldDigestTruncated,
   type FoldableSegment,
-} from "./story-to-date-corpus.js";
+} from './story-to-date-corpus.js'
 
 /**
  * Feature A: fold the oldest STORY TO DATE segments into a single "deep past" digest so total
@@ -36,37 +36,37 @@ export async function executeStoryToDateFoldJob(
   logbookId: string,
   targetSegmentId: string,
   apiKey: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
-  const rows = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken);
+  const rows = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken)
   const segments: FoldableSegment[] = rows.map((s) => ({
     id: s.id,
     content: s.content!.trim(),
     coverageThroughIcPost: s.coverageThroughIcPost,
     coveragePageId: s.coveragePageId,
     seq: s.seq,
-  }));
+  }))
 
-  const { fold } = selectFoldSet(segments);
+  const { fold } = selectFoldSet(segments)
 
   // Deterministic recheck — state may have shifted since enqueue (an edit invalidated segments,
   // or a competing fold already ran). Only proceed if the target is still the oldest fold member.
-  if (fold.length < 2 || fold[0]!.id !== targetSegmentId) return; // no-op: nothing worth folding
+  if (fold.length < 2 || fold[0]!.id !== targetSegmentId) return // no-op: nothing worth folding
 
-  const editor = getAgentProfile(userId, "editor");
-  const batch = selectFoldBatch(fold, editor.responseLimit);
-  if (batch.length < 2 || batch[0]!.id !== targetSegmentId) return;
+  const editor = getAgentProfile(userId, 'editor')
+  const batch = selectFoldBatch(fold, editor.responseLimit)
+  if (batch.length < 2 || batch[0]!.id !== targetSegmentId) return
 
-  const last = batch[batch.length - 1]!;
-  if (last.coverageThroughIcPost == null || !last.coveragePageId) return; // can't set digest coverage
+  const last = batch[batch.length - 1]!
+  if (last.coverageThroughIcPost == null || !last.coveragePageId) return // can't set digest coverage
 
-  const merged = batch.map((s) => s.content).join("\n\n");
-  const foldTokens = estimateTokens(merged);
-  const targetWords = foldDigestTargetWords(foldWordCount(merged), editor.responseLimit);
+  const merged = batch.map((s) => s.content).join('\n\n')
+  const foldTokens = estimateTokens(merged)
+  const targetWords = foldDigestTargetWords(foldWordCount(merged), editor.responseLimit)
   const messages = [
-    { role: "system" as const, content: buildFoldSystem(targetWords) },
-    { role: "user" as const, content: `Older memory to condense (chronological):\n\n${merged}` },
-  ];
+    { role: 'system' as const, content: buildFoldSystem(targetWords) },
+    { role: 'user' as const, content: `Older memory to condense (chronological):\n\n${merged}` },
+  ]
 
   const digest = (
     await completeChat(editor, apiKey, messages, {
@@ -74,29 +74,29 @@ export async function executeStoryToDateFoldJob(
       timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
       signal,
     })
-  ).trim();
-  if (!digest) throw new Error("fold produced empty digest");
+  ).trim()
+  if (!digest) throw new Error('fold produced empty digest')
   if (looksFoldDigestTruncated(digest, editor.responseLimit)) {
     throw new Error(
-      `fold digest likely truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`
-    );
+      `fold digest likely truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`,
+    )
   }
   // Guard against a non-compressing result — if the model returned something as large as the input,
   // applying it would churn without shrinking anything. Leave the segments as they are.
-  if (estimateTokens(digest) >= foldTokens) return;
+  if (estimateTokens(digest) >= foldTokens) return
 
-  const target = getStoryToDateSegment(db, targetSegmentId);
-  if (!target || target.broken) return;
+  const target = getStoryToDateSegment(db, targetSegmentId)
+  if (!target || target.broken) return
 
-  setStoryToDateSegmentContent(db, targetSegmentId, digest);
+  setStoryToDateSegmentContent(db, targetSegmentId, digest)
   setStoryToDateSegmentCoverage(db, targetSegmentId, {
     coverageThroughIcPost: last.coverageThroughIcPost,
     coveragePageId: last.coveragePageId,
-  });
+  })
   // The digest now spans many scenes; its old single-scene name no longer fits (Archives display only).
-  setStoryToDateSegmentName(db, targetSegmentId, "");
+  setStoryToDateSegmentName(db, targetSegmentId, '')
 
   for (const seg of batch.slice(1)) {
-    deleteStoryToDateSegment(db, seg.id);
+    deleteStoryToDateSegment(db, seg.id)
   }
 }

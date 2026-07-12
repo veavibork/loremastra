@@ -5,83 +5,91 @@
  *
  *   npx tsx scripts/reset-memory-queue.ts <storyId> [userId]
  */
-import { getGlobalDb } from "../src/db/global-db.js";
-import { getStoryDb } from "../src/db/story-db.js";
-import { getStory } from "../src/db/story-store.js";
-import { getBookByType } from "../src/db/book-store.js";
-import { listChronologicalPages, setMemoryContentStamp } from "../src/db/page-store.js";
-import { clearTextExtract } from "../src/db/text-store.js";
-import { deleteStoryToDateSegment, listStoryToDateSegments } from "../src/db/story-to-date-store.js";
-import { enqueueMemoryPipeline } from "../src/services/memory-manifest.js";
-import { nowIso } from "../src/db/time.js";
-import { trackStoryDb } from "../src/queue/pipeline-runner.js";
+import { getGlobalDb } from '../src/db/global-db.js'
+import { getStoryDb } from '../src/db/story-db.js'
+import { getStory } from '../src/db/story-store.js'
+import { getBookByType } from '../src/db/book-store.js'
+import { listChronologicalPages, setMemoryContentStamp } from '../src/db/page-store.js'
+import { clearTextExtract } from '../src/db/text-store.js'
+import { deleteStoryToDateSegment, listStoryToDateSegments } from '../src/db/story-to-date-store.js'
+import { enqueueMemoryPipeline } from '../src/services/memory-manifest.js'
+import { nowIso } from '../src/db/time.js'
+import { trackStoryDb } from '../src/queue/pipeline-runner.js'
 
-const DEFAULT_USER_ID = "019f1e21-c547-75b2-8bc1-47b4b6cfdbe6";
+const DEFAULT_USER_ID = '019f1e21-c547-75b2-8bc1-47b4b6cfdbe6'
 
 function resetMemoryQueue(
   db: ReturnType<typeof getStoryDb>,
   userId: string,
   logbookId: string,
-  storyId: string
-): { clearedExtracts: number; deletedSegments: number; cancelledJobs: number; pendingJobs: number } {
+  storyId: string,
+): {
+  clearedExtracts: number
+  deletedSegments: number
+  cancelledJobs: number
+  pendingJobs: number
+} {
   const cancelResult = db
     .prepare(
       `UPDATE jobs SET status = 'cancelled', finished_at = ?, error = COALESCE(error, 'reset by reset-memory-queue')
-       WHERE status IN ('pending', 'running') AND job_type IN ('compress', 'story-to-date')`
+       WHERE status IN ('pending', 'running') AND job_type IN ('compress', 'story-to-date')`,
     )
-    .run(nowIso());
+    .run(nowIso())
 
-  const segments = listStoryToDateSegments(db, logbookId, { includeHidden: true, includeBroken: true });
+  const segments = listStoryToDateSegments(db, logbookId, {
+    includeHidden: true,
+    includeBroken: true,
+  })
   for (const segment of segments) {
-    deleteStoryToDateSegment(db, segment.id);
+    deleteStoryToDateSegment(db, segment.id)
   }
 
-  let clearedExtracts = 0;
+  let clearedExtracts = 0
   for (const page of listChronologicalPages(db, logbookId)) {
-    if (page.hidden || !page.selectedTextId) continue;
-    setMemoryContentStamp(db, page.id, null);
-    clearTextExtract(db, page.selectedTextId);
-    clearedExtracts++;
+    if (page.hidden || !page.selectedTextId) continue
+    setMemoryContentStamp(db, page.id, null)
+    clearTextExtract(db, page.selectedTextId)
+    clearedExtracts++
   }
 
-  const pendingJobs = enqueueMemoryPipeline(db, userId, logbookId, storyId);
+  const pendingJobs = enqueueMemoryPipeline(db, userId, logbookId, storyId)
 
   return {
     clearedExtracts,
     deletedSegments: segments.length,
     cancelledJobs: cancelResult.changes,
     pendingJobs,
-  };
+  }
 }
 
 function main(): void {
-  const storyId = process.argv[2];
-  const userId = process.argv[3] ?? DEFAULT_USER_ID;
+  const storyId = process.argv[2]
+  const userId = process.argv[3] ?? DEFAULT_USER_ID
 
   if (!storyId) {
-    console.error("Usage: npx tsx scripts/reset-memory-queue.ts <storyId> [userId]");
-    process.exit(1);
+    console.error('Usage: npx tsx scripts/reset-memory-queue.ts <storyId> [userId]')
+    process.exit(1)
   }
 
-  const globalDb = getGlobalDb();
-  const story = getStory(globalDb, storyId);
+  const globalDb = getGlobalDb()
+  const story = getStory(globalDb, storyId)
   if (!story) {
-    console.error(`Story not found: ${storyId}`);
-    process.exit(1);
+    console.error(`Story not found: ${storyId}`)
+    process.exit(1)
   }
 
-  const db = getStoryDb(storyId);
-  const logbook = getBookByType(db, "logbook");
+  const db = getStoryDb(storyId)
+  const logbook = getBookByType(db, 'logbook')
   if (!logbook) {
-    console.error("Story has no logbook");
-    process.exit(1);
+    console.error('Story has no logbook')
+    process.exit(1)
   }
 
-  trackStoryDb(storyId, db);
+  trackStoryDb(storyId, db)
 
-  const result = resetMemoryQueue(db, userId, logbook.id, storyId);
-  console.log(JSON.stringify({ storyId, logbookId: logbook.id, ...result }, null, 2));
-  console.log("\nMemory queue reset — story-to-date jobs enqueued. Pipeline will regen segments.");
+  const result = resetMemoryQueue(db, userId, logbook.id, storyId)
+  console.log(JSON.stringify({ storyId, logbookId: logbook.id, ...result }, null, 2))
+  console.log('\nMemory queue reset — story-to-date jobs enqueued. Pipeline will regen segments.')
 }
 
-main();
+main()

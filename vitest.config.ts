@@ -2,9 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // Project is ESM (NodeNext), no JSX transforms needed for backend tests.
     globals: true,
-    // in-memory SQLite means DB tests are isolated and deterministic.
-    // No global setup file needed.
+    env: {
+      APP_MASTER_KEY: "179e04c176207244d94c5c82cbf059afa80cc042e076d206758ab85a72d226b9",
+    },
   },
 });

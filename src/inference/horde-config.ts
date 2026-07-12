@@ -4,7 +4,7 @@
  */
 try {
   // Idempotent with config.ts's/featherless-config.ts's own calls.
-  process.loadEnvFile();
+  process.loadEnvFile()
 } catch {
   // no .env present; rely on process.env as-is
 }
@@ -12,6 +12,6 @@ try {
 // Anonymous key is a valid, documented default for AI Horde (shared, kudos-deprioritized, but
 // functional) — used in horde.ts whenever a user hasn't set their own key. Unlike Featherless,
 // there's no "unset" sentinel to gate calls on here.
-export const HORDE_ANONYMOUS_KEY = "0000000000";
-export const HORDE_BASE_URL = "https://aihorde.net/api";
-export const HORDE_USER_AGENT = "loremaster/0.1 (+https://github.com/local-dev)";
+export const HORDE_ANONYMOUS_KEY = '0000000000'
+export const HORDE_BASE_URL = 'https://aihorde.net/api'
+export const HORDE_USER_AGENT = 'loremaster/0.1 (+https://github.com/local-dev)'

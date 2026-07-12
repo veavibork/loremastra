@@ -1,18 +1,27 @@
-import type Database from "better-sqlite3";
-import { getGlobalDb } from "../db/global-db.js";
-import { getAgentConfigOverride, type AgentRole } from "../db/agent-config-store.js";
-import { listModelConfigs, createModelConfig, type ModelConfigRow } from "../db/model-config-store.js";
-import { DEFAULT_AUTHOR_PROFILE, DEFAULT_WORKER_PROFILE, DEFAULT_EDITOR_PROFILE, type AgentProfile } from "../config.js";
+import type Database from 'better-sqlite3'
+import { getGlobalDb } from '../db/global-db.js'
+import { getAgentConfigOverride, type AgentRole } from '../db/agent-config-store.js'
+import {
+  listModelConfigs,
+  createModelConfig,
+  type ModelConfigRow,
+} from '../db/model-config-store.js'
+import {
+  DEFAULT_AUTHOR_PROFILE,
+  DEFAULT_WORKER_PROFILE,
+  DEFAULT_EDITOR_PROFILE,
+  type AgentProfile,
+} from '../config.js'
 
-export type { AgentRole } from "../db/model-config-store.js";
+export type { AgentRole } from '../db/model-config-store.js'
 
 const DEFAULTS: Record<AgentRole, AgentProfile> = {
   author: DEFAULT_AUTHOR_PROFILE,
   worker: DEFAULT_WORKER_PROFILE,
   editor: DEFAULT_EDITOR_PROFILE,
-};
+}
 
-const ROLE_ORDER: AgentRole[] = ["author", "worker", "editor"];
+const ROLE_ORDER: AgentRole[] = ['author', 'worker', 'editor']
 
 /**
  * One-time migration from the old one-row-per-role `agent_configs` table to the new flat,
@@ -25,38 +34,42 @@ const ROLE_ORDER: AgentRole[] = ["author", "worker", "editor"];
  * when the same model string repeats across rows.
  */
 function ensureModelConfigsSeeded(db: Database.Database, userId: string): void {
-  if (listModelConfigs(db, userId).length > 0) return;
+  if (listModelConfigs(db, userId).length > 0) return
 
   for (const role of ROLE_ORDER) {
-    const profile = getAgentConfigOverride(db, role) ?? DEFAULTS[role];
-    const roleFlags = { useAuthor: role === "author", useEditor: role === "editor", useWorker: role === "worker" };
+    const profile = getAgentConfigOverride(db, role) ?? DEFAULTS[role]
+    const roleFlags = {
+      useAuthor: role === 'author',
+      useEditor: role === 'editor',
+      useWorker: role === 'worker',
+    }
     createModelConfig(db, userId, {
-      provider: "featherless",
+      provider: 'featherless',
       model: profile.model,
       temperature: profile.temperature,
       responseLimit: profile.responseLimit,
       contextLimit: profile.contextLimit,
       active: true,
       ...roleFlags,
-    });
+    })
     for (const fallbackModel of profile.fallbackModels ?? []) {
       createModelConfig(db, userId, {
-        provider: "featherless",
+        provider: 'featherless',
         model: fallbackModel,
         temperature: profile.temperature,
         responseLimit: profile.responseLimit,
         contextLimit: profile.contextLimit,
         active: true,
         ...roleFlags,
-      });
+      })
     }
   }
 }
 
 function roleFlag(row: ModelConfigRow, role: AgentRole): boolean {
-  if (role === "author") return row.useAuthor;
-  if (role === "editor") return row.useEditor;
-  return row.useWorker;
+  if (role === 'author') return row.useAuthor
+  if (role === 'editor') return row.useEditor
+  return row.useWorker
 }
 
 /**
@@ -67,13 +80,13 @@ function roleFlag(row: ModelConfigRow, role: AgentRole): boolean {
  * behavior comes entirely from the ordered row list now, not this constant.
  */
 export function getAgentProfile(userId: string, role: AgentRole): AgentProfile {
-  const db = getGlobalDb();
-  ensureModelConfigsSeeded(db, userId);
+  const db = getGlobalDb()
+  ensureModelConfigsSeeded(db, userId)
 
-  const rows = listModelConfigs(db, userId).filter((r) => r.active && roleFlag(r, role));
-  if (!rows.length) return DEFAULTS[role];
+  const rows = listModelConfigs(db, userId).filter((r) => r.active && roleFlag(r, role))
+  if (!rows.length) return DEFAULTS[role]
 
-  const [primary, ...fallbacks] = rows;
+  const [primary, ...fallbacks] = rows
   return {
     provider: primary.provider,
     model: primary.model,
@@ -90,5 +103,5 @@ export function getAgentProfile(userId: string, role: AgentRole): AgentProfile {
     fallbackModels: fallbacks.map((f) => f.model),
     configId: primary.id,
     fallbackConfigIds: fallbacks.map((f) => f.id),
-  };
+  }
 }

@@ -1,17 +1,24 @@
-import { existsSync, readFileSync, writeFileSync, appendFileSync, unlinkSync, mkdirSync } from "node:fs";
-import { execSync } from "node:child_process";
-import path from "node:path";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  unlinkSync,
+  mkdirSync,
+} from 'node:fs'
+import { execSync } from 'node:child_process'
+import path from 'node:path'
 
-const DATA_DIR = path.resolve(process.cwd(), "data");
-const PID_FILE = path.join(DATA_DIR, "mcp-dev-server.pid");
-const STALE_LOG = path.join(DATA_DIR, "mcp-dev-server-stale.log");
+const DATA_DIR = path.resolve(process.cwd(), 'data')
+const PID_FILE = path.join(DATA_DIR, 'mcp-dev-server.pid')
+const STALE_LOG = path.join(DATA_DIR, 'mcp-dev-server-stale.log')
 
 function isAlive(pid: number): boolean {
   try {
-    process.kill(pid, 0);
-    return true;
+    process.kill(pid, 0)
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -21,10 +28,10 @@ function describeProcess(pid: number): string {
   try {
     return execSync(
       `powershell -NoProfile -Command "Get-Process -Id ${pid} -ErrorAction Stop | Select-Object Id, ProcessName, StartTime, Path | Format-List | Out-String"`,
-      { encoding: "utf8" }
-    ).trim();
+      { encoding: 'utf8' },
+    ).trim()
   } catch {
-    return "(process details unavailable — it may have exited between the liveness check and this lookup)";
+    return '(process details unavailable — it may have exited between the liveness check and this lookup)'
   }
 }
 
@@ -39,33 +46,33 @@ function describeProcess(pid: number): string {
  * the PID file for this process and clean it up on a normal exit.
  */
 export function ensureSingleInstance(): void {
-  mkdirSync(DATA_DIR, { recursive: true });
+  mkdirSync(DATA_DIR, { recursive: true })
 
   if (existsSync(PID_FILE)) {
-    const prevPid = Number(readFileSync(PID_FILE, "utf8").trim());
+    const prevPid = Number(readFileSync(PID_FILE, 'utf8').trim())
     if (Number.isFinite(prevPid) && prevPid !== process.pid && isAlive(prevPid)) {
-      const info = describeProcess(prevPid);
-      const entry = `[${new Date().toISOString()}] Killing stale loremaster-dev MCP server PID ${prevPid} before starting PID ${process.pid}\n${info}\n\n`;
-      appendFileSync(STALE_LOG, entry);
-      console.error(entry.trim());
+      const info = describeProcess(prevPid)
+      const entry = `[${new Date().toISOString()}] Killing stale loremaster-dev MCP server PID ${prevPid} before starting PID ${process.pid}\n${info}\n\n`
+      appendFileSync(STALE_LOG, entry)
+      console.error(entry.trim())
       try {
-        execSync(`taskkill /PID ${prevPid} /F`, { stdio: "ignore" });
+        execSync(`taskkill /PID ${prevPid} /F`, { stdio: 'ignore' })
       } catch {
         // already gone
       }
     }
   }
 
-  writeFileSync(PID_FILE, String(process.pid));
+  writeFileSync(PID_FILE, String(process.pid))
 
   const cleanup = () => {
     try {
-      if (readFileSync(PID_FILE, "utf8").trim() === String(process.pid)) unlinkSync(PID_FILE);
+      if (readFileSync(PID_FILE, 'utf8').trim() === String(process.pid)) unlinkSync(PID_FILE)
     } catch {
       // already cleaned up, or never got this far
     }
-  };
-  process.on("exit", cleanup);
-  process.on("SIGINT", () => process.exit(0));
-  process.on("SIGTERM", () => process.exit(0));
+  }
+  process.on('exit', cleanup)
+  process.on('SIGINT', () => process.exit(0))
+  process.on('SIGTERM', () => process.exit(0))
 }

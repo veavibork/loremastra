@@ -13,63 +13,67 @@
  * Keyed by userId — each user has their own Featherless account/key now, so each has an
  * independent concurrency limit; one user's usage must never count against another's.
  */
-import { getConcurrencySnapshot, isFeedHealthy } from "./concurrency-feed.js";
+import { getConcurrencySnapshot, isFeedHealthy } from './concurrency-feed.js'
 
-const FALLBACK_MAX_SLOTS = 4;
+const FALLBACK_MAX_SLOTS = 4
 
-const liveReservations = new Map<string, Map<string, { cost: number; reservedAt: number }>>();
-const fallbackReservations = new Map<string, Map<string, number>>();
+const liveReservations = new Map<string, Map<string, { cost: number; reservedAt: number }>>()
+const fallbackReservations = new Map<string, Map<string, number>>()
 
 function liveFor(userId: string): Map<string, { cost: number; reservedAt: number }> {
-  let map = liveReservations.get(userId);
+  let map = liveReservations.get(userId)
   if (!map) {
-    map = new Map();
-    liveReservations.set(userId, map);
+    map = new Map()
+    liveReservations.set(userId, map)
   }
-  return map;
+  return map
 }
 
 function fallbackFor(userId: string): Map<string, number> {
-  let map = fallbackReservations.get(userId);
+  let map = fallbackReservations.get(userId)
   if (!map) {
-    map = new Map();
-    fallbackReservations.set(userId, map);
+    map = new Map()
+    fallbackReservations.set(userId, map)
   }
-  return map;
+  return map
 }
 
 function sum(costs: Iterable<number>): number {
-  let total = 0;
-  for (const cost of costs) total += cost;
-  return total;
+  let total = 0
+  for (const cost of costs) total += cost
+  return total
 }
 
 export function tryAcquireSlot(userId: string, jobId: string, cost: number): boolean {
   if (isFeedHealthy(userId)) {
-    const snap = getConcurrencySnapshot(userId)!;
-    const reserved = sum([...liveFor(userId).values()].map((r) => r.cost));
-    const remaining = snap.limit - snap.usedCost - reserved;
-    if (remaining < cost) return false;
-    liveFor(userId).set(jobId, { cost, reservedAt: Date.now() });
-    return true;
+    const snap = getConcurrencySnapshot(userId)!
+    const reserved = sum([...liveFor(userId).values()].map((r) => r.cost))
+    const remaining = snap.limit - snap.usedCost - reserved
+    if (remaining < cost) return false
+    liveFor(userId).set(jobId, { cost, reservedAt: Date.now() })
+    return true
   }
 
-  const inUse = sum(fallbackFor(userId).values());
-  if (inUse + cost > FALLBACK_MAX_SLOTS) return false;
-  fallbackFor(userId).set(jobId, cost);
-  return true;
+  const inUse = sum(fallbackFor(userId).values())
+  if (inUse + cost > FALLBACK_MAX_SLOTS) return false
+  fallbackFor(userId).set(jobId, cost)
+  return true
 }
 
 export function releaseSlot(userId: string, jobId: string): void {
-  liveFor(userId).delete(jobId);
-  fallbackFor(userId).delete(jobId);
+  liveFor(userId).delete(jobId)
+  fallbackFor(userId).delete(jobId)
 }
 
-export function getQueueStatus(userId: string): { mode: "live" | "fallback"; used: number; max: number } {
+export function getQueueStatus(userId: string): {
+  mode: 'live' | 'fallback'
+  used: number
+  max: number
+} {
   if (isFeedHealthy(userId)) {
-    const snap = getConcurrencySnapshot(userId)!;
-    const reserved = sum([...liveFor(userId).values()].map((r) => r.cost));
-    return { mode: "live", used: snap.usedCost + reserved, max: snap.limit };
+    const snap = getConcurrencySnapshot(userId)!
+    const reserved = sum([...liveFor(userId).values()].map((r) => r.cost))
+    return { mode: 'live', used: snap.usedCost + reserved, max: snap.limit }
   }
-  return { mode: "fallback", used: sum(fallbackFor(userId).values()), max: FALLBACK_MAX_SLOTS };
+  return { mode: 'fallback', used: sum(fallbackFor(userId).values()), max: FALLBACK_MAX_SLOTS }
 }

@@ -7,11 +7,11 @@
  */
 try {
   // Idempotent with config.ts's own call — this module must not depend on import order to see .env.
-  process.loadEnvFile();
+  process.loadEnvFile()
 } catch {
   // no .env present; rely on process.env as-is
 }
 
-export const FEATHERLESS_BASE_URL = "https://api.featherless.ai/v1";
+export const FEATHERLESS_BASE_URL = 'https://api.featherless.ai/v1'
 // Node's default fetch User-Agent gets silently blocked by Featherless's Cloudflare WAF (returns a fake 404 "Gone" instead of a 403) — every request needs a real one.
-export const FEATHERLESS_USER_AGENT = "loremaster/0.1 (+https://github.com/local-dev)";
+export const FEATHERLESS_USER_AGENT = 'loremaster/0.1 (+https://github.com/local-dev)'

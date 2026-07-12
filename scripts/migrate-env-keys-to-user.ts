@@ -6,38 +6,40 @@
  *
  * Usage: npx tsx scripts/migrate-env-keys-to-user.ts <userId>
  */
-import { getGlobalDb } from "../src/db/global-db.js";
-import { getUserById, setFeatherlessKey, setHordeKey } from "../src/db/user-store.js";
+import { getGlobalDb } from '../src/db/global-db.js'
+import { getUserById, setFeatherlessKey, setHordeKey } from '../src/db/user-store.js'
 
 function main() {
-  const userId = process.argv[2];
+  const userId = process.argv[2]
   if (!userId) {
-    console.error("usage: npx tsx scripts/migrate-env-keys-to-user.ts <userId>");
-    process.exit(1);
+    console.error('usage: npx tsx scripts/migrate-env-keys-to-user.ts <userId>')
+    process.exit(1)
   }
 
-  const db = getGlobalDb();
-  const user = getUserById(db, userId);
+  const db = getGlobalDb()
+  const user = getUserById(db, userId)
   if (!user) {
-    console.error(`no user found with id ${userId}`);
-    process.exit(1);
+    console.error(`no user found with id ${userId}`)
+    process.exit(1)
   }
 
-  const featherlessKey = process.env.FEATHERLESS_API_KEY;
-  const hordeKey = process.env.HORDE_API_KEY;
+  const featherlessKey = process.env.FEATHERLESS_API_KEY
+  const hordeKey = process.env.HORDE_API_KEY
   if (!featherlessKey && !hordeKey) {
-    console.error("neither FEATHERLESS_API_KEY nor HORDE_API_KEY is set in .env — nothing to migrate");
-    process.exit(1);
+    console.error(
+      'neither FEATHERLESS_API_KEY nor HORDE_API_KEY is set in .env — nothing to migrate',
+    )
+    process.exit(1)
   }
 
   if (featherlessKey) {
-    setFeatherlessKey(db, userId, featherlessKey);
-    console.log(`migrated Featherless key onto ${user.displayName} (${userId})`);
+    setFeatherlessKey(db, userId, featherlessKey)
+    console.log(`migrated Featherless key onto ${user.displayName} (${userId})`)
   }
   if (hordeKey) {
-    setHordeKey(db, userId, hordeKey);
-    console.log(`migrated Horde key onto ${user.displayName} (${userId})`);
+    setHordeKey(db, userId, hordeKey)
+    console.log(`migrated Horde key onto ${user.displayName} (${userId})`)
   }
 }
 
-main();
+main()

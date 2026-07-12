@@ -1,32 +1,32 @@
-import type Database from "better-sqlite3";
-import { newId } from "../uuid.js";
-import { nowIso } from "./time.js";
+import type Database from 'better-sqlite3'
+import { newId } from '../uuid.js'
+import { nowIso } from './time.js'
 
 export interface PageRow {
-  id: string;
-  createdAt: string;
-  bookId: string;
-  prevPageId: string | null;
-  selectedForkPageId: string | null;
-  selectedTextId: string | null;
-  selectTime: string | null;
-  hidden: boolean;
-  broken: boolean;
+  id: string
+  createdAt: string
+  bookId: string
+  prevPageId: string | null
+  selectedForkPageId: string | null
+  selectedTextId: string | null
+  selectTime: string | null
+  hidden: boolean
+  broken: boolean
   /** SHA-256 of normalized canonical gen_package — gen_extract is valid only when this matches. */
-  memoryContentStamp: string | null;
+  memoryContentStamp: string | null
 }
 
 interface RawPageRow {
-  id: string;
-  created_at: string;
-  book_id: string;
-  prev_page_id: string | null;
-  selected_fork_page_id: string | null;
-  selected_text_id: string | null;
-  select_time: string | null;
-  hidden: number;
-  broken: number;
-  memory_content_stamp: string | null;
+  id: string
+  created_at: string
+  book_id: string
+  prev_page_id: string | null
+  selected_fork_page_id: string | null
+  selected_text_id: string | null
+  select_time: string | null
+  hidden: number
+  broken: number
+  memory_content_stamp: string | null
 }
 
 function mapPageRow(row: RawPageRow): PageRow {
@@ -41,7 +41,7 @@ function mapPageRow(row: RawPageRow): PageRow {
     hidden: !!row.hidden,
     broken: !!row.broken,
     memoryContentStamp: row.memory_content_stamp ?? null,
-  };
+  }
 }
 
 /**
@@ -57,29 +57,29 @@ function mapPageRow(row: RawPageRow): PageRow {
  */
 export function createPage(
   db: Database.Database,
-  input: { bookId: string; prevPageId?: string | null }
+  input: { bookId: string; prevPageId?: string | null },
 ): PageRow {
-  const id = newId();
-  const prevPageId = input.prevPageId ?? null;
+  const id = newId()
+  const prevPageId = input.prevPageId ?? null
   db.prepare(
     `INSERT INTO page (id, created_at, book_id, prev_page_id, selected_fork_page_id, selected_text_id, select_time, hidden, broken)
-     VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0)`
-  ).run(id, nowIso(), input.bookId, prevPageId);
-  if (prevPageId) setSelectedFork(db, prevPageId, id);
-  return getPage(db, id)!;
+     VALUES (?, ?, ?, ?, NULL, NULL, NULL, 0, 0)`,
+  ).run(id, nowIso(), input.bookId, prevPageId)
+  if (prevPageId) setSelectedFork(db, prevPageId, id)
+  return getPage(db, id)!
 }
 
 export function getPage(db: Database.Database, id: string): PageRow | null {
-  const row = db.prepare(`SELECT * FROM page WHERE id = ?`).get(id) as RawPageRow | undefined;
-  return row ? mapPageRow(row) : null;
+  const row = db.prepare(`SELECT * FROM page WHERE id = ?`).get(id) as RawPageRow | undefined
+  return row ? mapPageRow(row) : null
 }
 
 /** The one page in a book with no prev_page_id — the start of its chain. */
 export function findRootPageId(db: Database.Database, bookId: string): string | null {
   const row = db
     .prepare(`SELECT id FROM page WHERE book_id = ? AND prev_page_id IS NULL LIMIT 1`)
-    .get(bookId) as { id: string } | undefined;
-  return row?.id ?? null;
+    .get(bookId) as { id: string } | undefined
+  return row?.id ?? null
 }
 
 /**
@@ -91,26 +91,26 @@ export function findRootPageId(db: Database.Database, bookId: string): string | 
  * branch exists).
  */
 export function findHeadPageId(db: Database.Database, bookId: string): string | null {
-  let current = findRootPageId(db, bookId);
+  let current = findRootPageId(db, bookId)
   while (current) {
-    const page = getPage(db, current);
-    if (!page?.selectedForkPageId) return current;
-    current = page.selectedForkPageId;
+    const page = getPage(db, current)
+    if (!page?.selectedForkPageId) return current
+    current = page.selectedForkPageId
   }
-  return null;
+  return null
 }
 
 /** Every page on the currently active path, oldest first — see findHeadPageId for what "active" means. */
 export function listChronologicalPages(db: Database.Database, bookId: string): PageRow[] {
-  const pages: PageRow[] = [];
-  let currentId: string | null = findRootPageId(db, bookId);
+  const pages: PageRow[] = []
+  let currentId: string | null = findRootPageId(db, bookId)
   while (currentId) {
-    const page = getPage(db, currentId);
-    if (!page) break;
-    pages.push(page);
-    currentId = page.selectedForkPageId;
+    const page = getPage(db, currentId)
+    if (!page) break
+    pages.push(page)
+    currentId = page.selectedForkPageId
   }
-  return pages;
+  return pages
 }
 
 /**
@@ -121,50 +121,54 @@ export function listChronologicalPages(db: Database.Database, bookId: string): P
 export function listPagesForBook(db: Database.Database, bookId: string): PageRow[] {
   const rows = db
     .prepare(`SELECT * FROM page WHERE book_id = ? ORDER BY created_at ASC`)
-    .all(bookId) as RawPageRow[];
-  return rows.map(mapPageRow);
+    .all(bookId) as RawPageRow[]
+  return rows.map(mapPageRow)
 }
 
 export function setSelectedText(db: Database.Database, pageId: string, textId: string): void {
   db.prepare(`UPDATE page SET selected_text_id = ?, select_time = ? WHERE id = ?`).run(
     textId,
     nowIso(),
-    pageId
-  );
+    pageId,
+  )
 }
 
 export function setSelectedFork(
   db: Database.Database,
   pageId: string,
-  forkPageId: string | null
+  forkPageId: string | null,
 ): void {
   db.prepare(`UPDATE page SET selected_fork_page_id = ?, select_time = ? WHERE id = ?`).run(
     forkPageId,
     nowIso(),
-    pageId
-  );
+    pageId,
+  )
 }
 
 /** Every page from the given one back to the root, via prev_page_id — always unambiguous regardless of forks, since each page has exactly one prevPageId. Used to validate that a jump/rewind target actually lies in the current head's history. */
 export function collectAncestorIds(db: Database.Database, pageId: string): Set<string> {
-  const ids = new Set<string>();
-  let current: string | null = pageId;
+  const ids = new Set<string>()
+  let current: string | null = pageId
   while (current) {
-    ids.add(current);
-    const page: PageRow | null = getPage(db, current);
-    current = page?.prevPageId ?? null;
+    ids.add(current)
+    const page: PageRow | null = getPage(db, current)
+    current = page?.prevPageId ?? null
   }
-  return ids;
+  return ids
 }
 
 export function setPageHidden(db: Database.Database, id: string, hidden: boolean): void {
-  db.prepare(`UPDATE page SET hidden = ? WHERE id = ?`).run(hidden ? 1 : 0, id);
+  db.prepare(`UPDATE page SET hidden = ? WHERE id = ?`).run(hidden ? 1 : 0, id)
 }
 
 export function setPageBroken(db: Database.Database, id: string, broken: boolean): void {
-  db.prepare(`UPDATE page SET broken = ? WHERE id = ?`).run(broken ? 1 : 0, id);
+  db.prepare(`UPDATE page SET broken = ? WHERE id = ?`).run(broken ? 1 : 0, id)
 }
 
-export function setMemoryContentStamp(db: Database.Database, pageId: string, stamp: string | null): void {
-  db.prepare(`UPDATE page SET memory_content_stamp = ? WHERE id = ?`).run(stamp, pageId);
+export function setMemoryContentStamp(
+  db: Database.Database,
+  pageId: string,
+  stamp: string | null,
+): void {
+  db.prepare(`UPDATE page SET memory_content_stamp = ? WHERE id = ?`).run(stamp, pageId)
 }

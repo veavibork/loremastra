@@ -5,97 +5,104 @@
  * `reasoning_content` and no close tag (see scripts/probe-deepseek-stream.ts, 2026-07-04).
  */
 
-const OPEN_TAGS = ["<think>"];
-const CLOSE_TAGS = ["</think>"];
+const OPEN_TAGS = ['<think>']
+const CLOSE_TAGS = ['</think>']
 
-function findFirstTag(text: string, tags: readonly string[]): { index: number; tag: string } | null {
-  let best: { index: number; tag: string } | null = null;
+function findFirstTag(
+  text: string,
+  tags: readonly string[],
+): { index: number; tag: string } | null {
+  let best: { index: number; tag: string } | null = null
   for (const tag of tags) {
-    const index = text.indexOf(tag);
+    const index = text.indexOf(tag)
     if (index !== -1 && (best === null || index < best.index)) {
-      best = { index, tag };
+      best = { index, tag }
     }
   }
-  return best;
+  return best
 }
 
 /** Longest suffix of `text` that is a proper prefix of any tag (incomplete tag at chunk boundary). */
 function partialTagHold(text: string, tags: readonly string[]): number {
-  let hold = 0;
+  let hold = 0
   for (const tag of tags) {
     for (let len = 1; len < tag.length; len++) {
       if (tag.startsWith(text.slice(-len))) {
-        hold = Math.max(hold, len);
+        hold = Math.max(hold, len)
       }
     }
   }
-  return hold;
+  return hold
 }
 
 export interface ReasoningStreamSplitterOptions {
   /** Only set true if the stream has already opened a thinking block — never infer from request prefill. */
-  startsInThinking?: boolean;
+  startsInThinking?: boolean
 }
 
 export class ReasoningStreamSplitter {
-  private mode: "thinking" | "answer";
-  private carry = "";
+  private mode: 'thinking' | 'answer'
+  private carry = ''
 
   constructor(options?: ReasoningStreamSplitterOptions) {
-    this.mode = options?.startsInThinking ? "thinking" : "answer";
+    this.mode = options?.startsInThinking ? 'thinking' : 'answer'
   }
 
-  push(chunk: string, emitThinking: (text: string) => void, emitAnswer: (text: string) => void): void {
-    if (!chunk) return;
-    this.carry += chunk;
-    this.drain(emitThinking, emitAnswer);
+  push(
+    chunk: string,
+    emitThinking: (text: string) => void,
+    emitAnswer: (text: string) => void,
+  ): void {
+    if (!chunk) return
+    this.carry += chunk
+    this.drain(emitThinking, emitAnswer)
   }
 
   flush(emitThinking: (text: string) => void, emitAnswer: (text: string) => void): void {
-    if (!this.carry) return;
-    if (this.mode === "thinking") emitThinking(this.carry);
-    else emitAnswer(this.carry);
-    this.carry = "";
+    if (!this.carry) return
+    if (this.mode === 'thinking') emitThinking(this.carry)
+    else emitAnswer(this.carry)
+    this.carry = ''
   }
 
   private drain(emitThinking: (text: string) => void, emitAnswer: (text: string) => void): void {
     while (this.carry.length > 0) {
-      if (this.mode === "thinking") {
-        const close = findFirstTag(this.carry, CLOSE_TAGS);
+      if (this.mode === 'thinking') {
+        const close = findFirstTag(this.carry, CLOSE_TAGS)
         if (close) {
-          const before = this.carry.slice(0, close.index);
-          if (before) emitThinking(before);
-          this.carry = this.carry.slice(close.index + close.tag.length);
-          this.mode = "answer";
-          continue;
+          const before = this.carry.slice(0, close.index)
+          if (before) emitThinking(before)
+          this.carry = this.carry.slice(close.index + close.tag.length)
+          this.mode = 'answer'
+          continue
         }
-        const hold = partialTagHold(this.carry, CLOSE_TAGS);
-        const emitLen = this.carry.length - hold;
-        if (emitLen <= 0) break;
-        emitThinking(this.carry.slice(0, emitLen));
-        this.carry = this.carry.slice(emitLen);
-        continue;
+        const hold = partialTagHold(this.carry, CLOSE_TAGS)
+        const emitLen = this.carry.length - hold
+        if (emitLen <= 0) break
+        emitThinking(this.carry.slice(0, emitLen))
+        this.carry = this.carry.slice(emitLen)
+        continue
       }
 
-      const open = findFirstTag(this.carry, OPEN_TAGS);
+      const open = findFirstTag(this.carry, OPEN_TAGS)
       if (open) {
-        const before = this.carry.slice(0, open.index);
-        if (before) emitAnswer(before);
-        this.carry = this.carry.slice(open.index + open.tag.length);
-        this.mode = "thinking";
-        continue;
+        const before = this.carry.slice(0, open.index)
+        if (before) emitAnswer(before)
+        this.carry = this.carry.slice(open.index + open.tag.length)
+        this.mode = 'thinking'
+        continue
       }
-      const hold = partialTagHold(this.carry, OPEN_TAGS);
-      const emitLen = this.carry.length - hold;
-      if (emitLen <= 0) break;
-      emitAnswer(this.carry.slice(0, emitLen));
-      this.carry = this.carry.slice(emitLen);
+      const hold = partialTagHold(this.carry, OPEN_TAGS)
+      const emitLen = this.carry.length - hold
+      if (emitLen <= 0) break
+      emitAnswer(this.carry.slice(0, emitLen))
+      this.carry = this.carry.slice(emitLen)
     }
   }
 }
 
 /** Conservative TTFT guess for hosted prefill — intentionally high so early tokens feel like a win. */
 export function estimatePrefillSeconds(inputTokens: number): number {
-  if (inputTokens <= 0) return 30;
-  return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)));
+  if (inputTokens <= 0) return 30
+  return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)))
 }

@@ -127,4 +127,4 @@ CREATE TABLE IF NOT EXISTS client_errors (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_client_errors_created ON client_errors(created_at);
-`;
+`
