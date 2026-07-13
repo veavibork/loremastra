@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 import { getBookByType } from './book-store.js'
 import { findHeadPageId } from './page-store.js'
 import { setSelectedText } from './page-store.js'

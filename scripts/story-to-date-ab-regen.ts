@@ -44,7 +44,7 @@ import {
   MIN_VERBOSE_IC_POSTS,
   type StoryBlockKind,
   type StoryToDateSegment,
-} from '../src/services/story-to-date-corpus.js'
+} from '../src/services/story-to-date-engine.js'
 import { buildChainPostIndex } from '../src/services/post-index.js'
 
 const INPUT_CUTOFF = 0.8

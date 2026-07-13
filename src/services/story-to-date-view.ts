@@ -6,11 +6,11 @@ import {
   type JobType,
 } from '../db/job-store.js'
 import { listStoryToDateSegments } from '../db/story-to-date-store.js'
-import { estimateTokens, countIcPosts, sanitizeStoryBlockContent } from './story-to-date-corpus.js'
+import { estimateTokens, countIcPosts, sanitizeStoryBlockContent } from './story-to-date-engine.js'
 
 export type StoryToDateViewStatus = 'ready' | 'pending' | 'broken'
 
-const MEMORY_JOB_TYPES = new Set<JobType>(['story-to-date', 'story-to-date-fold', 'archive-name'])
+const MEMORY_JOB_TYPES = new Set<JobType>(['story-to-date', 'story-to-date-fold', 'segment-name'])
 
 export interface ActiveMemoryJobView {
   id: string
@@ -73,7 +73,7 @@ export function buildStoryToDateView(db: Database.Database, logbookId: string): 
       tokenCount: content ? estimateTokens(content) : null,
       jobActive: hasActiveJobForStoryToDate(db, s.id, 'story-to-date'),
       foldJobActive: hasActiveJobForStoryToDate(db, s.id, 'story-to-date-fold'),
-      nameJobActive: hasActiveJobForStoryToDate(db, s.id, 'archive-name'),
+      nameJobActive: hasActiveJobForStoryToDate(db, s.id, 'segment-name'),
     }
   })
 

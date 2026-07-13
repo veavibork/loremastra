@@ -25,14 +25,14 @@ import { listWorldbookEntries } from '../db/worldbook-store.js'
 import { listRecentJobs } from '../db/job-store.js'
 import { getQueueStatus } from '../queue/slots.js'
 import { buildLogView } from '../services/log-view.js'
-import { readRecentOutboundRequests } from '../inference/outbound-log.js'
+import { readRecentOutboundRequests } from '../inference/outbound-telemetry.js'
 import { ensureSingleInstance } from './single-instance.js'
 import {
   buildMemoryManifest,
   buildMemorySummary,
   enqueueMemoryPipeline,
   runMemoryBackfill,
-} from '../services/memory-manifest.js'
+} from '../services/context-manifest.js'
 import { findHeadPageId } from '../db/page-store.js'
 import { assembleAuthorPrompt } from '../services/history.js'
 

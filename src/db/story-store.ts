@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 import { storyDbPath } from './story-db.js'
 
 /** The un-renamed placeholder a story is born with -- also what the auto-naming worker checks

@@ -24,7 +24,7 @@ import { getDecryptedFeatherlessKey } from '../src/db/user-store.js'
 import { getAgentProfile } from '../src/services/agent-config.js'
 import { completeChat, type ChatMessage } from '../src/inference/featherless.js'
 import { listWorldbookEntries } from '../src/db/worldbook-store.js'
-import { estimateTokens } from '../src/services/story-to-date-corpus.js'
+import { estimateTokens } from '../src/services/story-to-date-engine.js'
 
 const COMPACT_SYSTEM = `You are the Editor, compacting a single worldbook entry to reduce its token count without changing what it establishes.
 

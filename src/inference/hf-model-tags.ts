@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const TAGS_PATH = path.resolve(__dirname, '../data/hf-model-tags.json')
+const TAGS_PATH = path.resolve(__dirname, '../defaults/hf-model-tags.json')
 
 export interface HfModelTagsEntry {
   tags: string[]

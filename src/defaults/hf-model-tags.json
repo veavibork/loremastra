@@ -1,0 +1,10 @@
+{
+  "NousResearch/Hermes-3-Llama-3.1-8B": {
+    "tags": [],
+    "updatedAt": "2026-07-04T11:14:05.390Z"
+  },
+  "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": {
+    "tags": ["transformers", "safetensors", "llama", "text-generation"],
+    "updatedAt": "2026-07-04T00:00:00.000Z"
+  }
+}

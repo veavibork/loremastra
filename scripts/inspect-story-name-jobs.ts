@@ -5,7 +5,7 @@ import { getStoryDb } from '../src/db/story-db.js'
 import { getBookByType } from '../src/db/book-store.js'
 import { getPage } from '../src/db/page-store.js'
 import { DEFAULT_STORY_NAME, getStory } from '../src/db/story-store.js'
-import { resolveIcStartPageId } from '../src/services/kickoff.js'
+import { resolveIcStartPageId } from '../src/services/story-transition.js'
 
 const storyId = process.argv[2] ?? '019f25e0-219c-7189-b481-9f389a9a3c39'
 
@@ -21,8 +21,8 @@ console.log('IC start page:', icStartPageId)
 
 if (icStartPageId) {
   const page = getPage(db, icStartPageId)
-  console.log('kickoff selectedTextId:', page?.selectedTextId)
-  console.log('kickoff has prose:', !!page?.selectedTextId)
+  console.log('story-transition selectedTextId:', page?.selectedTextId)
+  console.log('story-transition has prose:', !!page?.selectedTextId)
 }
 
 const jobs = db
@@ -47,12 +47,14 @@ for (const j of jobs) {
 }
 
 if (icStartPageId) {
-  const kickoffPage = getPage(db, icStartPageId)
-  if (kickoffPage) {
-    const textIds = db.prepare(`SELECT id FROM text WHERE page_id = ?`).all(kickoffPage.id) as {
+  const storyTransitionPage = getPage(db, icStartPageId)
+  if (storyTransitionPage) {
+    const textIds = db
+      .prepare(`SELECT id FROM text WHERE page_id = ?`)
+      .all(storyTransitionPage.id) as {
       id: string
     }[]
-    console.log(`\nkickoff page texts: ${textIds.length}`)
+    console.log(`\nstory-transition page texts: ${textIds.length}`)
     for (const { id } of textIds) {
       const proseJobs = db
         .prepare(

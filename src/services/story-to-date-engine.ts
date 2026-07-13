@@ -6,7 +6,7 @@ import { type TextRole } from '../db/text-store.js'
 import { getBookByType } from '../db/book-store.js'
 
 import { listWorldbookEntries, type WorldbookEntry } from '../db/worldbook-store.js'
-import { resolveIcStartPageId } from './kickoff.js'
+import { resolveIcStartPageId } from './story-transition.js'
 import { AUTHOR_SYSTEM_PROMPT } from '../prompts.js'
 import type { ChatMessage } from '../inference/featherless.js'
 import { buildChainPostIndex, countChainPosts, resolveChainPostNumber } from './post-index.js'

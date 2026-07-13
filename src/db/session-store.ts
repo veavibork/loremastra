@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 import { getGlobalDb } from './global-db.js'
 
 export interface SessionRow {

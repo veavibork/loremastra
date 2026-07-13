@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
-import type { StoryBlockKind } from '../services/story-to-date-corpus.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
+import type { StoryBlockKind } from '../services/story-to-date-engine.js'
 
 export interface StoryToDateSegmentRow {
   id: string

@@ -13,13 +13,13 @@ import {
   applyGlobalCssSettings,
   GLOBAL_CSS_SPACE,
   type GlobalCssSettings,
-} from './globalCssSettings'
+} from './global-css-settings'
 import {
   DEFAULT_PLAY_TAB_SETTINGS,
   PLAY_TAB_SPACE,
   useSetPlayTabSettings,
   type PlayTabSettings,
-} from './playTabSettings'
+} from './PlayTabSettings'
 import './SettingsView.css'
 
 import {
@@ -27,7 +27,7 @@ import {
   TOGGLE_MOOD_SPACE,
   TOGGLE_PARAM_SPACE,
   TOGGLE_EFFORT_SPACE,
-} from './storyToggles'
+} from './StoryToggles'
 
 const BANNED_PHRASES_SPACE = 'banned-phrases'
 

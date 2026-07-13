@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS book (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   parent_book_id TEXT REFERENCES book(id),
-  book_type TEXT NOT NULL CHECK (book_type IN ('user','game','worldbook','sourcebook','logbook')),
+  book_type TEXT NOT NULL CHECK (book_type IN ('user','story','worldbook','logbook')),
   hidden INTEGER NOT NULL DEFAULT 0,
   broken INTEGER NOT NULL DEFAULT 0
 );
@@ -40,32 +40,11 @@ CREATE TABLE IF NOT EXISTS text (
   broken INTEGER NOT NULL DEFAULT 0,
   gen_request TEXT,
   gen_package TEXT,
-  gen_metrics TEXT,
-  gen_extract TEXT
+  gen_metrics TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_text_page ON text(page_id);
 CREATE INDEX IF NOT EXISTS idx_text_prior ON text(prior_text_id);
 
-CREATE TABLE IF NOT EXISTS archive (
-  id TEXT PRIMARY KEY,
-  created_at TEXT NOT NULL,
-  book_id TEXT NOT NULL REFERENCES book(id),
-  start_page_id TEXT NOT NULL REFERENCES page(id),
-  end_page_id TEXT NOT NULL REFERENCES page(id),
-  summary TEXT,
-  name TEXT,
-  hidden INTEGER NOT NULL DEFAULT 0,
-  broken INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_archive_book ON archive(book_id);
-
-CREATE TABLE IF NOT EXISTS archive_member (
-  archive_id TEXT NOT NULL REFERENCES archive(id),
-  text_id TEXT NOT NULL REFERENCES text(id),
-  is_owner INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (archive_id, text_id)
-);
-CREATE INDEX IF NOT EXISTS idx_archive_member_text ON archive_member(text_id);
 
 CREATE TABLE IF NOT EXISTS story_to_date_segment (
   id TEXT PRIMARY KEY,
@@ -109,7 +88,7 @@ CREATE TABLE IF NOT EXISTS worldbook_entry (
 -- than overwriting anything.
 CREATE TABLE IF NOT EXISTS story_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
-  phase TEXT NOT NULL DEFAULT 'setup' CHECK (phase IN ('setup','kickoff','story')),
+  phase TEXT NOT NULL DEFAULT 'setup' CHECK (phase IN ('setup','kickoff','active')),
   kickoff_page_id TEXT REFERENCES page(id),
   current_page_id TEXT REFERENCES page(id)
 );
@@ -141,17 +120,15 @@ CREATE TABLE IF NOT EXISTS history_event (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_history_event_seq ON history_event(seq);
 
--- A job targets exactly one of target_text_id (compress/prose/setup) or
--- target_archive_id (archive) — enforced at the application layer in
--- job-store.ts, not here, since SQLite's CHECK can't easily express "exactly
--- one of these two columns is non-null" alongside the FK constraints.
+-- A job targets exactly one of target_text_id or target_story_to_date_id — enforced at the
+-- application layer in job-store.ts, not here, since SQLite's CHECK can't easily express "exactly
+-- one of these columns is non-null" alongside the FK constraints.
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   target_text_id TEXT REFERENCES text(id),
-  target_archive_id TEXT REFERENCES archive(id),
   target_story_to_date_id TEXT REFERENCES story_to_date_segment(id),
-  job_type TEXT NOT NULL CHECK (job_type IN ('compress','archive','continuity','prose','setup','setup-worldbook','tag-gen','story-name','archive-name','story-to-date','story-to-date-fold','worldbook-compact')),
+  job_type TEXT NOT NULL CHECK (job_type IN ('continuity','prose','setup','setup-worldbook','tag-gen','story-name','segment-name','story-to-date','story-to-date-fold','worldbook-compact')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
   priority INTEGER NOT NULL DEFAULT 0,
   slot_cost INTEGER NOT NULL DEFAULT 1,
@@ -165,6 +142,5 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_text ON jobs(target_text_id);
-CREATE INDEX IF NOT EXISTS idx_jobs_target_archive ON jobs(target_archive_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_target_story_to_date ON jobs(target_story_to_date_id);
 `

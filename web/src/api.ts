@@ -1,6 +1,6 @@
 // Relative on purpose: same-origin in prod (Caddy proxies /api to the backend),
 // and in dev the Vite proxy below forwards /api to the local backend.
-import { coordinatedFetch } from './api-coordinator.js'
+import { coordinatedFetch } from './api-limiter.js'
 
 export const API_BASE = ''
 const SESSION_STORAGE_KEY = 'loremaster.sessionId'

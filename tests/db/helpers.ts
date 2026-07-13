@@ -11,8 +11,7 @@ export function createStoryDb(): Database.Database {
   db.exec(`ALTER TABLE jobs ADD COLUMN input_token_estimate INTEGER`)
   db.exec(`ALTER TABLE jobs ADD COLUMN horde_request_id TEXT`)
   db.exec(`ALTER TABLE jobs ADD COLUMN result_summary TEXT`)
-  db.exec(`ALTER TABLE page ADD COLUMN memory_content_stamp TEXT`)
-  db.exec(`ALTER TABLE text ADD COLUMN compress_metrics TEXT`)
+  db.exec(`ALTER TABLE page ADD COLUMN content_hash TEXT`)
   db.exec(`ALTER TABLE story_state ADD COLUMN history_cursor_seq INTEGER NOT NULL DEFAULT 0`)
   db.exec(`ALTER TABLE story_state ADD COLUMN ooc_session_start_page_id TEXT`)
   return db

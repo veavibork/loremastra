@@ -5,7 +5,6 @@ import {
   createText,
   getText,
   fillTextGeneration,
-  clearTextExtract,
   setTextHidden,
   listSelectedTextsForBook,
 } from '../../src/db/text-store.js'
@@ -83,22 +82,6 @@ describe('setTextHidden', () => {
     expect(getText(db, text.id)!.hidden).toBe(true)
     setTextHidden(db, text.id, false)
     expect(getText(db, text.id)!.hidden).toBe(false)
-  })
-})
-
-describe('clearTextExtract', () => {
-  it('clears gen_extract and compress_metrics', () => {
-    const text = createText(db, { pageId: 'p7', role: 'agent' })
-    // fill initial extract values
-    db.prepare('UPDATE text SET gen_extract = ?, compress_metrics = ? WHERE id = ?').run(
-      'old extract',
-      'old metrics',
-      text.id,
-    )
-    clearTextExtract(db, text.id)
-    const updated = getText(db, text.id)!
-    expect(updated.genExtract).toBeNull()
-    expect(updated.compressMetrics).toBeNull()
   })
 })
 

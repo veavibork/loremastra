@@ -29,8 +29,8 @@ describe('setStoryPhase', () => {
   it('transitions through phases', () => {
     setStoryPhase(db, 'kickoff')
     expect(getStoryState(db).phase).toBe('kickoff')
-    setStoryPhase(db, 'story')
-    expect(getStoryState(db).phase).toBe('story')
+    setStoryPhase(db, 'active')
+    expect(getStoryState(db).phase).toBe('active')
   })
 })
 

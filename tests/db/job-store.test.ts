@@ -41,7 +41,7 @@ describe('createJob', () => {
 
   it('throws when multiple targets specified', () => {
     expect(() =>
-      createJob(db, { targetTextId: 't3', targetArchiveId: 'a1', jobType: 'prose' }),
+      createJob(db, { targetTextId: 't3', targetStoryToDateId: 's1', jobType: 'prose' }),
     ).toThrow('exactly one')
   })
 

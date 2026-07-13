@@ -25,7 +25,7 @@ import { getDecryptedFeatherlessKey } from '../src/db/user-store.js'
 import { getAgentProfile } from '../src/services/agent-config.js'
 import { completeChat, type ChatMessage } from '../src/inference/featherless.js'
 import { listStoryToDateSegments } from '../src/db/story-to-date-store.js'
-import { estimateTokens } from '../src/services/story-to-date-corpus.js'
+import { estimateTokens } from '../src/services/story-to-date-engine.js'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function completeChatRetrying(

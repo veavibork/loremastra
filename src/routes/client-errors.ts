@@ -1,10 +1,18 @@
 import { Hono } from 'hono'
+import { sValidator } from '@hono/standard-validator'
+import { z } from 'zod'
+import { validationHook } from '../lib/validation-hook.js'
 import { getGlobalDb } from '../db/global-db.js'
 import { createClientError, listClientErrors } from '../db/client-error-store.js'
 
-const VALID_SEVERITIES = new Set(['info', 'warning', 'error', 'critical'])
-
 export const clientErrorsRoute = new Hono()
+
+const createErrorSchema = z.object({
+  severity: z.enum(['info', 'warning', 'error', 'critical']),
+  message: z.string().min(1),
+  url: z.string().optional(),
+  userAgent: z.string().optional(),
+})
 
 clientErrorsRoute.use('*', async (c, next) => {
   c.header('Access-Control-Allow-Origin', '*')
@@ -17,19 +25,8 @@ clientErrorsRoute.use('*', async (c, next) => {
   await next()
 })
 
-clientErrorsRoute.post('/', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    severity?: string
-    message?: string
-    url?: string
-    userAgent?: string
-  }
-  if (!body.severity || !VALID_SEVERITIES.has(body.severity)) {
-    return c.json({ error: 'severity must be one of info|warning|error|critical' }, 400)
-  }
-  if (!body.message || !body.message.trim()) {
-    return c.json({ error: 'message is required' }, 400)
-  }
+clientErrorsRoute.post('/', sValidator('json', createErrorSchema, validationHook), async (c) => {
+  const body = c.req.valid('json')
 
   const db = getGlobalDb()
   const created = createClientError(db, {

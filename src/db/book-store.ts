@@ -1,8 +1,8 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 
-export type BookType = 'user' | 'game' | 'worldbook' | 'sourcebook' | 'logbook'
+export type BookType = 'user' | 'story' | 'worldbook' | 'logbook'
 
 export interface BookRow {
   id: string
@@ -58,7 +58,7 @@ export function setBookBroken(db: Database.Database, id: string, broken: boolean
   db.prepare(`UPDATE book SET broken = ? WHERE id = ?`).run(broken ? 1 : 0, id)
 }
 
-/** Assumes one book per type per story — true until worldbook/sourcebook are introduced alongside logbook. */
+/** Assumes one book per type per story. */
 export function getBookByType(db: Database.Database, bookType: BookType): BookRow | null {
   const row = db
     .prepare(`SELECT * FROM book WHERE book_type = ? ORDER BY created_at ASC LIMIT 1`)

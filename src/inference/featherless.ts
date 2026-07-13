@@ -2,7 +2,7 @@ import type { AgentProfile } from '../config.js'
 import { FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from './featherless-config.js'
 import { getGlobalDb } from '../db/global-db.js'
 import { recordModelOutcome } from '../db/model-config-store.js'
-import { logOutboundRequest, logOutboundResponse } from './outbound-log.js'
+import { logOutboundRequest, logOutboundResponse } from './outbound-telemetry.js'
 import { formatError } from '../lib/errors.js'
 
 /** Optional sampler params (Config > Agents), omitted entirely rather than sent as null/0 when unset — see docs' completions parameter list. */

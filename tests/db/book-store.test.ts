@@ -27,13 +27,13 @@ describe('createBook', () => {
   })
 
   it('creates a book with a parent', () => {
-    const parent = createBook(db, { bookType: 'game' })
+    const parent = createBook(db, { bookType: 'story' })
     const child = createBook(db, { bookType: 'logbook', parentBookId: parent.id })
     expect(child.parentBookId).toBe(parent.id)
   })
 
   it('supports all valid book types', () => {
-    const types: BookType[] = ['user', 'game', 'worldbook', 'sourcebook', 'logbook']
+    const types: BookType[] = ['user', 'story', 'worldbook', 'logbook']
     for (const bookType of types) {
       const book = createBook(db, { bookType })
       expect(book.bookType).toBe(bookType)
@@ -84,6 +84,6 @@ describe('getBookByType', () => {
   })
 
   it('returns null when no book of type exists', () => {
-    expect(getBookByType(db, 'sourcebook')).toBeNull()
+    expect(getBookByType(db, 'worldbook')).toBeNull()
   })
 })

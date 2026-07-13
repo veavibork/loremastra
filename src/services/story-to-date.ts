@@ -1,12 +1,15 @@
 import type Database from 'better-sqlite3'
 import { createJob, hasActiveJobForStoryToDate } from '../db/job-store.js'
 import { getStoryState } from '../db/story-state-store.js'
-import { resolveIcStartPageId } from './kickoff.js'
+import { resolveIcStartPageId } from './story-transition.js'
 import {
   createStoryToDateSegment,
+  deleteStoryToDateSegment,
+  deleteStoryToDateSegmentsFromSeq,
   getStoryToDateSegment,
   hasActiveJobForStoryToDateSegment,
   listStoryToDateSegments,
+  setStoryToDateSegmentCoverage,
 } from '../db/story-to-date-store.js'
 import { getAgentProfile } from './agent-config.js'
 import { assembleAuthorPrompt } from './history.js'
@@ -19,7 +22,8 @@ import {
   type StoryBlockKind,
   type StoryToDateSegment,
   type FoldableSegment,
-} from './story-to-date-corpus.js'
+} from './story-to-date-engine.js'
+import { resolvePageIdForChainPost } from './post-index.js'
 
 export const STORY_TO_DATE_TRIGGER = 0.8
 export const STORY_TO_DATE_INPUT_CUTOFF = 0.8
@@ -129,7 +133,7 @@ export function enqueueEligibleStoryToDateJob(
   fromPageId: string | null = null,
 ): string | null {
   const state = getStoryState(db)
-  if (state.phase !== 'story' || !resolveIcStartPageId(db, logbookId)) return null
+  if (state.phase !== 'active' || !resolveIcStartPageId(db, logbookId)) return null
   if (!wouldTriggerStoryToDateJob(db, userId, logbookId, fromPageId)) return null
   if (hasPendingStoryToDateJob(db)) return null
 
@@ -217,11 +221,11 @@ export function enqueueStoryToDateNameJob(
   const seg = getStoryToDateSegment(db, segmentId)
   if (!seg?.content?.trim() || seg.broken) return false
   if (seg.name?.trim()) return false
-  if (hasActiveJobForStoryToDate(db, segmentId, 'archive-name')) return false
+  if (hasActiveJobForStoryToDate(db, segmentId, 'segment-name')) return false
   const worker = getAgentProfile(userId, 'worker')
   createJob(db, {
     targetStoryToDateId: segmentId,
-    jobType: 'archive-name',
+    jobType: 'segment-name',
     priority: -1,
     slotCost: worker.concurrencyCost,
   })
@@ -241,4 +245,44 @@ export function enqueuePendingStoryToDateNameJobs(
     if (enqueueStoryToDateNameJob(db, userId, seg.id)) n++
   }
   return n
+}
+
+export function removeStoryToDateSegment(
+  db: Database.Database,
+  userId: string,
+  logbookId: string,
+  storyId: string,
+  segmentId: string,
+  options: { deleteLaterSegments?: boolean } = {},
+): void {
+  const segment = getStoryToDateSegment(db, segmentId)
+  if (!segment || segment.bookId !== logbookId) throw new Error('segment not found')
+
+  if (options.deleteLaterSegments) {
+    deleteStoryToDateSegmentsFromSeq(db, logbookId, segment.seq)
+  } else {
+    deleteStoryToDateSegment(db, segmentId)
+  }
+
+  enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId)
+  enqueuePendingStoryToDateJobs(db, userId, logbookId)
+}
+
+export function updateStoryToDateCoverageThroughPost(
+  db: Database.Database,
+  segmentId: string,
+  logbookId: string,
+  coverageThroughIcPost: number,
+): void {
+  if (!Number.isFinite(coverageThroughIcPost) || coverageThroughIcPost <= 0) {
+    throw new Error('coverageThroughIcPost must be a positive number')
+  }
+  const segment = getStoryToDateSegment(db, segmentId)
+  if (!segment || segment.bookId !== logbookId) throw new Error('segment not found')
+  const pageId = resolvePageIdForChainPost(db, logbookId, coverageThroughIcPost)
+  if (!pageId) throw new Error(`no page for chain post ${coverageThroughIcPost}`)
+  setStoryToDateSegmentCoverage(db, segmentId, {
+    coverageThroughIcPost,
+    coveragePageId: pageId,
+  })
 }

@@ -1,5 +1,5 @@
 /** Error formatting and logging — used by the global error handler and catch blocks. */
-import { createLogger } from '../inference/outbound-log.js'
+import { createLogger } from '../inference/outbound-telemetry.js'
 
 /** Extracts a human-readable message from any thrown value. */
 export function formatError(err: unknown): string {

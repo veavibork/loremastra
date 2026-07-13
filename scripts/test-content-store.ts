@@ -3,7 +3,7 @@ import { createBook } from '../src/db/book-store.js'
 import { getPage, setPageHidden } from '../src/db/page-store.js'
 import { fillTextGeneration, getText, setTextHidden } from '../src/db/text-store.js'
 import { createPageWithText, createRetryText } from '../src/db/content-store.js'
-import { newId } from '../src/uuid.js'
+import { newId } from '../src/lib/uuid.js'
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`FAILED: ${message}`)

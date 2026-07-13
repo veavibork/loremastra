@@ -43,7 +43,7 @@ import {
   estimateTokens,
   MIN_VERBOSE_IC_POSTS,
   type StoryBlockKind,
-} from '../src/services/story-to-date-corpus.js'
+} from '../src/services/story-to-date-engine.js'
 import {
   STORY_TO_DATE_INPUT_CUTOFF,
   enqueueEligibleFoldJob,

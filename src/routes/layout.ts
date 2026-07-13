@@ -1,4 +1,7 @@
 import { Hono } from 'hono'
+import { sValidator } from '@hono/standard-validator'
+import { z } from 'zod'
+import { validationHook } from '../lib/validation-hook.js'
 import { getGlobalDb } from '../db/global-db.js'
 import type { AppVariables } from '../middleware/session-guard.js'
 import {
@@ -11,6 +14,11 @@ import {
 import { DEFAULT_LAYOUT_CONFIG, normalizeLayoutConfig } from '../services/layout.js'
 
 export const layoutRoute = new Hono<{ Variables: AppVariables }>()
+
+const patchSchema = z.object({
+  config: z.unknown(),
+  name: z.string().optional(),
+})
 
 /** The active layout config, or the built-in default if the user has never saved one. */
 layoutRoute.get('/', (c) => {
@@ -29,13 +37,12 @@ layoutRoute.get('/all', (c) => {
 })
 
 /** Edits the active config in place, or creates+activates a new one if none exists yet. */
-layoutRoute.patch('/', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { config?: unknown; name?: string }
-  if (!body.config) return c.json({ error: 'config is required' }, 400)
+layoutRoute.patch('/', sValidator('json', patchSchema, validationHook), async (c) => {
+  const { config: raw, name } = c.req.valid('json')
 
   const db = getGlobalDb()
   const userId = c.get('userId')
-  const config = normalizeLayoutConfig(body.config)
+  const config = normalizeLayoutConfig(raw)
   const configJson = JSON.stringify(config)
 
   const active = getActiveLayoutConfig(db, userId)
@@ -43,7 +50,7 @@ layoutRoute.patch('/', async (c) => {
     ? updateLayoutConfigJson(db, active.id, configJson)
     : createLayoutConfig(db, {
         userId,
-        name: body.name?.trim() || 'Default',
+        name: name?.trim() || 'Default',
         configJson,
         isActive: true,
       })

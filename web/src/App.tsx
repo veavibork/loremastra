@@ -13,8 +13,8 @@ import {
 } from './api'
 import ClaimGate, { type GateReason } from './ClaimGate'
 import Nav from './Nav'
-import { useGlobalCssSettings } from './globalCssSettings'
-import { PlayTabProvider } from './playTabSettings'
+import { useGlobalCssSettings } from './global-css-settings'
+import { PlayTabProvider } from './PlayTabSettings'
 import { useVisualViewport } from './useVisualViewport'
 import './App.css'
 

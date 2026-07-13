@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-export type StoryPhase = 'setup' | 'kickoff' | 'story'
+export type StoryPhase = 'setup' | 'kickoff' | 'active'
 
 export interface StoryState {
   phase: StoryPhase

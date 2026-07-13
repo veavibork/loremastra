@@ -5,7 +5,7 @@
 process.env.DEV_BYPASS_SESSION_GUARD = 'true'
 
 import { closeStoryDb } from '../src/db/story-db.js'
-import { newId } from '../src/uuid.js'
+import { newId } from '../src/lib/uuid.js'
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`FAILED: ${message}`)
@@ -82,18 +82,20 @@ async function main(): Promise<void> {
       'POST worldbook roster',
     )
 
-    const kickoff = await api(base, `/api/stories/${storyId}/kickoff`, { method: 'POST' })
-    assert(kickoff.status === 200, 'POST kickoff')
-    const kickoffPageId = (kickoff.body as { agentPageId: string }).agentPageId
+    const storyTransition = await api(base, `/api/stories/${storyId}/story-transition`, {
+      method: 'POST',
+    })
+    assert(storyTransition.status === 200, 'POST story-transition')
+    const storyTransitionPageId = (storyTransition.body as { agentPageId: string }).agentPageId
 
     assert(
       (
-        await api(base, `/api/stories/${storyId}/posts/${kickoffPageId}/edit`, {
+        await api(base, `/api/stories/${storyId}/posts/${storyTransitionPageId}/edit`, {
           method: 'POST',
           body: JSON.stringify({ content: 'The Dragon spread its wings over the valley at dawn.' }),
         })
       ).status === 200,
-      'POST edit kickoff (no LLM)',
+      'POST edit story-transition (no LLM)',
     )
 
     for (let pair = 0; pair < 4; pair++) {
@@ -129,7 +131,7 @@ async function main(): Promise<void> {
       'prompt-preview includes worldbook roster',
     )
 
-    const editMid = await api(base, `/api/stories/${storyId}/posts/${kickoffPageId}/edit`, {
+    const editMid = await api(base, `/api/stories/${storyId}/posts/${storyTransitionPageId}/edit`, {
       method: 'POST',
       body: JSON.stringify({ content: "EDITED: The Dragon's shadow falls across the camp." }),
     })
@@ -139,13 +141,13 @@ async function main(): Promise<void> {
     assert(undo.status === 200, 'POST undo after edit')
 
     const phase = await api(base, `/api/stories/${storyId}/phase`)
-    assert((phase.body as { phase: string }).phase === 'story', 'phase is story')
+    assert((phase.body as { phase: string }).phase === 'active', 'phase is active')
 
-    const memSummary = await api(base, `/api/stories/${storyId}/memory/summary`)
+    const memSummary = await api(base, `/api/stories/${storyId}/context/summary`)
     assert(memSummary.status === 200, 'GET memory/summary')
     assert((memSummary.body as { postCount: number }).postCount > 0, 'memory summary has posts')
 
-    const backfill = await api(base, `/api/stories/${storyId}/memory/backfill`, {
+    const backfill = await api(base, `/api/stories/${storyId}/context/backfill`, {
       method: 'POST',
       body: JSON.stringify({ enqueueJobs: false }),
     })

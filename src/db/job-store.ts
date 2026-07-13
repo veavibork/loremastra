@@ -1,17 +1,15 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 
 export type JobType =
-  | 'compress'
-  | 'archive'
   | 'continuity'
   | 'prose'
   | 'setup'
   | 'setup-worldbook'
   | 'tag-gen'
   | 'story-name'
-  | 'archive-name'
+  | 'segment-name'
   | 'story-to-date'
   | 'story-to-date-fold'
   | 'worldbook-compact'
@@ -21,7 +19,6 @@ export interface JobRow {
   id: string
   createdAt: string
   targetTextId: string | null
-  targetArchiveId: string | null
   targetStoryToDateId: string | null
   jobType: JobType
   status: JobStatus
@@ -43,7 +40,6 @@ interface RawJobRow {
   id: string
   created_at: string
   target_text_id: string | null
-  target_archive_id: string | null
   target_story_to_date_id: string | null
   job_type: JobType
   status: JobStatus
@@ -66,7 +62,6 @@ function mapJobRow(row: RawJobRow): JobRow {
     id: row.id,
     createdAt: row.created_at,
     targetTextId: row.target_text_id,
-    targetArchiveId: row.target_archive_id,
     targetStoryToDateId: row.target_story_to_date_id ?? null,
     jobType: row.job_type,
     status: row.status,
@@ -89,30 +84,24 @@ export function createJob(
   db: Database.Database,
   input: {
     targetTextId?: string
-    targetArchiveId?: string
     targetStoryToDateId?: string
     jobType: JobType
     priority?: number
     slotCost?: number
   },
 ): JobRow {
-  const targets = [input.targetTextId, input.targetArchiveId, input.targetStoryToDateId].filter(
-    Boolean,
-  )
+  const targets = [input.targetTextId, input.targetStoryToDateId].filter(Boolean)
   if (targets.length !== 1) {
-    throw new Error(
-      'createJob requires exactly one of targetTextId, targetArchiveId, or targetStoryToDateId',
-    )
+    throw new Error('createJob requires exactly one of targetTextId or targetStoryToDateId')
   }
   const id = newId()
   db.prepare(
-    `INSERT INTO jobs (id, created_at, target_text_id, target_archive_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, 0)`,
+    `INSERT INTO jobs (id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested)
+     VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, NULL, NULL, NULL, 0)`,
   ).run(
     id,
     nowIso(),
     input.targetTextId ?? null,
-    input.targetArchiveId ?? null,
     input.targetStoryToDateId ?? null,
     input.jobType,
     input.priority ?? 0,
@@ -185,19 +174,6 @@ export function hasActiveJobForText(
       `SELECT 1 FROM jobs WHERE target_text_id = ? AND job_type = ? AND status IN ('pending', 'running') LIMIT 1`,
     )
     .get(targetTextId, jobType)
-  return !!row
-}
-
-export function hasActiveJobForArchive(
-  db: Database.Database,
-  targetArchiveId: string,
-  jobType: JobType,
-): boolean {
-  const row = db
-    .prepare(
-      `SELECT 1 FROM jobs WHERE target_archive_id = ? AND job_type = ? AND status IN ('pending', 'running') LIMIT 1`,
-    )
-    .get(targetArchiveId, jobType)
   return !!row
 }
 
@@ -318,11 +294,4 @@ export function cancelPendingJobsForText(db: Database.Database, targetTextId: st
     `UPDATE jobs SET status = 'cancelled', finished_at = ?, cancel_requested = 1
      WHERE target_text_id = ? AND status = 'pending'`,
   ).run(nowIso(), targetTextId)
-}
-
-export function cancelPendingJobsForArchive(db: Database.Database, targetArchiveId: string): void {
-  db.prepare(
-    `UPDATE jobs SET status = 'cancelled', finished_at = ?, cancel_requested = 1
-     WHERE target_archive_id = ? AND status = 'pending'`,
-  ).run(nowIso(), targetArchiveId)
 }

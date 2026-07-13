@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { nowIso } from './time.js'
+import { nowIso } from '../lib/time.js'
 
 interface SettingsSpaceRow {
   json_blob: string

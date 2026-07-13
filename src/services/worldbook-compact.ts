@@ -13,7 +13,7 @@ import {
 import { completeChat, type ChatMessage } from '../inference/featherless.js'
 import { WORLDBOOK_COMPACT_SYSTEM_PROMPT } from '../prompts.js'
 import { getAgentProfile } from './agent-config.js'
-import { estimateTokens } from './story-to-date-corpus.js'
+import { estimateTokens } from './story-to-date-engine.js'
 
 export interface WorldbookCompactOpts {
   entryType?: WorldbookEntryType

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { LayoutConfigData } from './api'
 import ButtonContainerRow from './ButtonContainerRow'
 import { flattenNavTabs } from './layoutUtils'
-import { resolvePanel } from './registry'
+import { resolvePanel } from './Registry'
 import type { PanelProps } from './panel-types'
 import './Nav.css'
 
@@ -35,7 +35,7 @@ export default function Nav({
     localStorage.setItem(OPEN_TABS_STORAGE_KEY, JSON.stringify(openIds))
     const equalShare = 100 / (openIds.length || 1)
     setWidths(Object.fromEntries(openIds.map((id) => [id, equalShare])))
-  }, [openIds.join(',')])
+  }, [openIds])
 
   function toggleTab(id: string) {
     setOpenIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))

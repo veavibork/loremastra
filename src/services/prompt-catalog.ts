@@ -12,7 +12,7 @@ import {
   WORLDBOOK_COMPACT_SYSTEM_PROMPT,
   buildIcProseSteering,
 } from '../prompts.js'
-import { INCLUDE_EXCLUDE_GUIDANCE } from './story-to-date-corpus.js'
+import { INCLUDE_EXCLUDE_GUIDANCE } from './story-to-date-engine.js'
 
 export interface PromptCatalogEntry {
   id: string
@@ -110,7 +110,7 @@ export function getPromptCatalog(): PromptCatalogEntry[] {
     {
       id: 'worker-naming-prompt',
       name: 'Worker — story/scene naming prompt',
-      usedBy: 'Worker (story-name, archive-name)',
+      usedBy: 'Worker (story-name, segment-name)',
       kind: 'system-prompt',
       sourceFile: 'src/prompts.ts',
       content: NAMING_PROMPT,
@@ -118,7 +118,7 @@ export function getPromptCatalog(): PromptCatalogEntry[] {
     {
       id: 'worker-archive-naming-prompt',
       name: 'Worker — archive block naming prompt',
-      usedBy: 'Worker (archive-name from summary)',
+      usedBy: 'Worker (segment-name from summary)',
       kind: 'system-prompt',
       sourceFile: 'src/prompts.ts',
       content: ARCHIVE_NAMING_PROMPT,

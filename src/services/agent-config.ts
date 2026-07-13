@@ -1,10 +1,11 @@
 import type Database from 'better-sqlite3'
 import { getGlobalDb } from '../db/global-db.js'
-import { getAgentConfigOverride, type AgentRole } from '../db/agent-config-store.js'
+import { getAgentConfigOverride } from '../db/agent-config-store.js'
 import {
   listModelConfigs,
   createModelConfig,
   type ModelConfigRow,
+  type AgentRole,
 } from '../db/model-config-store.js'
 import {
   DEFAULT_AUTHOR_PROFILE,

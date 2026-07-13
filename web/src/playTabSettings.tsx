@@ -21,6 +21,7 @@ export interface PlayTabSettings {
   agentBubbleColor: string
 }
 
+// eslint-disable-next-line react/only-export-components
 export const DEFAULT_PLAY_TAB_SETTINGS: PlayTabSettings = {
   fontSize: 15,
   showUserLabel: true,

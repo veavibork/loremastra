@@ -27,8 +27,8 @@ import {
   releaseProseLane,
   tryAcquireWorkerLane,
   releaseWorkerLane,
-} from './worker-lanes.js'
-import { tryAcquireHordeSlot, releaseHordeSlot } from './horde-slots.js'
+} from './job-lanes.js'
+import { tryAcquireHordeSlot, releaseHordeSlot } from '../inference/horde-slots.js'
 import { ensureConcurrencyFeedForUser } from './concurrency-feed.js'
 import {
   publishToken,
@@ -61,7 +61,7 @@ import { ReasoningStreamSplitter } from '../inference/reasoning-stream.js'
 import { submitTextGeneration, pollTextGeneration } from '../inference/horde.js'
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from '../db/user-store.js'
 import type { AgentProfile } from '../config.js'
-import { isOpeningPostPage, resolveIcStartPageId } from '../services/kickoff.js'
+import { isOpeningPostPage, resolveIcStartPageId } from '../services/story-transition.js'
 import { assembleAuthorPrompt, assembleKickoffPrompt } from '../services/history.js'
 import { applyExtractedWorldbookBlocks } from '../services/worldbook-extraction.js'
 import {
@@ -69,7 +69,7 @@ import {
   takeWorldbookCompactJobOpts,
   buildWorldbookCompactResultSummary,
 } from '../services/worldbook-compact.js'
-import { resolveRegisterFromContent } from '../services/worldbook-pc.js'
+import { resolveRegisterFromContent } from '../services/worldbook-assembly.js'
 import {
   enqueueEligibleStoryToDateJob,
   enqueueStoryToDateNameJob,
@@ -78,8 +78,7 @@ import {
 import { executeStoryToDateJob } from '../services/story-to-date-worker.js'
 import { executeStoryToDateFoldJob } from '../services/story-to-date-fold-worker.js'
 import { fillStoryToDateSegmentName, getStoryToDateSegment } from '../db/story-to-date-store.js'
-import { cancelPendingCompressJobs } from '../services/compression.js'
-import { nowIso } from '../db/time.js'
+import { nowIso } from '../lib/time.js'
 import { getAgentProfile } from '../services/agent-config.js'
 import type { GenerationOptions } from '../services/settings-space-registry.js'
 import {
@@ -98,7 +97,7 @@ const WORKER_JOB_TYPES: JobType[] = [
   'story-to-date',
   'story-to-date-fold',
   'story-name',
-  'archive-name',
+  'segment-name',
   'worldbook-compact',
 ]
 const PROSE_JOB_TYPES: JobType[] = ['prose', 'setup', 'setup-worldbook']
@@ -489,7 +488,6 @@ function scanOnce(): void {
   }
 
   for (const [, db] of trackedDbs) {
-    cancelPendingCompressJobs(db)
     cancelPendingTagGenJobs(db)
   }
 
@@ -595,7 +593,7 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       } else if (job.jobType === 'story-name' && job.targetTextId) {
         publishJobStarted(job.id)
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId)
-      } else if (job.jobType === 'archive-name' && job.targetStoryToDateId) {
+      } else if (job.jobType === 'segment-name' && job.targetStoryToDateId) {
         publishJobStarted(job.id)
         void executeStoryToDateNameJob(db, story.ownerUserId, job.id, job.targetStoryToDateId)
       } else if (job.jobType === 'worldbook-compact' && job.targetTextId) {

@@ -29,7 +29,7 @@ import {
   type StoryBlockKind,
   type StoryToDateSegment,
   type VerbosePost,
-} from './story-to-date-corpus.js'
+} from './story-to-date-engine.js'
 import { STORY_TO_DATE_INPUT_CUTOFF } from './story-to-date.js'
 import { buildChainPostIndex } from './post-index.js'
 

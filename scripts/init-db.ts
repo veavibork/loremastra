@@ -1,6 +1,6 @@
 import { getGlobalDb } from '../src/db/global-db.js'
 import { getStoryDb } from '../src/db/story-db.js'
-import { newId } from '../src/uuid.js'
+import { newId } from '../src/lib/uuid.js'
 
 function listTables(db: import('better-sqlite3').Database): string[] {
   return db

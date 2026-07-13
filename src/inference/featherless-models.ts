@@ -1,10 +1,6 @@
 import { FEATHERLESS_USER_AGENT } from './featherless-config.js'
-import {
-  getAlwaysTags,
-  getTopTagsForRole,
-  type AgentRole,
-  type TagCategory,
-} from './featherless-tag-ratings.js'
+import { getAlwaysTags, getTopTagsForRole, type TagCategory } from './featherless-tag-ratings.js'
+import type { AgentRole } from '../db/model-config-store.js'
 
 const MODELS_URL = 'https://api.featherless.ai/v1/models'
 const TAG_CATEGORIES: TagCategory[] = [

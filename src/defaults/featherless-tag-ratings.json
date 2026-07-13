@@ -1,0 +1,2829 @@
+{
+  "modalities": {
+    "text": {
+      "filter": "always",
+      "worker": 5,
+      "editor": 5,
+      "author": 5,
+      "note": "Required — everything else in this list is structurally unusable for chat completion."
+    },
+    "vision": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Extra capability we never use, but doesn't disqualify a model that also does text."
+    },
+    "embedding": {
+      "filter": "never",
+      "worker": 0,
+      "editor": 0,
+      "author": 0,
+      "note": "Not a generative/chat model at all — different API shape entirely."
+    }
+  },
+  "parameter_bucket": {
+    "< 1B": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 2,
+      "author": 1,
+      "note": "Too small for reliable creative prose; fine for trivial Worker tasks."
+    },
+    "1B": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 2,
+      "author": 1
+    },
+    "2-3B": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 2,
+      "author": 2
+    },
+    "4-5B": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 3,
+      "author": 2
+    },
+    "7-9B": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3
+    },
+    "10-15B": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 3
+    },
+    "16-27B": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 4
+    },
+    "28-40B": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 4,
+      "author": 4
+    },
+    "65-72B": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 4,
+      "author": 5
+    },
+    "100-141B": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 3,
+      "author": 5
+    },
+    "200-250B": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 3,
+      "author": 5
+    },
+    "300-500B": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 2,
+      "author": 5,
+      "note": "Great quality likely, but cost/latency make this wasteful for background Worker/Editor tasks."
+    },
+    "600-750B": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 2,
+      "author": 5
+    },
+    "1T": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 2,
+      "author": 5
+    }
+  },
+  "capabilities": {
+    "agent": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 2
+    },
+    "analysis": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "analytical": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "angular": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "assistant": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3
+    },
+    "bash": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "bilingual": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "chain-of-thought": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 3,
+      "author": 3,
+      "note": "Adds latency for a task (compression) that doesn't need deep reasoning."
+    },
+    "chat": {
+      "filter": "neutral",
+      "worker": 5,
+      "editor": 5,
+      "author": 5
+    },
+    "chatbot": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4
+    },
+    "chatml": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "classification": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "code": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "code-agent": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "code-analysis": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "code-generation": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "code-instruct": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "code-reasoning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "cognitive": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 3
+    },
+    "competitive-programming": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "content-safety": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals heavy safety tuning — likely to refuse the content Author needs to generate."
+    },
+    "conversation": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 5
+    },
+    "conversational-ai": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4
+    },
+    "cot": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 3,
+      "author": 3
+    },
+    "critical-thinking": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 4,
+      "author": 3
+    },
+    "css": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "deep-research": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "dialogue": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 5
+    },
+    "efficient": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 3,
+      "author": 2
+    },
+    "evaluation": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "expert": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "function": {
+      "filter": "neutral",
+      "worker": 5,
+      "editor": 5,
+      "author": 2
+    },
+    "function-calling": {
+      "filter": "neutral",
+      "worker": 5,
+      "editor": 5,
+      "author": 2
+    },
+    "general-purpose": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4
+    },
+    "guardrails": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1
+    },
+    "hallucination-detection": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 3,
+      "author": 3,
+      "note": "Mildly positive for Worker's factual-summary job specifically."
+    },
+    "html": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "human-ai-collaboration": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "image-generation": {
+      "filter": "never",
+      "worker": 0,
+      "editor": 0,
+      "author": 0,
+      "note": "Not a text-chat capability — out of scope entirely."
+    },
+    "information-extraction": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "instruct": {
+      "filter": "neutral",
+      "worker": 5,
+      "editor": 5,
+      "author": 5
+    },
+    "instruction": {
+      "filter": "neutral",
+      "worker": 5,
+      "editor": 5,
+      "author": 5
+    },
+    "instruction-following": {
+      "filter": "neutral",
+      "worker": 5,
+      "editor": 5,
+      "author": 5
+    },
+    "javascript": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "json": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 2
+    },
+    "json mode": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 2
+    },
+    "lean4": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "lightweight": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 3,
+      "author": 2
+    },
+    "llm": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llm agent": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 2
+    },
+    "logic": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 3
+    },
+    "long context": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4,
+      "note": "Generically useful — more room in prompt assembly."
+    },
+    "math": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "math-reasoning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "moderation": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1
+    },
+    "moe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mteb": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 1,
+      "note": "MTEB is an embedding-benchmark tag — signals an embedding-oriented model."
+    },
+    "multi-agent": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "multi-task": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "multi-turn": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 5
+    },
+    "multimodal": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ner": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "nextjs": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "nodejs": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "personality": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4,
+      "note": "Relevant to character voice/consistency."
+    },
+    "planning": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 4,
+      "author": 3
+    },
+    "problem-solving": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 4,
+      "author": 3
+    },
+    "python": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "qa": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rag": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 3
+    },
+    "rationality": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 3
+    },
+    "react": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "reasoning": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 4,
+      "author": 3
+    },
+    "red-teaming": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "research": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "retrieval": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 3,
+      "note": "loremaster.md deliberately rejected vector/RAG retrieval — this doesn't help us."
+    },
+    "reward-model": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 1,
+      "note": "Reward/scoring models are typically classifiers, not general chat generators."
+    },
+    "scientific-reasoning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "sentiment-analysis": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "small-language-model": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 3,
+      "author": 2,
+      "note": "Efficient for Worker's small task; less creative depth for Author."
+    },
+    "solidity": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "sql": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "structured-output": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 2
+    },
+    "swift": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "tailwind-css": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "terraform": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "text-to-sql": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "thinking": {
+      "filter": "neutral",
+      "worker": 1,
+      "editor": 3,
+      "author": 3
+    },
+    "tool-use": {
+      "filter": "neutral",
+      "worker": 5,
+      "editor": 5,
+      "author": 2,
+      "note": "Critical for Worker/Editor forced tool-calling; not needed for baseline Author prose."
+    },
+    "typescript": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "ui-generation": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "verilog": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "video-generation": {
+      "filter": "never",
+      "worker": 0,
+      "editor": 0,
+      "author": 0
+    },
+    "virtual-assistant": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "vision": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "vision-language": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "vision-language-model": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "web-design": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "web-generation": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "xml": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    },
+    "yaml": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Programming/dev-tooling specialization — no bearing on RP quality; slight author penalty since heavy code focus sometimes trades off prose fluency."
+    }
+  },
+  "families": {
+    "afmoe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "apertus": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "bamba": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "bert": {
+      "filter": "never",
+      "worker": 0,
+      "editor": 0,
+      "author": 0,
+      "note": "Encoder-only — not a generative/chat model at all."
+    },
+    "deepseek3": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4,
+      "note": "Current Author model family — strong general + creative capability, large context."
+    },
+    "deepseek31": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4
+    },
+    "deepseek32": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4
+    },
+    "deepseek4": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4
+    },
+    "ernie4-5": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ernie4-5-moe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "exaone4": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "falcon": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma4": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm4": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm46": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm47": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm5": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm51": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm52": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gpt-bigcode": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gpt-oss": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gpt2": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 1,
+      "note": "Very old/small architecture generation — unlikely competitive for modern RP prose."
+    },
+    "gpt2sw3": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 1
+    },
+    "gptsw3": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 1
+    },
+    "granite": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "granitemoe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "hyperclovax-vlm": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "internlm3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "kimi-linear": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "kimik2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "kimik25": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "lfm2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "lfm2-moe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 4,
+      "note": "Widely used as a roleplay/creative fine-tuning base; large ecosystem."
+    },
+    "llama31": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 4
+    },
+    "llama32": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 4
+    },
+    "llama33": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 4,
+      "author": 4
+    },
+    "mamba": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mellum": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mimo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mimo2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mimo25": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "minimax-m2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "minimax-m3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "minimaxm2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "minimaxm21": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "minimaxm25": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4,
+      "note": "Strong community reputation for creative-writing/roleplay fine-tunes."
+    },
+    "mistral3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral31": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "nanbeige": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "nemotron-h": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "nemotron-nas": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "nemotron3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "nomic-bert": {
+      "filter": "never",
+      "worker": 0,
+      "editor": 0,
+      "author": 0
+    },
+    "olmo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "olmo3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ouro": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "panguembedded": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "phi": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Optimized for small-size benchmark performance/reasoning, not renowned for creative prose."
+    },
+    "phi2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "phi3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "phi4": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "phimoe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3,
+      "note": "Strong instruction-following/tool-use reputation; prose sometimes noted as more clinical than Llama/Mistral RP finetunes."
+    },
+    "qwen15": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen2": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3
+    },
+    "qwen25": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3
+    },
+    "qwen3": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3
+    },
+    "qwen3-5": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen3-5-moe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen3-moe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen35": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen3next": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwerky": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rwkv": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 2,
+      "note": "Recurrent (non-transformer) architecture — historically rougher instruction-following/coherence at comparable scale."
+    },
+    "rwkv6": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 2
+    },
+    "stablelm": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "step35": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "step3p7": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "talkie": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "xlm-roberta": {
+      "filter": "never",
+      "worker": 0,
+      "editor": 0,
+      "author": 0
+    },
+    "yi1.5": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    }
+  },
+  "domains": {
+    "medical": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "safety": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "nlp": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "finance": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "biology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "legal": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "chemistry": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "cybersecurity": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "healthcare": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "security": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "education": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "science": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "clinical": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "experimental": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "physics": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "low-resource": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "climate": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "safety-research": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "philosophy": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "sandbagging-detection": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "ai-safety": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "biomedical": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mental-health": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "devops": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "stem": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "art": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4
+    },
+    "clinical-reasoning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "software-engineering": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "enterprise": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "compliance": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ai-research": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "engineering": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "machine-unlearning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "economics": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "radiology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "privacy": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "materials science": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "psychology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "dermatology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "unlearn": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "llm-unlearning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "data-privacy": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "trustworthy-ai": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "trustworthy-machine-learning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "bible": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "theology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "bias-neutralization": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "ai-alignment-research": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "ai-alignment": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "ai-behavior-research": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Signals safety/alignment-focused tuning or research use — correlates with refusal behavior, bad fit for Author."
+    },
+    "biological materials": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "scientific ai": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "christian": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Religious-content-focused tuning may correlate with moralizing/restrictive output."
+    },
+    "software": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "pathology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ophthalmology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "chest-x-ray": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "cloud": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "african-languages": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "web3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "music": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4
+    },
+    "pharmaceutical": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "business": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "roblox": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4
+    },
+    "ai4science": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "computer-science": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "medical-ai": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "blockchain": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ethics": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "therapeutics": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "drug-development": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "cardiology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "scripting": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "aws": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "e-commerce": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "politics": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "bioinformatics": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "vulnerability-detection": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "bioinspiration": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "astronomy": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "docker": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "jenkins": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "powershell": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "azure": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gcp": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ecology": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "design": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4
+    },
+    "materials informatics": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "environment": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gaming": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4,
+      "note": "Gaming-adjacent creative content — mild positive for Author."
+    }
+  },
+  "creative": {
+    "roleplay": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5
+    },
+    "creative-writing": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 5
+    },
+    "creative": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 5
+    },
+    "storytelling": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 5
+    },
+    "writing": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 4
+    },
+    "rp": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5
+    },
+    "fiction": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 4
+    },
+    "story": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 4
+    },
+    "plot generation": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 4
+    },
+    "sub-plot generation": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 4
+    },
+    "story generation": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 5
+    },
+    "scene continue": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5,
+      "note": "Directly matches Author's core continue-the-scene function."
+    },
+    "science fiction": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "all genres": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "vivid prose": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5,
+      "note": "Exactly the register loremaster.md wants from Author."
+    },
+    "romance": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "synthetic data": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 2,
+      "note": "Training-data-generation focus, not necessarily interactive RP quality."
+    },
+    "horror": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "erp": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5,
+      "note": "Directly matches Loremaster's core stated use case."
+    },
+    "humor": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 3
+    },
+    "persona": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "text adventure": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 4
+    },
+    "npc": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5
+    },
+    "friend": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 3
+    },
+    "character": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5
+    },
+    "companion": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "prose": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5
+    },
+    "adventure": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "waifu": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4,
+      "note": "Signals romantic/companion-RP tuning, adjacent to ERP use case."
+    },
+    "visual novel": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "ai-companion": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 4
+    },
+    "lyrics": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 2,
+      "note": "Song-writing focus — weak relevance to prose RP."
+    },
+    "parody": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 3
+    },
+    "satire": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 3
+    }
+  },
+  "architectures": {
+    "llama": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4
+    },
+    "gemma2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen3_5": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama-3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma3_text": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama-2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "phi3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen2.5": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "phi": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm4": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen-coder": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama-3.1": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gpt4": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "codeqwen": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gpt": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral-common": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "nemo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "alpaca": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "deepseek": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma-3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama3.1": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gpt2": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 1
+    },
+    "tinyllama": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama-3.2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "falcon": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "orca": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama3.3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "r1": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama3.2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "solar": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "codellama": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "phi-3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen3_moe": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "hermes": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3,
+      "note": "NousResearch Hermes line is specifically tuned for function-calling reliability — this is literally the model family we switched Worker to after empirical testing."
+    },
+    "vicuna": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama-3.3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "sailor": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qwen-3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mixtral": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral-small": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4
+    },
+    "llama-3-ko": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral-7b": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "openhermes-2.5": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 3
+    },
+    "qwq": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "llama-3-instruct": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "phi-2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mistral nemo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 4
+    },
+    "openchat": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "deepseek_v3": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "glm4_moe_lite": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rwkv6qwen2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "chatglm": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "dolphin": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gemma-2b": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "exaone": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "mpt": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "exaone-3.5": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    }
+  },
+  "training": {
+    "abliterated": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5,
+      "note": "Serves Author's permissiveness need directly, but our own testing showed abliteration can degrade tool-calling reliability — caution for Worker/Editor."
+    },
+    "alignment": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "alignment-handbook": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "automerger": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "autotrain": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "axolotl": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "c-rlft": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "continued-pretraining": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "cpo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "cpt": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "dapo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "dare": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "della": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "distilabel": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "distill": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "Distilled models sometimes lose creative nuance relative to their teacher."
+    },
+    "distillation": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2
+    },
+    "dpo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "drdpo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "finetune": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "genrl-swarm": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gensyn": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "gkd": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "grpo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "h2o-llmstudio": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "helpsteer2": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 2,
+      "note": "General-helpfulness tuning, not creative-writing focused — likely more corporate/assistant tone."
+    },
+    "human feedback": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "instruction-tuning": {
+      "filter": "neutral",
+      "worker": 4,
+      "editor": 4,
+      "author": 4,
+      "note": "Baseline positive — confirms the model follows instructions at all."
+    },
+    "kto": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "lazymergekit": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "llama-factory": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "lora": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "merge": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "mergekit": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "model_stock": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "open-r1": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 3,
+      "author": 2,
+      "note": "Reasoning-replication project, likely math/code focused."
+    },
+    "orpo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "peft": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "post-training": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ppo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "preferences": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "pretrained": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "qlora": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rl": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rl-swarm": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rlaif": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rlhf": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "rlvr": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "safe-rlhf": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 1,
+      "note": "Explicitly safety-focused RLHF — correlates with refusals."
+    },
+    "sft": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "simpo": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "slerp": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "slimorca": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "supervised-fine-tuning": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ties": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3,
+      "note": "Community merges are a mixed bag — no consistent quality signal either way."
+    },
+    "trl": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "ultrafeedback": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    },
+    "uncensored": {
+      "filter": "neutral",
+      "worker": 2,
+      "editor": 2,
+      "author": 5,
+      "note": "Same reasoning as abliterated."
+    },
+    "unsloth": {
+      "filter": "neutral",
+      "worker": 3,
+      "editor": 3,
+      "author": 3
+    }
+  }
+}

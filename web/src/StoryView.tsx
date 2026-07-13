@@ -21,17 +21,17 @@ import {
   type StoryPhase,
 } from './api'
 import EntryContent from './EntryContent'
-import { RoleLabel } from './playTabSettings'
+import { RoleLabel } from './PlayTabSettings'
 import { toast } from './toast'
 import ButtonContainerRow from './ButtonContainerRow'
 import { DEFAULT_INPUT_BAR } from './layoutUtils'
-import { useStoryToggles } from './storyToggles'
+import { useStoryToggles } from './StoryToggles'
 import {
   loadAllReasoningTraces,
   ReasoningTracePanel,
   saveReasoningTrace,
   useReasoningDisplayPrefs,
-} from './reasoningDisplay'
+} from './ReasoningDisplay'
 import type { LayoutRegion } from './api'
 import { useStoryLogScroll } from './useStoryLogScroll'
 import './StoryView.css'
@@ -432,6 +432,7 @@ export default function StoryView({
   const [traceCacheVersion, setTraceCacheVersion] = useState(0)
   const reasoningTraces = useMemo(
     () => (showReasoning ? loadAllReasoningTraces(storyId) : {}),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- traceCacheVersion is a cache-bust sentinel
     [storyId, showReasoning, traceCacheVersion],
   )
   const toolbarContainers = inputBar?.containers?.length
@@ -600,6 +601,7 @@ export default function StoryView({
       const page = await refresh()
       await resumeActiveJobs(page.entries)
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resumeActiveJobs changes per render; stable when storyId changes
   }, [storyId])
 
   const pendingTailSignature = useMemo(

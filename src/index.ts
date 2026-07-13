@@ -1,6 +1,6 @@
 import { logUnhandledError } from './lib/errors.js'
 import { startHealthSnapshots, type HealthSnapshot } from './lib/pipeline-health.js'
-import { getWorkerLaneSnapshot } from './queue/worker-lanes.js'
+import { getWorkerLaneSnapshot } from './queue/job-lanes.js'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { storiesRoute } from './routes/stories.js'

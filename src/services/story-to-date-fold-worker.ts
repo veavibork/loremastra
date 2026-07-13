@@ -21,7 +21,7 @@ import {
   foldWordCount,
   looksFoldDigestTruncated,
   type FoldableSegment,
-} from './story-to-date-corpus.js'
+} from './story-to-date-engine.js'
 
 /**
  * Feature A: fold the oldest STORY TO DATE segments into a single "deep past" digest so total

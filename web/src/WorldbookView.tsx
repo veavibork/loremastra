@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   createWorldbookEntry,
   fetchWorldbook,
@@ -61,16 +61,19 @@ export default function WorldbookView({ story }: PanelProps) {
     })
   }
 
-  async function reload(opts?: { background?: boolean }) {
-    if (!storyId) return
-    setEntries(await fetchWorldbook(storyId, opts))
-  }
+  const reload = useCallback(
+    async (opts?: { background?: boolean }) => {
+      if (!storyId) return
+      setEntries(await fetchWorldbook(storyId, opts))
+    },
+    [storyId],
+  )
 
   useEffect(() => {
     void reload()
     const interval = setInterval(() => void reload({ background: true }), POLL_MS)
     return () => clearInterval(interval)
-  }, [storyId])
+  }, [storyId, reload])
 
   function startCreate() {
     setError(null)

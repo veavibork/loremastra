@@ -6,7 +6,7 @@
 import type Database from 'better-sqlite3'
 import { listChronologicalPages, type PageRow } from '../db/page-store.js'
 import { getText, type TextRole } from '../db/text-store.js'
-import { resolveIcStartPageId } from './kickoff.js'
+import { resolveIcStartPageId } from './story-transition.js'
 
 export interface ChainPostEntry {
   /** 1-based from first visible IC page; stable across hidden/visible filtering. */

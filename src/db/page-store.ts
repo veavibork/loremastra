@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 
 export interface PageRow {
   id: string
@@ -12,8 +12,8 @@ export interface PageRow {
   selectTime: string | null
   hidden: boolean
   broken: boolean
-  /** SHA-256 of normalized canonical gen_package — gen_extract is valid only when this matches. */
-  memoryContentStamp: string | null
+  /** SHA-256 of normalized canonical gen_package for integrity comparison. */
+  contentHash: string | null
 }
 
 interface RawPageRow {
@@ -26,7 +26,7 @@ interface RawPageRow {
   select_time: string | null
   hidden: number
   broken: number
-  memory_content_stamp: string | null
+  content_hash: string | null
 }
 
 function mapPageRow(row: RawPageRow): PageRow {
@@ -40,7 +40,7 @@ function mapPageRow(row: RawPageRow): PageRow {
     selectTime: row.select_time,
     hidden: !!row.hidden,
     broken: !!row.broken,
-    memoryContentStamp: row.memory_content_stamp ?? null,
+    contentHash: row.content_hash ?? null,
   }
 }
 
@@ -165,10 +165,6 @@ export function setPageBroken(db: Database.Database, id: string, broken: boolean
   db.prepare(`UPDATE page SET broken = ? WHERE id = ?`).run(broken ? 1 : 0, id)
 }
 
-export function setMemoryContentStamp(
-  db: Database.Database,
-  pageId: string,
-  stamp: string | null,
-): void {
-  db.prepare(`UPDATE page SET memory_content_stamp = ? WHERE id = ?`).run(stamp, pageId)
+export function setContentHash(db: Database.Database, pageId: string, stamp: string | null): void {
+  db.prepare(`UPDATE page SET content_hash = ? WHERE id = ?`).run(stamp, pageId)
 }

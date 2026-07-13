@@ -1,7 +1,7 @@
 import type { AgentProfile } from '../config.js'
 import { BANNED_PHRASES_SPACE, DEFAULT_REFUSAL_PREFIXES } from './refusal-detection.js'
-import { GLOBAL_CSS_SPACE, DEFAULT_GLOBAL_CSS } from './global-css.js'
-import { PLAY_TAB_SPACE, DEFAULT_PLAY_TAB_SETTINGS } from './play-tab.js'
+import { GLOBAL_CSS_SPACE, DEFAULT_GLOBAL_CSS } from '../defaults/global-css.js'
+import { PLAY_TAB_SPACE, DEFAULT_PLAY_TAB_SETTINGS } from './display-preferences.js'
 import {
   TOGGLE_LENGTH_SPACE,
   TOGGLE_MOOD_SPACE,
@@ -11,7 +11,7 @@ import {
   DEFAULT_TOGGLE_MOOD,
   DEFAULT_TOGGLE_PARAMS,
   DEFAULT_TOGGLE_EFFORT,
-} from './toggle-presets.js'
+} from './generation-presets.js'
 
 export const SETTINGS_SPACE_DEFAULTS: Record<string, unknown> = {
   [BANNED_PHRASES_SPACE]: DEFAULT_REFUSAL_PREFIXES,

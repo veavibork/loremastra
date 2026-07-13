@@ -2,21 +2,21 @@ import type Database from 'better-sqlite3'
 import { getBookByType } from '../db/book-store.js'
 import { cancelPendingJobsForStoryToDate } from '../db/job-store.js'
 import { deleteStoryToDateSegment, listStoryToDateSegments } from '../db/story-to-date-store.js'
-import { getPage, listChronologicalPages, setMemoryContentStamp } from '../db/page-store.js'
+import { getPage, listChronologicalPages, setContentHash } from '../db/page-store.js'
 import { getText, setTextBroken } from '../db/text-store.js'
-import { computeTextContentStamp } from './content-stamp.js'
+import { computeTextContentStamp } from './content-fingerprint.js'
 import { enqueueEligibleStoryToDateJob, enqueuePendingStoryToDateJobs } from './story-to-date.js'
 import { resolveChainPostNumber } from './post-index.js'
 import { invalidateStoryReadCache } from './story-read-cache.js'
 
-export { computeTextContentStamp, postNeedsCompress } from './content-stamp.js'
+export { computeTextContentStamp, postNeedsCompress } from './content-fingerprint.js'
 
 /** Called when a compress job finishes successfully for this page/text pair. */
 export function markCompressValid(db: Database.Database, pageId: string, textId: string): void {
   const text = getText(db, textId)
   const stamp = computeTextContentStamp(text)
   if (!stamp) return
-  setMemoryContentStamp(db, pageId, stamp)
+  setContentHash(db, pageId, stamp)
   setTextBroken(db, textId, false)
 }
 
@@ -85,7 +85,7 @@ export function onCanonicalTextChanged(
 
   const stamp = computeTextContentStamp(text)
   if (stamp) {
-    setMemoryContentStamp(db, pageId, stamp)
+    setContentHash(db, pageId, stamp)
     setTextBroken(db, text.id, false)
   }
 }

@@ -1,8 +1,7 @@
 import type Database from 'better-sqlite3'
-import { nowIso } from './time.js'
+import { nowIso } from '../lib/time.js'
 import type { AgentProfile } from '../config.js'
-
-export type AgentRole = 'author' | 'worker' | 'editor'
+import type { AgentRole } from './model-config-store.js'
 
 interface RawAgentConfigRow {
   model: string

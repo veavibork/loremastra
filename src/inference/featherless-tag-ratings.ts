@@ -3,7 +3,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const RATINGS_PATH = path.resolve(__dirname, '../data/featherless-tag-ratings.json')
+const RATINGS_PATH = path.resolve(__dirname, '../defaults/featherless-tag-ratings.json')
+import type { AgentRole } from '../db/model-config-store.js'
 
 export type TagFilterVerdict = 'always' | 'never' | 'neutral'
 export interface TagRating {
@@ -14,7 +15,6 @@ export interface TagRating {
   note?: string
 }
 
-export type AgentRole = 'worker' | 'editor' | 'author'
 export type TagCategory =
   | 'capabilities'
   | 'families'

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { getBookByType } from '../db/book-store.js'
-import { countIcPosts } from './story-to-date-corpus.js'
+import { countIcPosts } from './story-to-date-engine.js'
 
 export interface StoryStats {
   /** Every text row in game+logbook books (includes superseded retry/edit versions). */
@@ -19,7 +19,7 @@ export function getStoryStats(db: Database.Database): StoryStats {
        FROM text t
        JOIN page p ON p.id = t.page_id
        JOIN book b ON b.id = p.book_id
-       WHERE b.book_type IN ('game', 'logbook') AND t.hidden = 0`,
+       WHERE b.book_type IN ('story', 'logbook') AND t.hidden = 0`,
     )
     .get() as { n: number; last: string | null }
 

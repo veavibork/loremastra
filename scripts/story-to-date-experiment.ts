@@ -41,7 +41,7 @@ import {
   type StoryBlockKind,
   type StoryToDateSegment,
   type VerbosePost,
-} from '../src/experiments/story-to-date-corpus.js'
+} from '../src/services/story-to-date-engine.js'
 
 function usage(): never {
   console.error(`Usage:

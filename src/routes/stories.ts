@@ -44,7 +44,7 @@ import {
   setCurrentPageId,
   setOocSessionStartPageId,
 } from '../db/story-state-store.js'
-import { resolveIcStartPageId } from '../services/kickoff.js'
+import { resolveIcStartPageId } from '../services/story-transition.js'
 import {
   recordHistoryEvent,
   undoHistory,
@@ -52,9 +52,9 @@ import {
   canUndoHistory,
   canRedoHistory,
 } from '../db/history-store.js'
-import { finalizeSetup } from '../services/kickoff.js'
+import { finalizeSetup } from '../services/story-transition.js'
 import { forkStory } from '../services/fork.js'
-import { onCanonicalTextChangedForStory } from '../services/memory-invalidation.js'
+import { onCanonicalTextChangedForStory } from '../services/context-invalidation.js'
 import {
   trackStoryDb,
   untrackStoryDb,
@@ -68,7 +68,7 @@ import { buildLogView } from '../services/log-view.js'
 import {
   removeStoryToDateSegment,
   updateStoryToDateCoverageThroughPost,
-} from '../services/story-to-date-admin.js'
+} from '../services/story-to-date.js'
 import { buildStoryToDateView } from '../services/story-to-date-view.js'
 import { buildPromptPreview } from '../services/prompt-preview.js'
 import { cachedStoryRead } from '../services/story-read-cache.js'
@@ -80,7 +80,7 @@ import {
   buildMemorySummary,
   enqueueMemoryPipeline,
   runMemoryBackfill,
-} from '../services/memory-manifest.js'
+} from '../services/context-manifest.js'
 import { EDITOR_SETUP_OPENING } from '../prompts.js'
 import { getAgentProfile } from '../services/agent-config.js'
 
@@ -125,7 +125,7 @@ storiesRoute.post('/', async (c) => {
   const story = createStory(globalDb, { ownerUserId: c.get('userId'), name })
 
   const storyDb = openTrackedStoryDb(story.id)
-  const gameBook = createBook(storyDb, { bookType: 'game' })
+  const gameBook = createBook(storyDb, { bookType: 'story' })
   const logbook = createBook(storyDb, { bookType: 'logbook', parentBookId: gameBook.id })
   createBook(storyDb, { bookType: 'worldbook', parentBookId: gameBook.id })
 
@@ -327,24 +327,24 @@ storiesRoute.delete('/:id/story-to-date/:segmentId', async (c) => {
   }
 })
 
-/** Compact memory health — story-to-date coverage, no per-post dump. */
-storiesRoute.get('/:id/memory/summary', (c) => {
+/** Compact context health — story-to-date coverage, no per-post dump. */
+storiesRoute.get('/:id/context/summary', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
   const logbook = getBookByType(storyDb, 'logbook')
   if (!logbook) return c.json({ error: 'logbook not found' }, 404)
   return c.json(buildMemorySummary(storyDb, logbook.id))
 })
 
-/** Full per-post memory manifest (stamps, compress validity, tag counts, archives). */
-storiesRoute.get('/:id/memory/manifest', (c) => {
+/** Full per-post context manifest (stamps, compress validity, tag counts, archives). */
+storiesRoute.get('/:id/context/manifest', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
   const logbook = getBookByType(storyDb, 'logbook')
   if (!logbook) return c.json({ error: 'logbook not found' }, 404)
   return c.json(buildMemoryManifest(storyDb, logbook.id))
 })
 
-/** Repair stamps and optionally enqueue compress/archive jobs. */
-storiesRoute.post('/:id/memory/backfill', async (c) => {
+/** Repair stamps and optionally enqueue jobs. */
+storiesRoute.post('/:id/context/backfill', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { enqueueJobs?: boolean }
   const storyDb = openTrackedStoryDb(c.req.param('id'))
   const logbook = getBookByType(storyDb, 'logbook')
@@ -356,8 +356,8 @@ storiesRoute.post('/:id/memory/backfill', async (c) => {
   )
 })
 
-/** Queue eligible compress/archive jobs only — no stamp or tag repair. */
-storiesRoute.post('/:id/memory/enqueue', (c) => {
+/** Queue eligible jobs only — no stamp or tag repair. */
+storiesRoute.post('/:id/context/enqueue', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
   const logbook = getBookByType(storyDb, 'logbook')
   if (!logbook) return c.json({ error: 'logbook not found' }, 404)
@@ -389,7 +389,7 @@ storiesRoute.post('/:id/messages', async (c) => {
   if (!content.trim()) return c.json({ error: 'content is required' }, 400)
 
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  if (getStoryState(storyDb).phase !== 'story') {
+  if (getStoryState(storyDb).phase !== 'active') {
     return c.json({ error: "story hasn't reached story phase yet" }, 400)
   }
   const logbook = getBookByType(storyDb, 'logbook')
@@ -533,7 +533,7 @@ storiesRoute.post('/:id/continue', async (c) => {
   }
   const storyDb = openTrackedStoryDb(c.req.param('id'))
   const phase = getStoryState(storyDb).phase
-  if (phase !== 'setup' && phase !== 'story') {
+  if (phase !== 'setup' && phase !== 'active') {
     return c.json({ error: "story isn't in a phase that can continue" }, 400)
   }
   const logbook = getBookByType(storyDb, 'logbook')
@@ -657,7 +657,7 @@ storiesRoute.post('/:id/fork', async (c) => {
   const sourceStoryId = c.req.param('id')
   const storyDb = openTrackedStoryDb(sourceStoryId)
 
-  if (getStoryState(storyDb).phase !== 'story') {
+  if (getStoryState(storyDb).phase !== 'active') {
     return c.json({ error: 'can only fork once the story phase has started' }, 400)
   }
 
@@ -753,7 +753,7 @@ storiesRoute.post('/:id/kickoff', (c) => {
   })
 
   finalizeSetup(storyDb, logbook.id, page.id)
-  setStoryPhase(storyDb, 'story')
+  setStoryPhase(storyDb, 'active')
   setCurrentPageId(storyDb, null)
   recordHistoryEvent(storyDb, {
     kind: 'page',
@@ -783,7 +783,7 @@ storiesRoute.post('/:id/kickoff', (c) => {
  */
 storiesRoute.post('/:id/ooc/start-session', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  if (getStoryState(storyDb).phase !== 'story')
+  if (getStoryState(storyDb).phase !== 'active')
     return c.json({ error: "story hasn't reached story phase yet" }, 400)
 
   const logbook = getBookByType(storyDb, 'logbook')

@@ -11,8 +11,6 @@ export interface LogEntry {
   hidden: boolean
   createdAt: string | null
   genMetrics: string | null
-  genExtract: string | null
-  compressMetrics: string | null
   /** Absolute chain post from kickoff (hidden turns included); null for setup or empty pages. */
   icPostNumber: number | null
 }
@@ -66,8 +64,6 @@ export function buildLogView(
       hidden: page.hidden,
       createdAt: text?.createdAt ?? null,
       genMetrics: text?.genMetrics ?? null,
-      genExtract: text?.genExtract ?? null,
-      compressMetrics: text?.compressMetrics ?? null,
       icPostNumber: postByPage.get(page.id) ?? null,
     })
 

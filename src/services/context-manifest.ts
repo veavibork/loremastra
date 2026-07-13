@@ -1,10 +1,10 @@
 import type Database from 'better-sqlite3'
 import { listChronologicalPages } from '../db/page-store.js'
 import { getText } from '../db/text-store.js'
-import { setMemoryContentStamp } from '../db/page-store.js'
+import { setContentHash } from '../db/page-store.js'
 import { listStoryToDateSegments } from '../db/story-to-date-store.js'
 import { hasActiveJobForStoryToDate, listPendingJobs } from '../db/job-store.js'
-import { computeTextContentStamp, postNeedsCompress } from './content-stamp.js'
+import { computeTextContentStamp, postNeedsCompress } from './content-fingerprint.js'
 import { enqueueEligibleStoryToDateJob, enqueuePendingStoryToDateJobs } from './story-to-date.js'
 
 /** Adopt content stamps for all canonical posts (idempotent). */
@@ -19,8 +19,8 @@ export function backfillContentStamps(db: Database.Database): { stamped: number;
       skipped++
       continue
     }
-    if (page.memoryContentStamp !== stamp) {
-      setMemoryContentStamp(db, page.id, stamp)
+    if (page.contentHash !== stamp) {
+      setContentHash(db, page.id, stamp)
       stamped++
     } else {
       skipped++
@@ -142,8 +142,8 @@ export function buildMemoryManifest(db: Database.Database, logbookId: string): M
       pageId: page.id,
       textId: page.selectedTextId,
       role: text?.role ?? null,
-      hasExtract: !!text?.genExtract,
-      stampMatch: !!stamp && page.memoryContentStamp === stamp,
+      hasExtract: false,
+      stampMatch: !!stamp && page.contentHash === stamp,
       needsCompress,
     })
   })

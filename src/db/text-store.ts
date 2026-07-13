@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 
 export type TextRole = 'user' | 'agent' | 'system'
 
@@ -16,8 +16,6 @@ export interface TextRow {
   genRequest: string | null
   genPackage: string | null
   genMetrics: string | null
-  genExtract: string | null
-  compressMetrics: string | null
 }
 
 interface RawTextRow {
@@ -32,8 +30,6 @@ interface RawTextRow {
   gen_request: string | null
   gen_package: string | null
   gen_metrics: string | null
-  gen_extract: string | null
-  compress_metrics: string | null
 }
 
 function mapTextRow(row: RawTextRow): TextRow {
@@ -49,8 +45,6 @@ function mapTextRow(row: RawTextRow): TextRow {
     genRequest: row.gen_request,
     genPackage: row.gen_package,
     genMetrics: row.gen_metrics,
-    genExtract: row.gen_extract,
-    compressMetrics: row.compress_metrics,
   }
 }
 
@@ -67,8 +61,8 @@ export function createText(
 ): TextRow {
   const id = newId()
   db.prepare(
-    `INSERT INTO text (id, created_at, page_id, prior_text_id, role, source_page_id, hidden, broken, gen_request, gen_package, gen_metrics, gen_extract)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL, NULL)`,
+    `INSERT INTO text (id, created_at, page_id, prior_text_id, role, source_page_id, hidden, broken, gen_request, gen_package, gen_metrics)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?, NULL)`,
   ).run(
     id,
     nowIso(),
@@ -98,25 +92,6 @@ export function fillTextGeneration(
       `UPDATE text SET gen_package = ?, gen_metrics = ? WHERE id = ? AND gen_package IS NULL`,
     )
     .run(input.genPackage, input.genMetrics ?? null, id)
-  return result.changes > 0
-}
-
-/** Clears compressed summary so postNeedsCompress returns true. */
-export function clearTextExtract(db: Database.Database, textId: string): void {
-  db.prepare(`UPDATE text SET gen_extract = NULL, compress_metrics = NULL WHERE id = ?`).run(textId)
-}
-
-export function fillTextExtract(
-  db: Database.Database,
-  id: string,
-  genExtract: string,
-  compressMetrics?: string | null,
-): boolean {
-  const result = db
-    .prepare(
-      `UPDATE text SET gen_extract = ?, compress_metrics = ? WHERE id = ? AND gen_extract IS NULL`,
-    )
-    .run(genExtract, compressMetrics ?? null, id)
   return result.changes > 0
 }
 

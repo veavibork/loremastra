@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.0.6",
+    "@hono/standard-validator": "^0.2.3",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.3.0",

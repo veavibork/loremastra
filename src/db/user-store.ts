@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3'
-import { decryptSecret, encryptSecret } from '../crypto.js'
-import { newId } from '../uuid.js'
-import { nowIso } from './time.js'
+import { decryptSecret, encryptSecret } from '../lib/crypto.js'
+import { newId } from '../lib/uuid.js'
+import { nowIso } from '../lib/time.js'
 
 export interface UserRow {
   id: string

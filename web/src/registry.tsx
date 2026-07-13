@@ -4,11 +4,11 @@ import StoryPanel from './StoryPanel'
 import SavesView from './SavesView'
 import LogsView from './LogsView'
 import QueueView from './QueueView'
-import ArchivesView from './ArchivesView'
+import SegmentsView from './SegmentsView'
 import AgentsView from './AgentsView'
-import MemoryView from './MemoryView'
+import ContextView from './ContextView'
 import PromptsView from './PromptsView'
-import SettingsView from './SettingsView'
+import PreferencesView from './PreferencesView'
 import type { PanelProps } from './panel-types'
 
 /**
@@ -22,12 +22,12 @@ const REGISTRY: Record<string, ComponentType<PanelProps>> = {
   'story:saves': SavesView,
   'story:logs': LogsView,
   'story:queue': QueueView,
-  'story:archives': ArchivesView,
+  'story:segments': SegmentsView,
   'lore:worldbook': WorldbookView,
-  'lore:memory': MemoryView,
+  'lore:context': ContextView,
   'config:agents': AgentsView,
   'config:prompts': PromptsView,
-  'settings:': SettingsView,
+  'preferences:': PreferencesView,
 }
 
 export function resolvePanel(id: string): ComponentType<PanelProps> | null {

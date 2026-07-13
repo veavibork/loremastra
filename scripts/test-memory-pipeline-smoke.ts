@@ -17,10 +17,10 @@ import { createStoryToDateSegment, fillStoryToDateSegment } from '../src/db/stor
 import { setStoryPhase } from '../src/db/story-state-store.js'
 import { recordHistoryEvent, undoHistory } from '../src/db/history-store.js'
 import { enqueueEligibleStoryToDateJob } from '../src/services/story-to-date.js'
-import { onCanonicalTextChanged, postNeedsCompress } from '../src/services/memory-invalidation.js'
+import { onCanonicalTextChanged, postNeedsCompress } from '../src/services/context-invalidation.js'
 import { assembleAuthorPrompt } from '../src/services/history.js'
-import { backfillContentStamps, buildMemoryManifest } from '../src/services/memory-manifest.js'
-import { newId } from '../src/uuid.js'
+import { backfillContentStamps, buildMemoryManifest } from '../src/services/context-manifest.js'
+import { newId } from '../src/lib/uuid.js'
 
 const USER_ID = '019f1e21-c547-75b2-8bc1-47b4b6cfdbe6'
 
@@ -40,7 +40,7 @@ function runInProcessSmoke(): void {
   const storyId = story.id
   const db = getStoryDb(storyId)
 
-  const gameBook = createBook(db, { bookType: 'game' })
+  const gameBook = createBook(db, { bookType: 'story' })
   const logbook = createBook(db, { bookType: 'logbook', parentBookId: gameBook.id })
   const worldbook = createBook(db, { bookType: 'worldbook', parentBookId: gameBook.id })
 
@@ -77,7 +77,7 @@ function runInProcessSmoke(): void {
     pageIds.push(page.id)
   }
 
-  setStoryPhase(db, 'story')
+  setStoryPhase(db, 'active')
 
   const seg = createStoryToDateSegment(db, { bookId: logbook.id, kind: 'begins', seq: 0 })
   fillStoryToDateSegment(db, seg.id, {
