@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { createJob, hasActiveJobForStoryToDate } from '../db/job-store.js'
+import { publishJobCreated } from '../queue/job-events.js'
 import { getStoryState } from '../db/story-state-store.js'
 import { resolveIcStartPageId } from './story-transition.js'
 import {
@@ -165,12 +166,13 @@ export function enqueueEligibleStoryToDateJob(
 
   const segment = createStoryToDateSegment(db, { bookId: logbookId, kind, seq })
   const editor = getAgentProfile(userId, 'editor')
-  createJob(db, {
+  const job = createJob(db, {
     targetStoryToDateId: segment.id,
     jobType: 'story-to-date',
     priority: 5,
     slotCost: editor.concurrencyCost,
   })
+  publishJobCreated(job.id, job.jobType, storyId)
   return segment.id
 }
 

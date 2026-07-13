@@ -38,10 +38,12 @@ import {
   publishDone,
   publishError,
   publishCancelled,
+  publishJobCreated,
   publishJobClaimed,
   publishJobStarted,
   getJobBuffer,
 } from './job-events.js'
+import { createLogger } from '../inference/outbound-telemetry.js'
 import {
   streamInference,
   completeChat,
@@ -480,10 +482,9 @@ function scanOnce(): void {
       scanHordeJobs(db, storyId, story.ownerUserId)
     } catch (err) {
       if (!db.open) trackedDbs.delete(storyId)
-      console.error(
-        `pipeline horde scan failed for story ${storyId}:`,
-        err instanceof Error ? err.message : err,
-      )
+      createLogger({ storyId, jobType: 'scan-horde' }).error('pipeline horde scan failed', {
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 
@@ -502,11 +503,9 @@ function scanOnce(): void {
       }
       dispatchProseJob(db, story.ownerUserId, storyId)
     } catch (err) {
-      if (!db.open) trackedDbs.delete(storyId)
-      console.error(
-        `pipeline prose scan failed for story ${storyId}:`,
-        err instanceof Error ? err.message : err,
-      )
+      createLogger({ storyId, jobType: 'scan-prose' }).error('pipeline prose scan failed', {
+        error: err instanceof Error ? err.message : String(err),
+      })
     }
   }
 }
@@ -656,12 +655,12 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
     const controller = new AbortController()
     runningControllers.set(job.id, controller)
     publishJobStarted(job.id)
-    void executeSetupJob(db, userId, job.id, job.targetTextId, controller.signal)
+    void executeSetupJob(db, userId, job.id, job.targetTextId, controller.signal, storyId)
   } else if (job.jobType === 'setup-worldbook' && job.targetTextId) {
     const controller = new AbortController()
     runningControllers.set(job.id, controller)
     publishJobStarted(job.id)
-    void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal)
+    void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal, storyId)
   } else {
     finishJob(db, job.id, 'failed', `job ${job.id} (${job.jobType}) has no valid target`)
     releaseSlot(userId, job.id)
@@ -869,7 +868,9 @@ async function resolveHordeJob(
   } catch (err) {
     // Transient poll failure (network hiccup, rate limit) — leave the job running and try
     // again next tick rather than failing it over what might be a momentary blip.
-    console.error(`horde poll failed for job ${job.id}:`, err instanceof Error ? err.message : err)
+    createLogger({ jobId: job.id, jobType: 'horde-poll' }).error('horde poll failed', {
+      error: err instanceof Error ? err.message : String(err),
+    })
     return
   }
 
@@ -992,6 +993,7 @@ async function executeSetupJob(
   jobId: string,
   targetTextId: string,
   signal: AbortSignal,
+  storyId: string,
 ): Promise<void> {
   const startedAt = Date.now()
   let isUpdateSession = false
@@ -1058,7 +1060,10 @@ async function executeSetupJob(
       try {
         applyExtractedWorldbookBlocks(db, worldbook.id, reply)
       } catch (err) {
-        console.error(`[setup ${jobId}] worldbook extraction failed, reply still stands:`, err)
+        createLogger({ jobId, storyId, jobType: 'setup' }).error(
+          'worldbook extraction failed, reply still stands',
+          { error: String(err) },
+        )
       }
     } else {
       // Dual-pass: queue a separate worldbook-authoring pass as its own visible message.
@@ -1075,11 +1080,12 @@ async function executeSetupJob(
           slotCost: getAgentProfile(userId, 'editor').concurrencyCost,
           priority: 10,
         })
+        publishJobCreated(worldbookJob.id, worldbookJob.jobType, storyId)
         followUp = { jobId: worldbookJob.id, pageId: worldbookPage.id }
       } catch (err) {
-        console.error(
-          `[setup ${jobId}] failed to queue worldbook-authoring pass, reply still stands:`,
-          err,
+        createLogger({ jobId, storyId, jobType: 'setup' }).error(
+          'failed to queue worldbook-authoring pass, reply still stands',
+          { error: String(err) },
         )
       }
     }
@@ -1094,9 +1100,9 @@ async function executeSetupJob(
             try {
               applyExtractedWorldbookBlocks(db, worldbookId, partial)
             } catch (extractErr) {
-              console.error(
-                `[setup ${jobId}] worldbook extraction failed on truncated reply:`,
-                extractErr,
+              createLogger({ jobId, storyId, jobType: 'setup' }).error(
+                'worldbook extraction failed on truncated reply',
+                { error: String(extractErr) },
               )
             }
           }
@@ -1128,6 +1134,7 @@ async function executeSetupWorldbookJob(
   jobId: string,
   targetTextId: string,
   signal: AbortSignal,
+  storyId: string,
 ): Promise<void> {
   const startedAt = Date.now()
   let worldbookId: string | undefined
@@ -1174,9 +1181,9 @@ async function executeSetupWorldbookJob(
     try {
       applyExtractedWorldbookBlocks(db, worldbook.id, rawText)
     } catch (err) {
-      console.error(
-        `[setup-worldbook ${jobId}] worldbook extraction failed, message still stands:`,
-        err,
+      createLogger({ jobId, storyId, jobType: 'setup-worldbook' }).error(
+        'worldbook extraction failed, message still stands',
+        { error: String(err) },
       )
     }
 
@@ -1190,9 +1197,9 @@ async function executeSetupWorldbookJob(
           try {
             applyExtractedWorldbookBlocks(db, worldbookId, partial)
           } catch (extractErr) {
-            console.error(
-              `[setup-worldbook ${jobId}] worldbook extraction failed on truncated reply:`,
-              extractErr,
+            createLogger({ jobId, storyId, jobType: 'setup-worldbook' }).error(
+              'worldbook extraction failed on truncated reply',
+              { error: String(extractErr) },
             )
           }
         },
@@ -1229,13 +1236,13 @@ function maybeQueueStoryNameJob(
 
   const story = getStory(getGlobalDb(), storyId)
   if (!story || story.name !== DEFAULT_STORY_NAME) return
-
-  createJob(db, {
+  const job = createJob(db, {
     targetTextId,
     jobType: 'story-name',
     slotCost: getAgentProfile(userId, 'worker').concurrencyCost,
     priority: -1,
   })
+  publishJobCreated(job.id, job.jobType, storyId)
 }
 
 /**

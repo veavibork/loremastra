@@ -94,7 +94,7 @@ export function publishCancelled(jobId: string): void {
   buffers.delete(jobId)
   emitter.emit(jobId, { type: 'cancelled' })
 }
-export function publishJobCreated(jobId: string, jobType: string, storyId: string): void {
+export function publishJobCreated(jobId: string, jobType: string, storyId?: string): void {
   emitter.emit(jobId, { type: 'created', jobType, storyId, at: new Date().toISOString() })
 }
 

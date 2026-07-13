@@ -63,7 +63,13 @@ import {
   requestJobCancel,
 } from '../queue/pipeline-runner.js'
 import type { GenerationOptions } from '../services/settings-space-registry.js'
-import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from '../queue/job-events.js'
+import {
+  subscribeJob,
+  getJobBuffer,
+  publishCancelled,
+  publishJobCreated,
+  type JobEvent,
+} from '../queue/job-events.js'
 import { buildLogView } from '../services/log-view.js'
 import {
   removeStoryToDateSegment,
@@ -426,6 +432,7 @@ storiesRoute.post('/:id/messages', async (c) => {
     slotCost: getAgentProfile(c.get('userId'), 'author').concurrencyCost,
     priority: 10,
   })
+  publishJobCreated(job.id, job.jobType, c.req.param('id'))
   if (body.generationOptions) setJobGenerationOptions(job.id, body.generationOptions)
   enqueueEligibleStoryToDateJob(storyDb, c.get('userId'), logbook.id, c.req.param('id'))
 
@@ -479,6 +486,7 @@ storiesRoute.post('/:id/posts/:pageId/retry', async (c) => {
     slotCost: getAgentProfile(c.get('userId'), isSetupPage ? 'editor' : 'author').concurrencyCost,
     priority: 10,
   })
+  publishJobCreated(job.id, job.jobType, c.req.param('id'))
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), 'regenerate')
   if (!isSetupPage && body.generationOptions)
     setJobGenerationOptions(job.id, body.generationOptions)
@@ -564,6 +572,7 @@ storiesRoute.post('/:id/continue', async (c) => {
       .concurrencyCost,
     priority: 10,
   })
+  publishJobCreated(job.id, job.jobType, c.req.param('id'))
   if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), 'continue')
   if (!isSetupContinuation && body.generationOptions)
     setJobGenerationOptions(job.id, body.generationOptions)
@@ -727,6 +736,7 @@ storiesRoute.post('/:id/setup/messages', async (c) => {
     slotCost: getAgentProfile(c.get('userId'), 'editor').concurrencyCost,
     priority: 10,
   })
+  publishJobCreated(job.id, job.jobType, c.req.param('id'))
   return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id })
 })
 
@@ -768,6 +778,7 @@ storiesRoute.post('/:id/kickoff', (c) => {
     slotCost: getAgentProfile(c.get('userId'), 'author').concurrencyCost,
     priority: 10,
   })
+  publishJobCreated(job.id, job.jobType, c.req.param('id'))
   return c.json({ agentPageId: page.id, jobId: job.id })
 })
 

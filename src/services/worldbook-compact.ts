@@ -14,6 +14,7 @@ import { completeChat, type ChatMessage } from '../inference/featherless.js'
 import { WORLDBOOK_COMPACT_SYSTEM_PROMPT } from '../prompts.js'
 import { getAgentProfile } from './agent-config.js'
 import { estimateTokens } from './story-to-date-engine.js'
+import { publishJobCreated } from '../queue/job-events.js'
 
 export interface WorldbookCompactOpts {
   entryType?: WorldbookEntryType
@@ -229,5 +230,6 @@ export function enqueueWorldbookCompactJob(
     priority: 0,
   })
   setWorldbookCompactJobOpts(job.id, opts)
+  publishJobCreated(job.id, job.jobType)
   return job
 }
