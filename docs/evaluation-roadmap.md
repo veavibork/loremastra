@@ -340,12 +340,17 @@ F-042 — React re-render profiling needs DevTools
 - [x] Disambiguation resolution — 46 items: dead archive/compression (F-018, F-006, F-009, F-020b), PascalCase renames (F-023), compression disambiguation (F-020c), data/ → defaults/ (F-008), corrupted-tools/ consolidation (F-003), 12 file renames, tab/route renames
 - [x] Documentation reconciliation (post-disambiguation) — evaluation-roadmap.md + next-session.md updated
 
-### Do first (this week)
+### Done (2026-07-13)
 
-1. Fix 12 frontend lint warnings — remainder from F-025
-2. Delete bun.lock (F-004) — still present
-3. Apply npm patch updates (F-022) — minor version debt
-4. Create src/lib/ for remaining root utilities (F-007) — time.ts moved, uuid.ts/crypto.ts remain
+1. [x] Pipeline-runner smoke test — promoted to `tests/services/pipeline-smoke.test.ts` (4 tests)
+2. [x] Logging & Observability — wired `publishJobCreated`, replaced `console.error` with structured `createLogger`
+
+### Done (2026-07-12 follow-up)
+
+1. [x] Fix 12 frontend lint warnings — remainder from F-025
+2. [x] Delete bun.lock (F-004)
+3. [x] Apply npm patch updates (F-022)
+4. [x] Create src/lib/ for remaining root utilities (F-007) — uuid.ts, crypto.ts, time.ts moved
 
 ### Do next (this month)
 

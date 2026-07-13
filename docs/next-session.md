@@ -1,10 +1,15 @@
-# Next Session: Observability → Refactors
+# Next Session: Refactors
 
-## Current Status (2026-07-12)
+## Current Status (2026-07-13)
 
-The disambiguation resolution, cleanup, lint, Zod validation, and test expansion are all complete. 132 tests total (122 Vitest + 10 Playwright contract). 0 compilation errors. 0 backend lint warnings. 0 frontend lint warnings.
+Disambiguation, cleanup, lint, Zod validation, test expansion, and observability are complete. 136 tests total (126 Vitest + 10 Playwright contract). 0 compilation errors. 0 lint warnings.
 
 **What's done this session:**
+
+- Pipeline-runner smoke test: promoted `scripts/test-memory-pipeline-smoke.ts` to `tests/services/pipeline-smoke.test.ts` (4 tests)
+- Logging & Observability: wired `publishJobCreated` in all createJob call sites (stories, pipeline-runner, story-to-date, worldbook-compact); replaced all `console.error` calls in pipeline-runner with structured `createLogger` logging
+
+**What's already done (prior sessions):**
 
 - Delete `bun.lock` (F-004), apply npm patch updates (F-022), move `uuid.ts`/`crypto.ts` to `src/lib/` (F-007)
 - Fix 12 frontend oxlint warnings → 0
@@ -12,9 +17,6 @@ The disambiguation resolution, cleanup, lint, Zod validation, and test expansion
 - Store tests: `worldbook-store` + `story-to-date-store` CRUD (41 new tests)
 - Service tests: `context-manifest` + `context-invalidation` smoke (9 new tests)
 - API contract tests: 10 Playwright route-level tests (`e2e/smoke.spec.ts`)
-
-**What's already done (prior session):**
-
 - 36 backend oxlint warnings fixed (F-025), Prettier (F-026)
 - Archives fully retired (F-020)
 - Documentation reconciled (F-043, F-044)
@@ -22,22 +24,7 @@ The disambiguation resolution, cleanup, lint, Zod validation, and test expansion
 
 ## Remaining (by priority)
 
-### 1. Pipeline-runner smoke test (30 min)
-
-Promote `scripts/test-memory-pipeline-smoke.ts` to a proper vitest test in `tests/services/`. Already imported from `src/`, just needs `describe`/`it` wrappers.
-
-### 2. Logging & Observability (pre-refactor safety net)
-
-Before touching the large files (pipeline-runner, StoryView, api.ts), add visibility:
-
-- **Structured request/response logging** — model, provider, tokens, latency, success/failure, retry count
-- **Job lifecycle events** — job created → claimed → running → done/failed/cancelled with timestamps
-- **Error telemetry** — catch unhandled errors with stack traces, request context, job state
-- **Pipeline health metrics** — queue depth, worker lane utilization, slot contention
-
-Check OMP/MCP/npm for existing solutions before building.
-
-### 3. Refactors
+### 1. Refactors
 
 Priority order (matching severity ranking):
 
@@ -48,9 +35,13 @@ Priority order (matching severity ranking):
 5. `services/` subdirectories (F-005)
 6. `api.ts` split by resource (F-039)
 
-### 4. E2E critical path
+### 2. E2E critical path
 
 `login → create → setup → story transition → post → retry` — needs seeded DB + full browser `page` fixture. Dedicated session.
+
+### 3. Remaining cleanup from evaluation
+
+- Apply npm patch updates (F-022) — minor version debt
 
 ## Replacements to Consider
 

@@ -3,7 +3,7 @@
 ## Test runners
 
 **Unit / integration:** Vitest, configured in `vitest.config.ts`. Tests in `tests/db/` (store tests),
-`tests/lib/` (pure-logic tests), and `tests/services/` (service-level smoke tests).
+`tests/lib/` (pure-logic tests), and `tests/services/` (service-level smoke tests including pipeline smoke).
 
 - `npm test` — single run
 - `npm run test:watch` — watch mode
