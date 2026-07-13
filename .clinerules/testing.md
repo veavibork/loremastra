@@ -2,8 +2,8 @@
 
 ## Test runners
 
-**Unit / integration:** Vitest, configured in `vitest.config.ts`. Tests in `tests/db/` (store tests)
-and `tests/lib/` (pure-logic tests).
+**Unit / integration:** Vitest, configured in `vitest.config.ts`. Tests in `tests/db/` (store tests),
+`tests/lib/` (pure-logic tests), and `tests/services/` (service-level smoke tests).
 
 - `npm test` — single run
 - `npm run test:watch` — watch mode
@@ -43,7 +43,7 @@ Standalone TypeScript scripts in `scripts/`, run individually with `tsx`:
 - **New `probe-`/`debug-` script** — when investigating a specific behavior. These are
   disposable; don't be afraid to write one, use it, and leave it for future reference.
 - **New vitest test** — when adding a feature that warrants a repeatable unit/integration check.
-  Add to `tests/db/` or `tests/lib/` following the existing patterns.
+  Add to `tests/db/`, `tests/lib/`, or `tests/services/` following the existing patterns.
 
 ## Before running scripts that touch the DB
 

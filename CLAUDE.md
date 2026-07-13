@@ -34,12 +34,11 @@ sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ig
 
 - **Backend (repo root):** Node.js + TypeScript (ESM, `"type": "module"`) + Hono + SQLite (`better-sqlite3`)
 - **Frontend (`web/`):** React 19 + Vite 8 + TypeScript (separate npm package)
-- **Validation:** `zod` · **Auth:** `bcryptjs` · **IDs:** UUID v7 (`uuid`)
+- **Validation:** `zod` + `@hono/standard-validator` · **Auth:** `bcryptjs` · **IDs:** UUID v7 (`uuid`)
 - **MCP SDK:** `@modelcontextprotocol/sdk`
 - **Run/dev:** `tsx` · **Compile:** `tsc`
-- **No test framework** — standalone `tsx` scripts in `scripts/`
-- **No formatter** — no Prettier; do not introduce one without a decision
-- **Linting:** `oxlint` for frontend only (`web/.oxlintrc.json`)
+- **Test:** Vitest (122 tests, `tests/db/`, `tests/lib/`, `tests/services/`) + Playwright (10 API contract tests, `e2e/`)
+- **Formatter:** Prettier (`.prettierrc`) · **Linting:** `oxlint` for backend (`src`, `scripts`) and frontend (`web/`)
 
 ## Commands
 

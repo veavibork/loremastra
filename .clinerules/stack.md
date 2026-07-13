@@ -10,9 +10,9 @@ installed and run separately.
 - **Package manager:** npm (both `package-lock.json` files are committed).
 - **Backend (repo root):** Node.js + TypeScript (ESM — `"type": "module"`).
   - Web framework: Hono (`hono`, `@hono/node-server`)
+  - Validation: Zod + `@hono/standard-validator` middleware
   - Database: SQLite via `better-sqlite3`
-  - Also uses: `zod` (validation), `bcryptjs`, `uuid`,
-    `@modelcontextprotocol/sdk`
+  - Also uses: `bcryptjs`, `uuid`, `@modelcontextprotocol/sdk`, `cross-env`
   - Run/dev via `tsx`; compile via `tsc`.
 - **Frontend (`web/`):** React 19 + Vite 8, TypeScript.
   - Dependencies: `react`, `react-dom`, `json-edit-react`.
@@ -113,7 +113,8 @@ Repo root:
 Backend `src/`:
 
 - `index.ts` — server entrypoint (Hono app, listens on port 4113)
-- `config.ts`, `crypto.ts`, `uuid.ts`, `prompts.ts` — top-level modules
+- `config.ts`, `prompts.ts` — top-level configuration modules
+- `lib/` — shared library utilities (`time.ts`, `uuid.ts`, `crypto.ts`, `validation-hook.ts`, `errors.ts`)
 - `routes/` — HTTP route handlers (`stories.ts`, `agents.ts`, `account.ts`,
   `sessions.ts`, `settings-spaces.ts`, `layout.ts`, `prompts.ts`,
   `client-errors.ts`)

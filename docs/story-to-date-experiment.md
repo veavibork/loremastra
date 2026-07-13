@@ -16,8 +16,8 @@ Related: [loremaster.md](../loremaster.md) Story-to-Date Memory Pipeline, assemb
 | **Seam gate**       | If coverage == input ceiling → one retry with step-back prompt                         |
 | **Assembly**        | system → worldbook → merged `[STORY TO DATE]` → verbose posts after last coverage only |
 | **Invalidation**    | Edit/fork inside coverage window deletes affected segments                             |
-| **Scene titles**    | Worker `archive-name` jobs on filled segments — **Archives tab only**                  |
-| **Legacy archives** | `archive` / `archive_member` rows purged on story DB open                              |
+| **Scene titles**    | Worker `segment-name` jobs on filled segments — **Segments tab only**                  |
+| **Legacy archives** | `archive` / `archive_member` rows purged on story DB open — fully retired 2026-07-12   |
 
 Implementation:
 
@@ -28,7 +28,7 @@ Implementation:
 | Corpus / merge / parse | `src/services/story-to-date-corpus.ts`            |
 | Store                  | `src/db/story-to-date-store.ts`                   |
 | Assembly               | `src/services/history.ts`                         |
-| Archives UI            | `web/src/ArchivesView.tsx`                        |
+| Segments UI            | `web/src/SegmentsView.tsx`                        |
 | HTTP                   | `GET/POST/PATCH /api/stories/:id/story-to-date/*` |
 
 ---
@@ -77,4 +77,4 @@ Each run writes prompts, raw responses, extracted blocks, and merged `[STORY TO 
 - Tag-driven promotion of compressed/archive tiers in assembly
 - Setup/kickoff-specific archive blocks
 
-Old code paths (`src/services/archive*.ts`, `compress-worker.ts`) may remain in the tree for reference but are **not dispatched** by the pipeline runner.
+All old code paths deleted 2026-07-12 as part of disambiguation resolution (46 items across 6 phases).

@@ -12,7 +12,7 @@ It is strict-adjacent: `noUnusedLocals`, `noUnusedParameters`,
   `PromptsView`, `QueueView`.
 - **CSS pairing:** Each view has a matching `.css` file (e.g. `StoryView.css`).
   Component-level CSS files follow the same pattern.
-- **API layer:** `api.ts` (core fetch wrapper), `api-coordinator.ts` (request orchestration).
+- **API layer:** `api.ts` (core fetch wrapper), `api-limiter.ts` (request orchestration).
 - **Utilities:** `format-time.ts`, `layoutUtils.ts`, `global-css-settings.ts`,
   `panel-types.ts`, `prompt-block.ts`, `toast.ts`, `error-capture.ts`.
 - **Hooks:** `useStoryLogScroll.ts`, `useVisualViewport.ts` (custom hooks prefixed `use`).

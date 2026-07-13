@@ -633,9 +633,27 @@ performance, and UX edge cases surfaced by real VM sessions.
   across the codebase — all files already conforming. `lint-staged` + `simple-git-hooks` pre-commit
   hook auto-formats staged `*.{ts,tsx,js,jsx,json,css,md}` files.
 - **Lint:** oxlint configured for both packages (`npm run lint`). Backend clean (0 warnings as of
-  2026-07-12); frontend has 12 remaining warnings deferred for follow-up.
-- **Testing:** vitest (`npm test`, `vitest run`) and playwright (`npm run test:e2e`) configured.
-  Test directories: `tests/db/`, `tests/lib/`, `e2e/`.
+  2026-07-12); frontend clean (12 warnings → 0 fixed 2026-07-12).
+- **Testing:** vitest (`npm test`, `vitest run` — 122 tests) and playwright (`npm run test:e2e` — 10 tests)
+  configured. Test directories: `tests/db/`, `tests/lib/`, `tests/services/`, `e2e/`.
 - Documentation updated to reflect current state: loremaster.md (archives contradiction resolved,
   Provider Abstraction + Multi-User sections updated for shipped status), stack.md (formatter/test
   framework claims corrected, new commands added), frontend.md, README.md, dev-workflow.md.
+
+### Disambiguation resolution + cleanup + validation + test expansion — ✅ done, 2026-07-12
+
+- **Disambiguation** (46 items across 6 phases): dead code purge (archive workers, compression,
+  experiments/), backend file renames (12 files), content changes (AgentRole dedup, column/job-type/
+  route renames), file moves, and frontend PascalCase renames. 72/72 tests passing throughout.
+  All documentation reconciled across 2 passes.
+- **Cleanup** (dependencies + structure): delete `bun.lock` (F-004), apply npm patch updates
+  (F-022), move `uuid.ts`/`crypto.ts` to `src/lib/` with all import paths updated.
+- **Frontend lint**: 12 oxlint warnings → 0 (`allowExportNames` config + `useCallback` + suppressions).
+- **Zod route validation** (F-034): `@hono/standard-validator` wired into 5 route files with a shared
+  `validationHook` factory in `src/lib/` — validates JSON/params and returns `{ error: string }` for
+  frontend compatibility. `DEV_BYPASS_SESSION_GUARD` env var supported in Playwright `webServer`.
+- **Test expansion**: 41 new store CRUD tests (`worldbook-store`, `story-to-date-store`), 9 new
+  service smoke tests (`context-manifest`, `context-invalidation`), 10 API contract tests
+  (`e2e/smoke.spec.ts`). 132 total (122 Vitest + 10 Playwright), 0 regressions.
+- **Documentation**: 4 files stale claims fixed (CLAUDE.md test/lint/formatter status, stack.md
+  deps/directory map, testing.md test directories, frontend.md api-coordinator→api-limiter).
