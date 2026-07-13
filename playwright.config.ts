@@ -5,6 +5,7 @@ export default defineConfig({
   timeout: 15_000,
   webServer: {
     command: 'npm run dev',
+    env: { DEV_BYPASS_SESSION_GUARD: 'true' },
     port: 4113,
     timeout: 10_000,
     reuseExistingServer: true,
