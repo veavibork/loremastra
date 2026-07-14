@@ -7,7 +7,6 @@ import { getAgentProfile } from '../../services/agent-config.js'
 import { executeStoryToDateFoldJob } from '../../services/story-to-date/fold-worker.js'
 import { JobCancelledError } from '../../inference/featherless.js'
 import { releaseSlot } from '../slots.js'
-import { releaseWorkerLane } from '../job-lanes.js'
 import { beginCancellableWorkerJob, endCancellableWorkerJob } from '../cancel.js'
 
 export async function executeStoryToDateFoldJobWrapper(
@@ -45,6 +44,5 @@ export async function executeStoryToDateFoldJobWrapper(
   } finally {
     endCancellableWorkerJob(jobId)
     releaseSlot(userId, jobId)
-    releaseWorkerLane()
   }
 }

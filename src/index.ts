@@ -1,6 +1,5 @@
 import { logUnhandledError } from './lib/errors.js'
 import { startHealthSnapshots, type HealthSnapshot } from './lib/pipeline-health.js'
-import { getWorkerLaneSnapshot } from './queue/job-lanes.js'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { storiesRoute } from './routes/stories.js'
@@ -97,19 +96,15 @@ process.on('uncaughtException', (err) => {
 
 function buildHealthSnapshot(): Omit<HealthSnapshot, 'at'> {
   const db = getGlobalDb()
-  const lanes = getWorkerLaneSnapshot()
   const users = listUsers(db)
   const userId = users[0]?.id ?? ''
   const queue = getQueueStatus(userId)
   return {
     activeJobs: 0,
     pendingJobs: 0,
-    workerLanesUsed: lanes.workerActive,
-    workerLanesMax: lanes.workerThreadLimit,
-    proseLaneBusy: lanes.proseActive > 0,
+    slotsUsed: queue.used,
+    slotsMax: queue.max,
     hordeJobsRunning: 0,
-    hordeSlotsUsed: queue.used,
-    hordeSlotsMax: queue.max,
     trackedStories: listAllStories(db).length,
   }
 }

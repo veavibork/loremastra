@@ -15,7 +15,6 @@ import { getAgentProfile } from '../../services/agent-config.js'
 import { NAMING_PROMPT } from '../../prompts.js'
 import { completeChat, withModelFallback, type ChatMessage } from '../../inference/featherless.js'
 import { releaseSlot } from '../slots.js'
-import { releaseWorkerLane } from '../job-lanes.js'
 import { extractStoryName, NAMING_MAX_TOKENS, STORY_NAME_MAX_ATTEMPTS } from './naming.js'
 
 export async function executeStoryNameJob(
@@ -69,6 +68,5 @@ export async function executeStoryNameJob(
     finishJob(db, jobId, 'failed', message)
   } finally {
     releaseSlot(userId, jobId)
-    releaseWorkerLane()
   }
 }

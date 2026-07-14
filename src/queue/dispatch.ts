@@ -14,15 +14,7 @@ import { getBookByType } from '../db/book-store.js'
 import { getGlobalDb } from '../db/global-db.js'
 import { getStory } from '../db/story-store.js'
 import { tryAcquireSlot, releaseSlot } from './slots.js'
-import {
-  refreshWorkerLaneLimits,
-  isProsePreempting,
-  isWorkerLaneBusy,
-  tryAcquireProseLane,
-  releaseProseLane,
-  tryAcquireWorkerLane,
-  releaseWorkerLane,
-} from './job-lanes.js'
+
 import { tryAcquireHordeSlot, releaseHordeSlot } from '../inference/horde-slots.js'
 import { ensureConcurrencyFeedForUser } from './concurrency-feed.js'
 import {
@@ -109,7 +101,6 @@ export function stopPipelineRunner(): void {
 }
 
 function scanOnce(): void {
-  refreshWorkerLaneLimits()
   const globalDb = getGlobalDb()
   for (const [storyId, db] of trackedDbs) {
     try {
@@ -131,8 +122,8 @@ function scanOnce(): void {
     cancelPendingTagGenJobs(db)
   }
 
-  dispatchWorkerJobs(globalDb)
-
+  // Prose dispatches first — priority ordering means the user's interactive generation
+  // claims slots before background workers. Slots.ts is the sole gatekeeper.
   for (const [storyId, db] of trackedDbs) {
     try {
       const story = getStory(globalDb, storyId)
@@ -147,6 +138,8 @@ function scanOnce(): void {
       })
     }
   }
+
+  dispatchWorkerJobs(globalDb)
 }
 
 function unclaimJob(db: Database.Database, jobId: string): void {
@@ -160,13 +153,10 @@ function cancelPendingTagGenJobs(db: Database.Database): void {
   ).run(nowIso(), 'tag generation removed')
 }
 
-/** Lorepebble-style parallel worker dispatch — up to WORKER_THREADS compress/archive jobs at once. */
+/** Worker dispatch — slots.ts is the sole gatekeeper. Loop tries to claim and dispatch
+ * worker jobs until no more can be acquired. */
 function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
-  if (isProsePreempting()) return
-
   while (true) {
-    if (!tryAcquireWorkerLane()) break
-
     let dispatched = false
     for (const [storyId, db] of trackedDbs) {
       const story = getStory(globalDb, storyId)
@@ -200,7 +190,6 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         if (!logbook) {
           finishJob(db, job.id, 'failed', 'logbook not found')
           releaseSlot(story.ownerUserId, job.id)
-          releaseWorkerLane()
           continue
         }
         publishJobStarted(job.id)
@@ -217,7 +206,6 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         if (!logbook) {
           finishJob(db, job.id, 'failed', 'logbook not found')
           releaseSlot(story.ownerUserId, job.id)
-          releaseWorkerLane()
           continue
         }
         publishJobStarted(job.id)
@@ -240,26 +228,20 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       } else {
         finishJob(db, job.id, 'failed', `job ${job.id} (${job.jobType}) has no valid target`)
         releaseSlot(story.ownerUserId, job.id)
-        releaseWorkerLane()
       }
       break
     }
 
-    if (!dispatched) {
-      releaseWorkerLane()
-      break
-    }
+    if (!dispatched) break
   }
 }
 
 function dispatchProseJob(db: Database.Database, userId: string, storyId: string): void {
-  if (isWorkerLaneBusy()) return
-
   const job = claimNextJob(db, PROSE_JOB_TYPES)
   if (!job) return
   publishJobClaimed(job.id)
 
-  // Horde prose: submit-then-poll — does not hold the prose lane (workers may run while queued).
+  // Horde prose: submit-then-poll — does not hold a slot (workers may run while queued).
   if (
     job.jobType === 'prose' &&
     job.targetTextId &&
@@ -273,15 +255,9 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
     return
   }
 
-  if (!tryAcquireProseLane()) {
-    unclaimJob(db, job.id)
-    return
-  }
-
   ensureConcurrencyFeedForUser(userId, getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? '')
   if (!tryAcquireSlot(userId, job.id, job.slotCost)) {
     unclaimJob(db, job.id)
-    releaseProseLane()
     return
   }
 
@@ -318,7 +294,6 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
   } else {
     finishJob(db, job.id, 'failed', `job ${job.id} (${job.jobType}) has no valid target`)
     releaseSlot(userId, job.id)
-    releaseProseLane()
   }
 }
 

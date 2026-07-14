@@ -19,7 +19,6 @@ import { EDITOR_SETUP_WORLDBOOK } from '../../prompts.js'
 import { JobCancelledError, type ChatMessage } from '../../inference/featherless.js'
 import { createLogger } from '../../inference/outbound-telemetry.js'
 import { releaseSlot } from '../slots.js'
-import { releaseProseLane } from '../job-lanes.js'
 import { streamingModels, runningControllers, handleStreamingCancel } from '../cancel.js'
 import { streamWithFallback } from '../provider-dispatch.js'
 import { publishDone, publishError } from '../job-events.js'
@@ -109,6 +108,5 @@ export async function executeSetupWorldbookJob(
     streamingModels.delete(jobId)
     releaseSlot(userId, jobId)
     runningControllers.delete(jobId)
-    releaseProseLane()
   }
 }

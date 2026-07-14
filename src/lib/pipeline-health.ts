@@ -14,12 +14,9 @@ export interface HealthSnapshot {
   at: string
   activeJobs: number
   pendingJobs: number
-  workerLanesUsed: number
-  workerLanesMax: number
-  proseLaneBusy: boolean
+  slotsUsed: number
+  slotsMax: number
   hordeJobsRunning: number
-  hordeSlotsUsed: number
-  hordeSlotsMax: number
   trackedStories: number
 }
 

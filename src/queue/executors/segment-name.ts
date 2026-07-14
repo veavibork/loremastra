@@ -13,7 +13,6 @@ import {
   type ChatMessage,
 } from '../../inference/featherless.js'
 import { releaseSlot } from '../slots.js'
-import { releaseWorkerLane } from '../job-lanes.js'
 import { beginCancellableWorkerJob, endCancellableWorkerJob } from '../cancel.js'
 import { extractStoryName, NAMING_MAX_TOKENS, ARCHIVE_NAME_MAX_ATTEMPTS } from './naming.js'
 
@@ -73,6 +72,5 @@ export async function executeStoryToDateNameJob(
   } finally {
     endCancellableWorkerJob(jobId)
     releaseSlot(userId, jobId)
-    releaseWorkerLane()
   }
 }

@@ -12,7 +12,6 @@ import {
 } from '../../services/story-to-date/index.js'
 import { JobCancelledError } from '../../inference/featherless.js'
 import { releaseSlot } from '../slots.js'
-import { releaseWorkerLane } from '../job-lanes.js'
 import { beginCancellableWorkerJob, endCancellableWorkerJob } from '../cancel.js'
 
 export async function executeStoryToDateJobWrapper(
@@ -58,6 +57,5 @@ export async function executeStoryToDateJobWrapper(
   } finally {
     endCancellableWorkerJob(jobId)
     releaseSlot(userId, jobId)
-    releaseWorkerLane()
   }
 }

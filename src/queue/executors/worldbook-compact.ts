@@ -8,7 +8,6 @@ import {
   buildWorldbookCompactResultSummary,
 } from '../../services/worldbook/compact.js'
 import { releaseSlot } from '../slots.js'
-import { releaseWorkerLane } from '../job-lanes.js'
 
 export async function executeWorldbookCompactJob(
   db: Database.Database,
@@ -32,6 +31,5 @@ export async function executeWorldbookCompactJob(
     finishJob(db, jobId, 'failed', message)
   } finally {
     releaseSlot(userId, jobId)
-    releaseWorkerLane()
   }
 }
