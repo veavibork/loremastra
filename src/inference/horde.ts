@@ -42,13 +42,13 @@ async function safeText(response: Response): Promise<string> {
   }
 }
 
-// A hung request must not be able to hold a Horde slot forever — with only
-// HORDE_MAX_CONCURRENT (2 by default, see horde-slots.ts) slots total, one or two stuck
-// requests would starve the whole Horde path. Found live 2026-07-03: a submit call that's
-// merely slow (not hung) is normal and expected — Horde generation genuinely varies from
-// seconds to minutes — but nothing here previously bounded a request that never resolves at
-// all. Each call is a single one-shot request/response (no streaming to reset on), so a plain
-// fixed timeout is enough, unlike featherless.ts's armTimeout which resets per streamed chunk.
+// A hung request must not be able to hold a Horde submission forever — Horde's rate
+// limiter (horde-rate-limiter.ts) gates new submissions, but a single stuck poll could
+// still block the scan loop. Found live 2026-07-03: a submit call that's merely slow (not
+// hung) is normal and expected — Horde generation genuinely varies from seconds to minutes
+// — but nothing here previously bounded a request that never resolves at all. Each call is
+// a single one-shot request/response (no streaming to reset on), so a plain fixed timeout
+// is enough, unlike featherless.ts's armTimeout which resets per streamed chunk.
 const DEFAULT_TIMEOUT_MS = 30_000
 
 async function fetchWithTimeout(

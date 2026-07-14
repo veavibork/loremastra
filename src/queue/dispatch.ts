@@ -16,7 +16,7 @@ import { getGlobalDb } from '../db/global-db.js'
 import { getStory } from '../db/story-store.js'
 import { tryAcquireSlot, releaseSlot } from './slots.js'
 
-import { tryAcquireHordeSlot, releaseHordeSlot } from '../inference/horde-slots.js'
+import { canSubmitHorde, recordHordeSubmit } from '../inference/horde-rate-limiter.js'
 import { ensureConcurrencyFeedForUser } from './concurrency-feed.js'
 import {
   publishProgress,
@@ -257,10 +257,11 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
     job.targetTextId &&
     getAgentProfile(userId, 'author').provider === 'horde'
   ) {
-    if (!tryAcquireHordeSlot(job.id)) {
+    if (!canSubmitHorde()) {
       unclaimJob(db, job.id)
       return
     }
+    recordHordeSubmit()
     void executeHordeProseSubmit(db, userId, job.id, job.targetTextId)
     return
   }
@@ -312,9 +313,9 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
  * completion endpoint, so unlike executeProseJob this doesn't await a reply. The job stays
  * 'running' with a horde_request_id recorded once the submit call resolves; scanHordeJobs
  * (P5b) owns polling it to done/faulted on later scan ticks and doing the actual
- * fillTextGeneration/finishJob/publishDone tail. releaseHordeSlot happens there too, not
- * here — the slot represents "still awaiting a result," which is true well past this
- * function's return.
+ * fillTextGeneration/finishJob/publishDone tail. hordeJobTerminal (called on
+ * completion/failure) cleans up the impossible-since tracker — there's no slot
+ * to release since rate limiting is purely time-based.
  */
 async function executeHordeProseSubmit(
   db: Database.Database,
@@ -335,7 +336,6 @@ async function executeHordeProseSubmit(
     const message = err instanceof Error ? err.message : String(err)
     finishJob(db, jobId, 'failed', message)
     publishError(jobId, message)
-    releaseHordeSlot(jobId)
   }
 }
 
@@ -348,7 +348,6 @@ const hordeImpossibleSince = new Map<string, number>()
 
 function hordeJobTerminal(jobId: string): void {
   hordeImpossibleSince.delete(jobId)
-  releaseHordeSlot(jobId)
 }
 
 /**
