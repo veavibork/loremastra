@@ -28,7 +28,7 @@ Implementation:
 | Corpus / merge / parse | `src/services/story-to-date-corpus.ts`            |
 | Store                  | `src/db/story-to-date-store.ts`                   |
 | Assembly               | `src/services/history.ts`                         |
-| Segments UI            | `web/src/SegmentsView.tsx`                        |
+| Segments UI            | `web/src/views/SegmentsView.tsx`                  |
 | HTTP                   | `GET/POST/PATCH /api/stories/:id/story-to-date/*` |
 
 ---

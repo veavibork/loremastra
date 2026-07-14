@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+const queryClient = new QueryClient()
 import {
   createStory,
   fetchLayout,
@@ -11,19 +14,18 @@ import {
   type StoryPhase,
   type SupersededInfo,
 } from './api'
-import ClaimGate, { type GateReason } from './ClaimGate'
-import Nav from './Nav'
-import { useGlobalCssSettings } from './global-css-settings'
-import { PlayTabProvider } from './PlayTabSettings'
-import { useVisualViewport } from './useVisualViewport'
+import ClaimGate, { type GateReason } from './components/ClaimGate'
+import Nav from './components/Nav'
+import { useGlobalCssSettings } from './lib/global-css-settings'
+import { PlayTabProvider } from './components/PlayTabSettings'
+import { useVisualViewport } from './hooks/useVisualViewport'
+import { useClientStore, setSelectedStoryId } from './store'
 import './App.css'
 
 interface GateState {
   reason: GateReason
   info: SupersededInfo | null
 }
-
-const SELECTED_STORY_STORAGE_KEY = 'loremaster.selectedStoryId'
 
 export default function App() {
   const [gate, setGate] = useState<GateState | null>(() =>
@@ -37,7 +39,7 @@ export default function App() {
   useVisualViewport()
 
   function selectStory(next: Story) {
-    localStorage.setItem(SELECTED_STORY_STORAGE_KEY, next.id)
+    setSelectedStoryId(next.id)
     setStory(next)
   }
 
@@ -48,7 +50,7 @@ export default function App() {
     void (async () => {
       try {
         const stories = await listStories()
-        const savedId = localStorage.getItem(SELECTED_STORY_STORAGE_KEY)
+        const savedId = useClientStore.getState().selectedStoryId
         const active =
           stories.find((s) => s.id === savedId) ??
           stories[0] ??
@@ -68,28 +70,30 @@ export default function App() {
   if (!layout) return null
 
   return (
-    <PlayTabProvider>
-      <div className="story-app">
-        <header className="app-header">
-          <div className="app-header-title">
-            <h1>{story?.name ?? 'Loremaster'}</h1>
-            {story?.id && <span className="app-header-story-id">{story.id}</span>}
-            <span className="app-header-build-info" title={__BUILD_INFO__.builtAt}>
-              {__BUILD_INFO__.commit}
-            </span>
-          </div>
-        </header>
+    <QueryClientProvider client={queryClient}>
+      <PlayTabProvider>
+        <div className="story-app">
+          <header className="app-header">
+            <div className="app-header-title">
+              <h1>{story?.name ?? 'Loremaster'}</h1>
+              {story?.id && <span className="app-header-story-id">{story.id}</span>}
+              <span className="app-header-build-info" title={__BUILD_INFO__.builtAt}>
+                {__BUILD_INFO__.commit}
+              </span>
+            </div>
+          </header>
 
-        <Nav
-          config={layout}
-          panelProps={{
-            story,
-            phase,
-            onStoryChange: selectStory,
-            onPhaseChange: setPhase,
-          }}
-        />
-      </div>
-    </PlayTabProvider>
+          <Nav
+            config={layout}
+            panelProps={{
+              story,
+              phase,
+              onStoryChange: selectStory,
+              onPhaseChange: setPhase,
+            }}
+          />
+        </div>
+      </PlayTabProvider>
+    </QueryClientProvider>
   )
 }

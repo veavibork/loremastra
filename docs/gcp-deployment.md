@@ -10,7 +10,7 @@ Fast-path steps for standing up Loremaster on a GCP e2-micro (free tier). Writte
 
 ## 0. Known app-level gotcha (fix before deploying)
 
-`web/src/api.ts` must NOT hardcode an absolute `API_BASE` (e.g. `http://localhost:4114`) — it breaks the moment the built frontend is served from anywhere but the dev machine. Keep `API_BASE = ""` (relative) and rely on the reverse proxy to route `/api/*` to the backend. Vite's dev proxy (`web/vite.config.ts`) forwards `/api` to `localhost:4113` locally so this doesn't break `npm run dev`.
+`web/src/api/client.ts` must NOT hardcode an absolute `API_BASE` (e.g. `http://localhost:4114`) — it breaks the moment the built frontend is served from anywhere but the dev machine. Keep `API_BASE = ""` (relative) and rely on the reverse proxy to route `/api/*` to the backend. Vite's dev proxy (`web/vite.config.ts`) forwards `/api` to `localhost:4113` locally so this doesn't break `npm run dev`.
 
 ## 1. Networking
 

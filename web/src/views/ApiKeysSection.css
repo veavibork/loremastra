@@ -1,0 +1,64 @@
+.api-keys-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  max-width: 480px;
+}
+
+.api-keys-section h3 {
+  margin-top: 0;
+}
+
+.api-key-row {
+  margin-bottom: 0.85rem;
+}
+
+.api-key-row:last-child {
+  margin-bottom: 0;
+}
+
+.api-key-row label {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-bottom: 0.3rem;
+}
+
+.api-key-current {
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.api-key-unset {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.api-key-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.api-key-controls input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.9rem;
+}
+
+.api-key-status {
+  font-size: 0.8rem;
+  margin: 0.35rem 0 0;
+}
+
+.api-key-status-ok {
+  color: var(--accent);
+}
+
+.api-key-status-error {
+  color: var(--danger);
+}

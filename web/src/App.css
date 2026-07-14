@@ -48,14 +48,7 @@
 .log {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  /* Browser scroll anchoring fights inline edit autogrow and footer resize — we manage position explicitly. */
-  overflow-anchor: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding-bottom: 1rem;
+  overflow: hidden;
 }
 
 /* Thin, muted scrollbar instead of the browser default — applies to every scrollable element. */
@@ -140,8 +133,8 @@
 }
 
 .error-banner {
-  background: #4a1f1f;
-  color: #ffb4b4;
+  background: var(--surface);
+  color: var(--danger-text);
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   margin-bottom: 0.5rem;
@@ -176,8 +169,8 @@
   box-sizing: border-box;
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
-  border: 1px solid #444;
-  background: #1a1a1a;
+  border: 1px solid var(--border-medium);
+  background: var(--surface);
   color: inherit;
   font-family: inherit;
   /* Match the log's post text size (Settings-configurable) rather than the page's base

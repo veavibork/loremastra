@@ -1,0 +1,64 @@
+.account-settings {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.account-settings h3 {
+  margin-top: 0;
+}
+
+.account-settings-field {
+  margin-bottom: 1rem;
+}
+
+.account-settings-field:last-child {
+  margin-bottom: 0;
+}
+
+.account-settings-field label {
+  display: block;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-bottom: 0.35rem;
+}
+
+.account-settings-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.account-settings-row input {
+  flex: 1;
+}
+
+.account-settings-password-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  max-width: 320px;
+}
+
+.account-settings input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.9rem;
+}
+
+.account-settings-status {
+  font-size: 0.8rem;
+  margin: 0.4rem 0 0;
+}
+
+.account-settings-status-ok {
+  color: var(--accent);
+}
+
+.account-settings-status-error {
+  color: var(--danger);
+}

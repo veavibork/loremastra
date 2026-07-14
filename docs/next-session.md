@@ -1,51 +1,46 @@
-# Next Session: Refactors
+# Next Session
 
 ## Current Status (2026-07-13)
 
-Disambiguation, cleanup, lint, Zod validation, test expansion, and observability are complete. 142 tests total (126 Vitest + 16 Playwright). 0 compilation errors. 0 lint warnings.
+Frontend refactor (Phases 1–7) complete. 142 tests total (126 Vitest + 16 Playwright). 0 compilation errors. 0 lint warnings. Bundle: 143KB gzipped JS.
 
-**What's done this session:**
+**What's done (frontend refactor, all sessions):**
 
-- Validation hook bug fix: `validationHook` was called on both success and failure by `@hono/standard-validator` but never checked `result.success` — all Zod-validated routes were silently broken. Fixed by adding success early-return and properly handling Standard Schema `Issue` types (no `any`).
-- npm patch updates applied: hono 4.12.30, tsx 4.23.1, @types/node 24.13.3, oxlint 1.73.0, vite 8.1.4. All tests pass.
-- E2E critical path test loop: `e2e/critical-path.spec.ts` exercises `login → create → setup → kickoff → post → retry` via Playwright `request` fixture (7 tests), plus browser smoke test verifying ClaimGate login + StoryView render. Total E2E: 16 tests (9 contract + 7 critical path). Playwright config updated with frontend webServer and globalSetup for test user seeding.
-- Pipeline-runner smoke test: promoted `scripts/test-memory-pipeline-smoke.ts` to `tests/services/pipeline-smoke.test.ts` (4 tests)
-- Logging & Observability: wired `publishJobCreated` in all createJob call sites (stories, pipeline-runner, story-to-date, worldbook-compact); replaced all `console.error` calls in pipeline-runner with structured `createLogger` logging
+- **Phase 1: Cleanup** — Dead archive code deleted from api.ts, CSS files renamed (ArchivesView→SegmentsView, MemoryView→ContextView), `storage-keys.ts` created, `bun.lock` deleted, `AutoGrowTextarea` extracted from StoryView.
+- **Phase 2: StoryView Decomposition** — `useReducer` for 13 interdependent useState calls, `StoryLog.tsx` + `StoryFooter.tsx` + `StoryViewHelpers.ts` extracted, `forceTick` timer replaced with `useRef` + direct DOM update, inline onClick handlers wrapped in `useCallback`.
+- **Phase 3: api.ts Split** — 13 resource modules + `client.ts` + `types.ts` + `index.ts` barrel in `web/src/api/`.
+- **Phase 4: State Infrastructure** — TanStack Query + Zustand installed. `QueryClientProvider` in App.tsx. Zustand store with `persist` middleware (single `loremaster.ui` key, migration from old keys). 12 TanStack Query hook files. 9 views migrated to `useQuery`. Polling via `refetchInterval`. `storage-keys.ts` deleted.
+- **Phase 5: Subdirectories** — `views/`, `components/`, `hooks/`, `lib/` created. 15 view files, 10 components, 2 hooks, 9 utilities moved. ~60 import paths updated. Fixed `ButtonContainerRow` regression and `SegmentsView` anti-pattern.
+- **Phase 6: Package Replacements** — Sonner replaces hand-rolled toast (+9KB). Virtuoso replaces `useStoryLogScroll` (+19KB). E2E: 7/7 critical-path tests pass.
+- **Phase 7: CSS Convention Cleanup** — `font-size: 15px` → `var(--entry-font-size)` in 6 files. 9 semantic color custom properties added, 28 hardcoded hex colors replaced across 10 files. Remaining px values audited (all functional constraints).
 
-**What's already done (prior sessions):**
+**What's done (prior sessions, pre-refactor):**
 
-- Delete `bun.lock` (F-004), move `uuid.ts`/`crypto.ts` to `src/lib/` (F-007)
-- Fix 12 frontend oxlint warnings → 0
-- Zod route validation: `@hono/standard-validator` on 5 route files + shared `validationHook`
-- Store tests: `worldbook-store` + `story-to-date-store` CRUD (41 new tests)
-- Service tests: `context-manifest` + `context-invalidation` smoke (9 new tests)
-- API contract tests: Playwright route-level tests (`e2e/smoke.spec.ts` — 9 tests)
-- 36 backend oxlint warnings fixed (F-025), Prettier (F-026)
-- Archives fully retired (F-020)
-- Documentation reconciled (F-043, F-044)
-- Disambiguation resolution — 46 items across 6 phases
+- Validation hook bug fix: `validationHook` success-check + Standard Schema `Issue` handling
+- npm patch updates (hono, tsx, @types/node, oxlint, vite)
+- E2E critical path test loop (7 tests) + browser smoke test
+- Pipeline-runner smoke test promoted to `tests/services/`
+- Logging & observability: `publishJobCreated` wired, `console.error` → `createLogger`
+- Zod route validation on 5 route files + shared `validationHook`
+- Store tests (41 new), service tests (9 new), API contract tests (9 new)
+- 36 backend + 12 frontend oxlint warnings fixed, Prettier configured
+- Archives fully retired, disambiguation resolution (46 items)
 
 ## Remaining (by priority)
 
-### 1. Refactors
+### 1. Backend work
 
-Priority order (matching severity ranking):
+User indicated backend work is the next focus area. Specific items TBD.
 
-1. `pipeline-runner.ts` split (F-031)
-2. `StoryView.tsx` decomposition + `useReducer` (F-038)
-3. `stories.ts` orchestrator extraction (F-028)
-4. Provider adapter (F-032)
-5. `services/` subdirectories (F-005)
-6. `api.ts` split by resource (F-039)
+### 2. Deferred frontend items
 
-## Replacements to Consider
+- **Settings editor UX** — Schema-driven forms for global CSS, play tab, banned phrases. Validated JSON textarea for layout config and toggle presets. `json-edit-react` already removed. Layout/toggle preset handling deferred until forms are in place.
+- **Context budget visualization** — Token usage breakdown shown to user (gap vs SillyTavern).
+- **Per-response metadata** — Model, timing, token count per response (gap vs KoboldAI / SillyTavern).
 
-| Hand-rolled                               | Proven alternative        | Why                                                     |
-| ----------------------------------------- | ------------------------- | ------------------------------------------------------- |
-| `outbound-telemetry.ts` + `job-events.ts` | OpenLit / OpenTelemetry   | Structured tracing, dashboards, no custom pub/sub       |
-| `featherless.ts` streaming pipeline       | Vercel AI SDK or similar  | Streaming, retry, fallback, tool calls — solved problem |
-| `api-limiter.ts` 409 handling             | TanStack Query or SWR     | Stale-while-revalidate, conflict resolution built-in    |
-| `toast.ts` hand-rolled                    | Sonner or react-hot-toast | Accessibility, animations, stacking — solved            |
-| `useStoryLogScroll.ts`                    | Virtuoso or react-window  | Virtualized scrolling for long chat logs                |
+### 3. Known limitations
 
-**Rule:** before building infrastructure, check if OMP or the npm ecosystem already has it. This project's strength is its purpose-built domain logic (story-to-date, worldbook, context pipeline) — not its plumbing.
+- `withModelFallback` only swaps `.model` between candidates — fallback row's own temperature/limits/sampler params are stored but not used at runtime. Primary row's params apply to all candidates.
+- `gen_metrics` not populated for background memory/naming jobs — queue-wide telemetry incomplete.
+- `preference_profiles` table exists but unused — no preference-profile CRUD yet.
+- Featherless server-side request cancellation unsupported — aborting client fetch may not free their concurrency slot.

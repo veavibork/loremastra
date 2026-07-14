@@ -2,7 +2,7 @@
 
 This file is the entry point for Oh My Pi (OMP) development sessions. OMP reads
 `CLAUDE.md` automatically at the start of every session. It is the primary context file for OMP
-sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ignores `.clinerules/`.
+sessions.
 
 **If you are an AI coding assistant reading this:**
 
@@ -23,12 +23,14 @@ sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ig
 
 ## Paired Documents
 
-| Document              | Purpose                                                                                                                                              |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loremaster.md`       | Authoritative project reference: mission, architecture, terminology, story flow, memory pipeline, UI structure, security model, provider abstraction |
-| `docs/omp-setup.md`   | OMP-specific tooling reference, model recommendations, and the Cline-to-OMP migration notes                                                          |
-| `docs/cline-setup.md` | Cline-specific tooling reference (kept for reference; superseded by this document for OMP sessions)                                                  |
-| `.clinerules/`        | Cline rules directory (kept for Cline sessions; ignored by OMP)                                                                                      |
+| Document               | Purpose                                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loremaster.md`        | Authoritative project reference: mission, architecture, terminology, story flow, memory pipeline, UI structure, security model, provider abstraction |
+| `docs/conventions.md`  | Coding conventions: database, frontend, testing, TypeScript, linting                                                                                 |
+| `docs/omp-setup.md`    | OMP tooling: MCP servers, model recommendations, troubleshooting, raw API test kit                                                                   |
+| `docs/roadmap.md`      | Open backlog — build items and play-testing watch list                                                                                               |
+| `docs/development.md`  | Milestone history and implementation notes                                                                                                           |
+| `docs/next-session.md` | Session handoff — what's done, what's next                                                                                                           |
 
 ## Stack
 
@@ -37,7 +39,7 @@ sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ig
 - **Validation:** `zod` + `@hono/standard-validator` · **Auth:** `bcryptjs` · **IDs:** UUID v7 (`uuid`)
 - **MCP SDK:** `@modelcontextprotocol/sdk`
 - **Run/dev:** `tsx` · **Compile:** `tsc`
-- **Test:** Vitest (122 tests, `tests/db/`, `tests/lib/`, `tests/services/`) + Playwright (10 API contract tests, `e2e/`)
+- **Test:** Vitest (126 tests, `tests/db/`, `tests/lib/`, `tests/services/`) + Playwright (16 tests: 9 contract + 7 critical path, `e2e/`)
 - **Formatter:** Prettier (`.prettierrc`) · **Linting:** `oxlint` for backend (`src`, `scripts`) and frontend (`web/`)
 
 ## Commands
@@ -68,41 +70,10 @@ sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ig
 
 ### Testing
 
-**Unit / integration:** Vitest (`vitest.config.ts`). Tests in `tests/db/` and `tests/lib/`.
-
-- `npm test` — single run
+- `npm test` — Vitest single run
 - `npm run test:watch` — watch mode
 - `npm run test:coverage` — with coverage
-
-**E2E:** Playwright (`playwright.config.ts`). Tests in `e2e/`.
-
-- `npm run test:e2e`
-
-**Smoke scripts:** `npx tsx scripts/test-memory-pipeline-smoke.ts`
-
-## Database Patterns
-
-### Two-tier model
-
-- **`data/global.sqlite`** — cross-story tables: users, sessions, agent configs, model configs,
-  layout configs, settings spaces. Accessed via `getGlobalDb()`.
-- **Per-story** (`data/stories/<storyId>.sqlite`) — story-scoped data: pages, texts, worldbook
-  entries, jobs, story-to-date segments. Accessed via `getStoryDb(storyId)`.
-
-### No migration framework
-
-- **`ensureColumn(db, table, column, ddl)`** — tries `ALTER TABLE ... ADD COLUMN`, swallows
-  "duplicate column" errors. Safe to call on every open.
-- **Table rename technique** — for CHECK constraint changes, see `migrateJobTypeCheck`.
-- **Schema sniffing** — `SELECT sql FROM sqlite_master WHERE name = 'table'`.
-
-### Key conventions
-
-- UUIDs (v7) for all primary keys — never sequential integers.
-- Pragmas: `journal_mode = WAL`, `foreign_keys = ON`, `busy_timeout = 5000`.
-- Read-only diagnostic callers must pass `{ skipRecovery: true }` to `getStoryDb()`.
-- One `*-store.ts` per entity in `src/db/`. Stores take a `Database` handle.
-- Per-post compression (`gen_extract`) and decad archives are retired (2026-07-04).
+- `npm run test:e2e` — Playwright
 
 ## Workflow Conventions
 
@@ -110,7 +81,10 @@ sessions. Cline rules remain in `.clinerules/` and `docs/cline-setup.md`; OMP ig
 
 Default to discussing before acting. State your plan in plain terms and wait for a go-ahead
 before executing anything non-trivial. For small, unambiguous, already-discussed steps,
-just do them.
+just do them. If a request could be read more than one way, say which reading you're going
+with and why. If what's being asked seems off — works against existing patterns, is more
+complex than the problem needs, or conflicts with something discussed earlier — say so
+plainly before doing it.
 
 ### Dev server lifecycle
 
@@ -118,6 +92,14 @@ Both servers must run simultaneously in dev:
 
 - Backend: `npm run dev` (repo root) → `http://localhost:4113`
 - Frontend: `npm run dev` (in `web/`) → Vite proxy passes `/api` to backend
+
+| Command                   | What it does                                          |
+| ------------------------- | ----------------------------------------------------- |
+| `npm run server:restart`  | Kill and restart the dev backend process (keeps data) |
+| `npm run server:reset-db` | Wipe the local SQLite databases (does not restart)    |
+| `npm run server:fresh`    | Reset DB + restart backend in one step                |
+
+`dev-server.log` in the repo root captures backend stdout/stderr.
 
 ### Environment
 
@@ -131,92 +113,20 @@ Both servers must run simultaneously in dev:
 If you write to the DB outside the HTTP API, call `notify_direct_mutation` via the MCP
 server afterward to invalidate browser sessions.
 
-## MCP Servers
-
-Registered in `.mcp.json`:
-
-| Server           | Source                    | Purpose                                                                                   |
-| ---------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
-| `loremaster-dev` | `src/mcp/dev-server.ts`   | Live state inspection: stories, worldbook, queue, logs, memory, prompt preview            |
-| `context7`       | `@upstash/context7-mcp`   | Up-to-date library docs (Hono, React 19, better-sqlite3, MCP SDK)                         |
-| `cline-worker`   | `src/mcp/cline-worker.ts` | Cheap 1-slot Featherless model for code lookup / Q&A (`ask_worker`, `list_worker_models`) |
-
-## OMP Tool Mapping
-
-| Concern           | Cline                        | OMP                                        |
-| ----------------- | ---------------------------- | ------------------------------------------ |
-| Context injection | `.clinerules/` auto-injected | `CLAUDE.md` auto-read (this file)          |
-| File read         | `read_file`                  | `read`                                     |
-| File write        | `write_to_file`              | `write`                                    |
-| File edit         | `replace_in_file`            | `edit`                                     |
-| Search content    | `search_files`               | `grep` (Rust regex)                        |
-| Find files        | `search_files`               | `glob`                                     |
-| Shell commands    | `execute_command`            | `bash`                                     |
-| Code intelligence | N/A                          | `lsp`                                      |
-| AST search        | N/A                          | `ast_grep` / `ast_edit`                    |
-| Sub-agents        | N/A                          | `task`                                     |
-| Worker model      | `ask_worker` MCP tool        | Same MCP tool, or OMP `completion`/`agent` |
-
 ## Frontend Patterns
 
-- Views: `*View.tsx` files in `web/src/`.
-- CSS: one `.css` per view/component. No framework. Config-driven, relative units.
-- No state management library — React state + fetch. Claim/reclaim session model.
+- CSS: one `.css` per view/component. No framework. Config-driven, CSS custom properties for theming.
+- State: TanStack Query (server state) + Zustand (client state, localStorage persist) + useReducer (StoryView streaming).
+- Views in `views/`, components in `components/`, hooks in `hooks/`, utilities in `lib/`, API in `api/`.
 - Component naming: PascalCase. Hooks: `use` prefix. Utilities: kebab-case.
 - Touch-first. Must work on Android / Windows browsers with no native install.
-
-## First-Time Setup
-
-1. Install dependencies:
-   ```bash
-   npm install
-   cd web && npm install
-   ```
-2. Copy `.env.example` to `.env`, set `APP_MASTER_KEY`:
-   ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-   ```
-3. Initialize the database:
-   ```bash
-   npm run db:init
-   ```
-4. Create a user:
-   ```bash
-   npm run user:create -- <name> <password>
-   ```
-5. Start backend: `npm run dev`
-6. Start frontend: `cd web && npm run dev`
-7. Verify MCP servers are available (loremaster-dev, context7, cline-worker).
+- For full directory map, TypeScript config, database patterns, testing conventions, and linting details, see `docs/conventions.md`.
 
 ## Session Start Checklist
 
 1. Read this file (`CLAUDE.md`) and `loremaster.md`.
 2. Produce a short state-of-the-world summary.
 3. Wait for confirmation before building.
-
-## Featherless + OMP Model Notes
-
-Empirically confirmed for this project with the raw API kit in `src/inference/schema/`:
-
-- **GLM-5.2 (`zai-org/GLM-5.2`)**: intermittent XML tool-call corruption through OMP.
-  Once it begins, the session degrades and does not recover. Raw API tests are clean.
-  **Not recommended** for OMP-driven development here.
-- **Kimi-K2.7-Code (`moonshotai/Kimi-K2.7-Code`)**: clean single and multi-tool calls;
-  finishes reliably within ~65s. Reasoning is moderate (~400 chars). Costs 4 slots.
-  **Recommended main model for OMP coding work**.
-- **DeepSeek V4 Pro (`deepseek-ai/DeepSeek-V4-Pro`)**: clean on short multi-tool calls,
-  but long tool calls can enter very long reasoning drafts and timeout/wait (>280s for
-  a ~100-line code write). It is the app's capable **prose workhorse** for Author/narration
-  — use it there via the Agents tab, not as the main OMP session model. Costs 4 slots.
-
-If you use the cheap worker MCP server (`cline-worker`), keep it on a small 1-slot model
-(e.g., `NousResearch/Hermes-3-Llama-3.1-8B`) so it does not consume workhorse slots.
-
-## GLM-5.2 Raw API Test Kit
-
-`src/inference/schema/` contains Darkness-bamboo's raw API verification toolkit:
-`req-toolcall.json`, `req-multitool.json`, `parse.py`, and `README.md`. Use it to verify
-new models empirically before relying on them in OMP.
 
 ## When Ending a Session
 
@@ -225,5 +135,5 @@ If you changed code, config, or tooling:
 1. **Lint:** `npm run lint` (backend) and `cd web && npm run lint` (frontend). Fix warnings.
 2. **Test:** `npm test` — confirm nothing broke.
 3. **Format:** files auto-formatted on commit by the pre-commit hook.
-4. **Reconcile docs:** run through `.clinerules/skills/doc-reconciliation.md`. Docs MUST match reality after every session — stale claims compound fast.
+4. **Reconcile docs:** run the `doc-reconciliation` skill (`skill://doc-reconciliation`). Docs MUST match reality after every session — stale claims compound fast.
 5. **Commit:** `git add` and commit with a descriptive message.

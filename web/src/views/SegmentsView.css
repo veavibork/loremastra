@@ -1,0 +1,236 @@
+.archives-view {
+  padding: 0.5rem 0;
+  text-align: left;
+  font-size: var(--entry-font-size, 15px);
+}
+
+.archive-delete-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid var(--accent, #888);
+}
+
+.archive-delete-confirm .danger {
+  color: var(--danger);
+}
+
+.archive-coverage-edit {
+  display: block;
+  font-size: 0.8rem;
+  margin-bottom: 0.35rem;
+}
+
+.archive-coverage-edit input {
+  width: 5rem;
+  margin-left: 0.35rem;
+}
+
+.archives-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.archives-active-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.archives-active-job {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  border-left: 2px solid var(--accent, #888);
+}
+
+.archives-cancel-job {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.archives-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.archives-header h2 {
+  margin: 0;
+}
+
+.archives-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.archives-header-actions button {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.archives-hidden-toggle {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.archives-count,
+.archives-empty {
+  font-size: 0.75rem;
+  opacity: 0.65;
+  margin: 0 0 0.75rem;
+}
+
+.archives-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.archive-card {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+.archive-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.archive-toggle {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.archive-range {
+  display: block;
+  font-weight: 600;
+}
+
+.archive-meta {
+  display: block;
+  opacity: 0.6;
+  font-size: 0.72rem;
+  margin-top: 0.15rem;
+}
+
+.archive-status {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.archive-status-pending,
+.archive-status-missing {
+  opacity: 0.55;
+}
+
+.archive-status-missing {
+  font-style: italic;
+  text-transform: none;
+}
+
+.archive-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.archive-actions button {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.archive-hint {
+  font-size: 0.68rem;
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.archive-error {
+  color: var(--danger-text);
+  font-size: 0.75rem;
+  margin: 0 0 0.5rem;
+}
+
+.archive-edit {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  margin-top: 0.25rem;
+}
+
+.archive-edit-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.archive-status-broken {
+  color: var(--danger-text);
+  opacity: 1;
+}
+
+.archive-preview,
+.archive-summary {
+  margin: 0.35rem 0 0;
+  white-space: pre-wrap;
+  line-height: 1.35;
+}
+
+.archive-body {
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border-strong);
+}
+
+.archive-pending {
+  opacity: 0.45;
+  font-style: italic;
+}
+
+.archive-ids {
+  margin: 0.35rem 0 0;
+  font-size: 0.65rem;
+  opacity: 0.45;
+  font-family: ui-monospace, monospace;
+}
+
+.archive-row-hidden {
+  opacity: 0.45;
+}
+
+.archive-broken {
+  border-color: #5a3030;
+}

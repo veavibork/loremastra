@@ -1,0 +1,96 @@
+import { Fragment, useState } from 'react'
+import { useLog } from '../hooks/use-stories'
+import type { PanelProps } from '../lib/panel-types'
+import './LogsView.css'
+
+/** First line only, truncated — the collapsed-row preview. */
+function previewText(content: string, max = 120): string {
+  const firstLine = content.split('\n')[0] ?? ''
+  return firstLine.length > max ? `${firstLine.slice(0, max)}…` : firstLine
+}
+
+function parseMetrics(raw: string | null): { elapsedMs?: number; tokenEstimate?: number } {
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
+const POLL_MS = 2000
+const LOG_LIMIT = 100
+
+export default function LogsView({ story }: PanelProps) {
+  const { data: logPage } = useLog(story?.id ?? '', { limit: LOG_LIMIT, refetchInterval: POLL_MS })
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const entries = logPage?.entries ?? []
+
+  function toggleExpanded(pageId: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(pageId)) next.delete(pageId)
+      else next.add(pageId)
+      return next
+    })
+  }
+
+  if (!story) return <div className="logs-view">No active story.</div>
+
+  const mostRecentFirst = [...entries].reverse()
+
+  return (
+    <div className="logs-view">
+      <h2>Logs</h2>
+      <table className="logs-table">
+        <thead>
+          <tr>
+            <th title="Absolute post number from kickoff (hidden turns count)">Post #</th>
+            <th>Time</th>
+            <th>Role</th>
+            <th>Tokens (est.)</th>
+            <th>Turnaround</th>
+            <th>Compress</th>
+            <th>Hidden</th>
+          </tr>
+        </thead>
+        <tbody>
+          {mostRecentFirst.map((entry) => {
+            const m = parseMetrics(entry.genMetrics)
+            const cm = parseMetrics(entry.compressMetrics)
+            const content = entry.content ?? ''
+            const isExpanded = expanded.has(entry.pageId)
+            return (
+              <Fragment key={entry.pageId}>
+                <tr className={entry.hidden ? 'logs-row-hidden' : ''}>
+                  <td>{entry.icPostNumber ?? '—'}</td>
+                  <td>{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : '—'}</td>
+                  <td>{entry.role}</td>
+                  <td>{m.tokenEstimate ?? '—'}</td>
+                  <td>{m.elapsedMs != null ? `${(m.elapsedMs / 1000).toFixed(1)}s` : '—'}</td>
+                  <td>
+                    {cm.elapsedMs != null
+                      ? `${(cm.elapsedMs / 1000).toFixed(1)}s / ${cm.tokenEstimate ?? '—'}t`
+                      : '—'}
+                  </td>
+                  <td>{entry.hidden ? 'yes' : ''}</td>
+                </tr>
+                <tr className={entry.hidden ? 'logs-row-hidden' : ''}>
+                  <td colSpan={7} className="logs-content-cell">
+                    <button
+                      type="button"
+                      className={`logs-content-toggle ${isExpanded ? 'logs-content-expanded' : 'logs-content-collapsed'}`}
+                      onClick={() => toggleExpanded(entry.pageId)}
+                    >
+                      {isExpanded ? content : previewText(content)}
+                    </button>
+                  </td>
+                </tr>
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}

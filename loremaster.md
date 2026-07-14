@@ -91,7 +91,7 @@ entry schemas (Setting/Register/Location/Creature/Faction/Character) with struct
 each populated via the Editor calling a validated tool per entry. That was tried and dropped
 (2026-07-03) — model tool-calling reliably invoking the right schema, with the right field
 casing, across a multi-turn conversation proved to be the weak link, not the schema design
-itself (see docs/stub-revisions.md's superseded entry for the specifics that led to the
+itself (see development.md's "centralized prompts, freeform worldbook" entry for the specifics that led to the
 switch).
 
 The current mechanism: the Editor writes plain prose during setup and OOC "update session"
@@ -182,7 +182,7 @@ LM makes deliberate use of model-side tool calling and exposes its own internals
 
 Each agent's capabilities are implemented as discrete tools — functions with enforced inputs and outputs — rather than monolithic prompts where that pattern still applies. Tool use is what makes the three-agent architecture composable rather than each agent carrying one enormous catch-all prompt.
 
-The Editor's worldbook authoring is a deliberate exception to mid-conversation tool calls: an earlier design had the Editor call a tool (e.g. `create_worldbook_entry`) on its own judgment. In practice this proved unreliable — schema/field-casing drift and inconsistent completeness across otherwise-identical conversations (see docs/stub-revisions.md) — so it was replaced (2026-07-03) with plain bracket-tagged prose the back end parses deterministically via regex, no tool call involved.
+The Editor's worldbook authoring is a deliberate exception to mid-conversation tool calls: an earlier design had the Editor call a tool (e.g. `create_worldbook_entry`) on its own judgment. In practice this proved unreliable — schema/field-casing drift and inconsistent completeness across otherwise-identical conversations (see development.md) — so it was replaced (2026-07-03) with plain bracket-tagged prose the back end parses deterministically via regex, no tool call involved.
 
 **Retired (2026-07-04):** per-post compression used forced tool-calling (`submit_summary`). That pipeline is removed; memory is `[STORY TO DATE]` Editor jobs instead. Decad archive summarization (`submit_archive_summary`) was superseded by story-to-date segments; the Segments tab and `segment-name` Worker jobs for scene titles remain active. Phase 1 still benefits from providers with reliable chat completions; native function calling is no longer on the critical path for memory.
 
@@ -277,7 +277,7 @@ Per-post compression (~20 tokens via Worker) and decad archive blocks (`[EVENT S
    waiting: queue/memory wait → **Prefilling… (~Ns)** → **Reasoning trace** (when the provider streams
    thinking) → IC prose. On Featherless V4-Pro with assistant prefill, thinking arrives as
    **`delta.reasoning`** SSE chunks, then **`delta.content`** for prose — see raw captures in
-   `docs/featherless-notes.md` and `scripts/probe-deepseek-raw.ts`.
+   `docs/providers/featherless-notes.md` and `scripts/probe-deepseek-raw.ts`.
 5. When the assembled Author prompt crosses the story-to-date trigger threshold, the pipeline enqueues an Editor `story-to-date` job (see Story-to-Date Memory Pipeline).
 
 ---
@@ -432,7 +432,7 @@ Featherless ($25/mo tier) uses an OpenAI-compatible API with streaming, capped a
 
 Ranked-choice model fallback (trying a second model if the first is unavailable) works within each provider independently. Generic OpenAI-compatible endpoints and additional providers remain deferred.
 
-The provider boundary is cleanly separated at the module level: `src/inference/featherless.ts`, `src/inference/horde.ts`, and their respective config modules handle provider-specific transport. The pipeline runner branches on provider at the dispatch level; extracting a common adapter interface is a known improvement captured in `docs/evaluation-roadmap.md` (F-032).
+The provider boundary is cleanly separated at the module level: `src/inference/featherless.ts`, `src/inference/horde.ts`, and their respective config modules handle provider-specific transport. The pipeline runner branches on provider at the dispatch level; extracting a common adapter interface is a known improvement captured in `docs/refactor/evaluation-roadmap.md` (F-032).
 ---
 
 ## Multi-User & Second Provider Milestone
@@ -473,7 +473,7 @@ The following ideas are noted for future consideration. They are deliberately ex
 
 - **Additional providers** — Generic OpenAI-compatible endpoints and a wider range scraped from SillyTavern/KoboldAI provider lists (the Horde was pulled forward into the multi-user milestone — see Multi-User & Second Provider Milestone). Depends on resolving how much of LM's tool-use dependency can be relaxed for providers without native function calling. Some providers will not tolerate ERP content; rather than filtering them out, surface this as a visible flag/toggle (e.g. "this provider works for PG content only") so the user makes an informed choice.
 - **Iconographic / app-style interface** — A more visually rich UI layer on top of the current functional interface.
-- **Pronoun declarations per tag** — Each tag explicitly declares associated pronouns to improve worker disambiguation accuracy.
+- ~~**Pronoun declarations per tag**~~ — Evaluated and declined 2026-07-01: pronouns trigger on nearly every post regardless of which character is present, defeating tags as a selective promotion mechanism. Would require real coreference resolution, not a small addition. Revisit only if the tag-matching architecture itself changes.
 - **Worldbook deltas** — Story-state changes to character or location entries are stored as deltas separate from the canonical entry, preventing story events from contaminating the baseline worldbook.
 - **Creature entry emphasis mode** — Tooling to help users decide when a creature entry is warranted versus relying on the LLM's baseline knowledge.
 - **WYSIWYG layout editing** — A drag-and-drop interface for editing the per-user layout configuration that Phase 1 already reads from. Includes device-aware layout binding (orientation, screen size) and graceful handling of arbitrary window resizing.
@@ -492,6 +492,6 @@ Phase 1 is complete — Loremaster is a purpose-built TypeScript application, de
 - **Auth:** Password-gated login, per-user sessions, admin-provisioned accounts only (`npm run user:create`)
 - **Dev tooling:** MCP server (`npm run mcp`), testing (vitest + playwright — `npm test`, `npm run test:e2e`), linting (oxlint — `npm run lint`), formatting (Prettier — `npm run format`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
 
-Deferred from Phase 1: full encryption at rest for story content, preference-profile CRUD, input-bar weapon wheel, bespoke touch-first chrome. See `docs/roadmap.md` for the open backlog and `docs/stub-revisions.md` for known gaps.
+Deferred from Phase 1: full encryption at rest for story content, preference-profile CRUD, input-bar weapon wheel, bespoke touch-first chrome. See `docs/roadmap.md` for the open backlog.
 
 When beginning a development session, see `CLAUDE.md` for the session checklist and `docs/development.md` for milestone history.

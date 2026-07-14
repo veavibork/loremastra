@@ -36,7 +36,7 @@ post-Phase-1 incremental work (2026-07-05+).
   Register/PC always appear, and a tagged NPC entry (Halia) was correctly pulled into a real generation
   when the trigger post mentioned her.
 
-Caught and fixed one real bug in the process (historical, pre story-to-date): archive jobs were hardcoded to `slotCost: 1` — fixed via `concurrencyCost` from agent profiles; see docs/featherless-notes.md.
+Caught and fixed one real bug in the process (historical, pre story-to-date): archive jobs were hardcoded to `slotCost: 1` — fixed via `concurrencyCost` from agent profiles; see docs/providers/featherless-notes.md.
 
 Also fixed along the way: the CORS `Access-Control-Allow-Methods` header (both the global one in
 `src/index.ts` and the one in `stories.ts`) was missing `PATCH`, which would have silently broken the
@@ -106,7 +106,7 @@ Two real bugs caught via direct testing, not superficial ones:
 - **Null tool-call ids**: Featherless sometimes returns `id: null` on some entries when a model calls
   several tools in one turn (observed with DeepSeek-V4-Pro creating an NPC + Location together).
   Passing that through verbatim on the next request got a `422` rejection. Fixed with a synthetic
-  fallback id generated client-side. See docs/featherless-notes.md.
+  fallback id generated client-side. See docs/providers/featherless-notes.md.
 - **Field-key casing mismatch**: the Editor's tool prompt showed human-readable labels ("Identity",
   "Off the table"), and the model reliably mirrored that casing back as the JSON keys instead of the
   schema's real camelCase keys ("identity", "offTable") — meaning every field from a real setup
@@ -254,7 +254,7 @@ story is currently active, not a cross-story view.
   Featherless 404, added a fallback model, confirmed the _same_ job type then succeeded via the
   fallback. That test surfaced a real gap — 404 (`model_not_found`) isn't in Featherless's documented
   error table at all, and wasn't in the original unavailable-status set (400/403/503); added it. See
-  docs/featherless-notes.md.
+  docs/providers/featherless-notes.md.
 - **Provider boundary** — confirmed clean, and tightened while confirming: `FEATHERLESS_API_KEY`/
   `FEATHERLESS_BASE_URL`/`FEATHERLESS_USER_AGENT` lived in the shared `config.ts` alongside the
   provider-agnostic `AgentProfile`/`DEFAULT_*_PROFILE` — moved to a new `src/inference/featherless-
@@ -265,20 +265,18 @@ config.ts` so `config.ts` has zero Featherless-specific symbols left. Confirmed 
 
 **Additional, post-Phase-1: Toast notifications + client error logging** — ✅ done, 2026-07-02.
 Not part of loremaster.md's original scope; added because frontend errors were otherwise invisible
-unless DevTools happened to be open. `web/src/toast.ts` (module-level pub-sub store, same idiom as the
-existing `onSuperseded` channel) + `web/src/ToastHost.tsx` (fixed bottom-right stack, mounted once in
-`main.tsx` alongside `App`, not gated by it) + `web/src/error-capture.ts` (monkey-patches
-`console.error`, listens for `window.onerror`/`unhandledrejection`). Only `critical` toasts are sticky
-until dismissed; `info`/`warning`/`error` auto-fade on a severity-scaled timer. Every
-`warning`/`error`/`critical` toast also fire-and-forget POSTs to a new `POST /api/client-errors`
-(`src/routes/client-errors.ts` + `src/db/client-error-store.ts`, backed by a new `client_errors` table
-in the global schema) for later analysis — deliberately a plain `fetch`, not the shared `apiFetch`, so a
-failed log-POST can never cascade into another toast/log attempt.
+unless DevTools happened to be open. Uses Sonner (`<Toaster />` mounted once in `main.tsx`) with a
+thin wrapper in `web/src/lib/toast.ts` that preserves the `toast.info/warning/error/critical(message,
+title?)` API. `web/src/lib/error-capture.ts` monkey-patches `console.error`, listens for
+`window.onerror`/`unhandledrejection`. Only `critical` toasts are sticky until dismissed;
+`info`/`warning`/`error` auto-fade on a severity-scaled timer. Every `warning`/`error`/`critical` toast
+also fire-and-forget POSTs to `POST /api/client-errors` (`src/routes/client-errors.ts` +
+`src/db/client-error-store.ts`, backed by the `client_errors` table in the global schema) for later
+analysis — deliberately a plain `fetch`, not the shared `apiFetch`, so a failed log-POST can never
+cascade into another toast/log attempt.
 
-Found and closed a real gap during design: none of the existing per-view `catch` blocks actually called
-`console.error` (they only set local state for the inline `error-banner`), so the monkey-patch alone
-would have silently missed all of today's existing error handling. Added one `console.error(err)` line
-to each of the ~29 catch sites across 9 view files. `apiFetch` (`web/src/api.ts`) now also wraps its
+Each per-view `catch` block calls `console.error(err)` (which `error-capture.ts` picks up), so the
+monkey-patch covers all existing error handling. `apiFetch` (`web/src/api/client.ts`) also wraps its
 `fetch()` call and treats a network failure or `5xx` as a `console.error`, which `error-capture.ts`
 recognizes as a network-failure signature and escalates to a sticky critical toast — directly matching
 the original "site stopped responding, CORS error" complaint that prompted this feature.
@@ -300,7 +298,7 @@ stay out of scope unless explicitly requested.
 
 ## Disambiguation resolution (2026-07-12) — ✅ done
 
-Full execution of `docs/disambiguation-resolution.md`: ~46 items across 6 phases eliminating naming collisions, overloads, and orphaned references across the codebase.
+~46 items across 6 phases eliminating naming collisions, overloads, and orphaned references across the codebase (plan doc deleted after execution).
 
 **Phase 1 — Purge Dead Code:** Deleted `archive-worker.ts`, `compress-worker.ts`, `compression.ts`, `memory-config.ts`, `src/experiments/`. Removed `gen_extract` column (text-store, schema, log-view), `compress` job type, `sourcebook` book type. Cleaned `COMPRESSION_ENABLED` imports, simplified `postNeedsCompress` to stub.
 
@@ -319,7 +317,7 @@ Full execution of `docs/disambiguation-resolution.md`: ~46 items across 6 phases
 **Additional, post-Phase-1: centralized prompts, freeform worldbook, pure-grep tags** — ✅ done,
 2026-07-03. Replaces the forced-tool-calling worldbook extraction pipeline (Milestone C's
 `runWorldbookExtraction`) with plain bracket-tagged prose the back end regex-scans deterministically —
-see docs/stub-revisions.md's superseded entry for why the old mechanism was dropped, and
+see the "Superseded" entry below for why the old mechanism was dropped, and
 loremaster.md's Structured Schema section for the new one. Summary of what changed:
 
 - `src/prompts.ts` centralizes all 9 prompt constants (previously scattered/duplicated across
@@ -330,7 +328,7 @@ loremaster.md's Structured Schema section for the new one. Summary of what chang
   Character) with structured fields to three freeform types (CONTENT/ROSTER/MEMORY), each a single
   content string with no name/fields/singleton enforcement. CONTENT accumulates (not a singleton) and
   is always injected in creation order; ROSTER/MEMORY are tag-triggered like before.
-- `src/services/worldbook-extraction.ts` (backend) + `web/src/worldbookBlocks.ts` (frontend, no shared
+- `src/services/worldbook-extraction.ts` (backend) + `web/src/lib/worldbookBlocks.ts` (frontend, no shared
   module path between the two TS projects so this is a deliberately duplicated sibling copy) detect
   `[CONTENT]`/`[ROSTER]`/`[MEMORY]` bracket pairs via a backreferenced regex — mismatched tags never
   match, empty result is not an error, content is stored verbatim.
@@ -396,7 +394,7 @@ An early tag-splitter mistake (`startsInThinking` from prefill alone) briefly mi
 trace; fixed in `reasoning-stream.ts` the same day.
 
 **Additional, post-Phase-1: Effort-aware thinking stream + false-retry fix** — ✅ done, 2026-07-04.
-Probe matrix and production results: [docs/reasoning-stream-research.md](reasoning-stream-research.md).
+Probe matrix and production results: [docs/providers/reasoning-stream-research.md](providers/reasoning-stream-research.md).
 `enable_thinking: false` with assistant prefill caused Featherless to emit IC prose only on
 `delta.reasoning`, which tripped “reasoning but no answer content” retries and stacked drafts in the
 trace (trace reset shipped in `21d33d7`; root cause fixed same day). `proseStreamUsesReasoningTrace` /
@@ -613,7 +611,7 @@ performance, and UX edge cases surfaced by real VM sessions.
   refresh — significant reduction in DB load for long stories.
 - **Outbound log caching** (`bbfb9b4`): outbound request log no longer re-read from disk on every
   inference call.
-- **Tab blocking reduction** (`7dad48d`): fetch coordinator (`web/src/api-coordinator.ts`) bounds
+- **Tab blocking reduction** (`7dad48d`): fetch coordinator (`web/src/lib/api-limiter.ts`) bounds
   polling frequency; bounded polls and read cache prevent tab-switch stalls.
 - **Debug tab split** (`2966fdb`): Queue and Logs split into separate Debug tabs to avoid loading
   both at once on section open.
@@ -657,3 +655,34 @@ performance, and UX edge cases surfaced by real VM sessions.
   (`e2e/smoke.spec.ts`). 132 total (122 Vitest + 10 Playwright), 0 regressions.
 - **Documentation**: 4 files stale claims fixed (CLAUDE.md test/lint/formatter status, stack.md
   deps/directory map, testing.md test directories, frontend.md api-coordinator→api-limiter).
+
+### Frontend refactor (Phases 1–7) — ✅ done, 2026-07-13
+
+Full frontend overhaul per `docs/refactor/frontend-roadmap.md`. 7 phases, all complete:
+
+- **Phase 1 (Cleanup):** Dead archive code deleted from api.ts (86 lines). CSS files renamed
+  (ArchivesView→SegmentsView, MemoryView→ContextView). `storage-keys.ts` created. `bun.lock`
+  deleted (F-004). `AutoGrowTextarea` extracted from StoryView.tsx → `components/`.
+- **Phase 2 (StoryView Decomposition):** `useReducer` collapsed 13 interdependent `useState` calls
+  into explicit state transitions. `StoryLog.tsx`, `StoryFooter.tsx`, `StoryViewHelpers.ts` extracted.
+  `forceTick` 1s timer replaced with `useRef` + direct DOM elapsed-label update. Inline onClick
+  handlers wrapped in `useCallback`.
+- **Phase 3 (api.ts Split):** Monolithic 1,080-line `api.ts` split into 13 resource modules +
+  `client.ts` + `types.ts` + `index.ts` barrel in `web/src/api/`.
+- **Phase 4 (State Infrastructure):** TanStack Query (server state) + Zustand (client state with
+  `persist` middleware, single `loremaster.ui` key, one-time migration from old individual keys).
+  12 TanStack Query hook files. 9 views migrated from `useEffect`+fetch to `useQuery`. Polling via
+  `refetchInterval`. `storage-keys.ts` deleted (Zustand persist replaces it).
+- **Phase 5 (Subdirectories):** `views/`, `components/`, `hooks/`, `lib/` created. 15 view files,
+  10 components, 2 hooks, 9 utilities moved. ~60 import paths updated. Fixed `ButtonContainerRow`
+  regression (`showButton === false` → `!container.visible`) and `SegmentsView` anti-pattern
+  (render-body `mutateAsync` → `useEffect` + `useRef` guard).
+- **Phase 6 (Package Replacements):** Sonner replaces hand-rolled toast.ts/ToastHost (+9KB gzipped).
+  Virtuoso replaces `useStoryLogScroll.ts` (+19KB gzipped) — `followOutput`, `atTopStateChange`,
+  `firstItemIndex` for prepend tracking. E2E: 7/7 critical-path tests pass.
+- **Phase 7 (CSS Convention Cleanup):** `font-size: 15px` → `var(--entry-font-size)` in 6 CSS files.
+  9 semantic color custom properties added to `:root` + dark theme. 28 hardcoded hex colors
+  replaced across 10 CSS files. Remaining px values audited — all functional constraints.
+
+Bundle: 143KB gzipped JS (was 115KB pre-Phase 6). 0 typecheck errors, 0 lint errors, 1 pre-existing
+warning (forceTick exhaustive-deps, intentionally kept). 142 tests (126 Vitest + 16 Playwright).
