@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { listChronologicalPages } from '../db/page-store.js'
+import { listChronologicalPages, getPage, type PageRow } from '../db/page-store.js'
 import { getText, type TextRole, type TextRow } from '../db/text-store.js'
 import { getBookByType } from '../db/book-store.js'
 import {
@@ -9,7 +9,7 @@ import {
 } from '../db/worldbook-store.js'
 import { listStoryToDateSegments } from '../db/story-to-date-store.js'
 import type { ChatMessage } from '../inference/featherless.js'
-import { AUTHOR_SYSTEM_PROMPT, AUTHOR_KICKOFF_PROMPT } from '../prompts.js'
+import { AUTHOR_SYSTEM_PROMPT, AUTHOR_KICKOFF_PROMPT, icProseSteeringNote } from '../prompts.js'
 import {
   mergeStoryToDate,
   MIN_VERBOSE_IC_POSTS,
@@ -17,6 +17,9 @@ import {
   resolveIcStartOrder,
   countChainPosts,
 } from './story-to-date/engine.js'
+import { getStoryState } from '../db/story-state-store.js'
+import { resolveIcStartPageId } from './story-transition.js'
+import { resolveRegisterFromContent } from './worldbook/assembly.js'
 
 const CHARS_PER_TOKEN_ESTIMATE = 4
 function estimateTokens(text: string): number {
@@ -133,6 +136,106 @@ export function assembleKickoffPrompt(
   }
   messages.push({ role: 'system', content: AUTHOR_KICKOFF_PROMPT })
   return messages
+}
+
+export type GuidanceIntent = 'regenerate' | 'continue'
+
+export interface JobGuidance {
+  text: string
+  intent: GuidanceIntent
+}
+
+/**
+ * Shared by both the Featherless (streamed, synchronous-await) and Horde (submit-then-poll)
+ * prose paths — the prompt assembly itself doesn't care how the reply eventually comes back.
+ */
+export function buildProseHistory(
+  db: Database.Database,
+  userId: string,
+  targetTextId: string,
+  guidance?: JobGuidance,
+): { history: ChatMessage[]; targetPage: PageRow } {
+  const targetText = getText(db, targetTextId)
+  if (!targetText) throw new Error('target text no longer exists')
+  const targetPage = getPage(db, targetText.pageId)
+  if (!targetPage) throw new Error('target page no longer exists')
+
+  // The kickoff page (and any later Retry/Guided Retry of it) always generates from the
+  // worldbook alone, never the setup conversation's chat log — checked by page identity,
+  // not current phase, since phase moves on to "story" immediately after kickoff fires but
+  // the opening post can still be regenerated any time after that.
+  const icStartPageId = resolveIcStartPageId(db, targetPage.bookId)
+  let history: ChatMessage[]
+  if (icStartPageId && targetPage.id === icStartPageId) {
+    const worldbook = getBookByType(db, 'worldbook')
+    if (!worldbook) throw new Error('worldbook not found')
+    history = assembleKickoffPrompt(db, worldbook.id)
+  } else {
+    history = assembleAuthorPrompt(db, userId, targetPage.bookId, targetPage.prevPageId)
+  }
+
+  const register = resolveRegisterFromContent(db)
+  const steeringOpts = {
+    register,
+    tenseGuard: guidance?.intent === 'continue' || guidance?.intent === 'regenerate',
+    guidance: guidance?.text,
+    intent: guidance?.intent,
+  }
+  history = [...history, { role: 'system', content: icProseSteeringNote(steeringOpts) }]
+
+  return { history, targetPage }
+}
+
+/**
+ * Every turn in an OOC/setup conversation, verbatim (no tiering — these are short-lived), up
+ * to and including the given page. Filters to hidden pages specifically — every setup/OOC page
+ * is hidden the moment it's created, while in-character pages never are, so this is what scopes
+ * the Editor's context to just OOC content even when it's interleaved with IC content on the
+ * same page chain. `sincePageId`, when given, additionally scopes the *start* of the window —
+ * this is what makes a post-kickoff "update session" fresh (no memory of earlier update
+ * sessions) rather than reading the story's entire OOC history back to its original setup.
+ */
+export function buildSetupConversation(
+  db: Database.Database,
+  logbookId: string,
+  uptoPageId: string | null,
+  sincePageId?: string | null,
+): ChatMessage[] {
+  const pages = listChronologicalPages(db, logbookId).filter((p) => p.hidden)
+  const sinceIdx = sincePageId ? pages.findIndex((p) => p.id === sincePageId) : -1
+  const scoped = sinceIdx >= 0 ? pages.slice(sinceIdx) : pages
+  const cutoffIdx = uptoPageId ? scoped.findIndex((p) => p.id === uptoPageId) : scoped.length - 1
+  const historyPages = cutoffIdx >= 0 ? scoped.slice(0, cutoffIdx + 1) : scoped
+
+  const messages: ChatMessage[] = []
+  for (const page of historyPages) {
+    if (!page.selectedTextId) continue
+    const text = getText(db, page.selectedTextId)
+    if (!text?.genPackage) continue
+    messages.push({ role: text.role === 'agent' ? 'assistant' : 'user', content: text.genPackage })
+  }
+  return messages
+}
+
+/**
+ * Read-only reference material for a post-kickoff update session: the in-character story so
+ * far, folded into one system-role block rather than interleaved as raw user/assistant turns
+ * (which would otherwise confuse the Editor's own OOC role alternation). Reuses
+ * assembleAuthorPrompt's existing tiered history assembly rather than building a second one.
+ */
+export function buildIcContextBlock(
+  db: Database.Database,
+  userId: string,
+  logbookId: string,
+): ChatMessage | null {
+  const currentPageId = getStoryState(db).currentPageId
+  const icMessages = assembleAuthorPrompt(db, userId, logbookId, currentPageId).slice(1)
+  if (!icMessages.length) return null
+  const icLines = icMessages.map((m) => `[${m.role}] ${m.content}`).join('\n\n')
+  return {
+    role: 'system',
+    content: `For reference, here is the in-character story so far (read-only — you are not continuing it, just aware of it):\n\n${icLines}`,
+  }
 }
 
 /** Exported for story-to-date trigger estimation. */
