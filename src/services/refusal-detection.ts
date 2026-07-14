@@ -16,7 +16,7 @@ import { getSettingsSpace } from '../db/settings-space-store.js'
  * the model abandoning the task for a meta reply, not a phrase appearing naturally partway
  * through real output. Scoped for now to compress/archive (Worker/Editor summaries feeding
  * the worldbook, invisible to the user) — see executeCompressJob/executeArchiveJob in
- * pipeline-runner.ts. Deliberately NOT applied to Author prose or the Editor's setup replies:
+ * dispatch.ts. Deliberately NOT applied to Author prose or the Editor's setup replies:
  * those are shown to the user via the existing manual Stop/Retry controls, and seeing a
  * refusal play out is itself useful signal for judging whether a model is too prudish to keep
  * using.

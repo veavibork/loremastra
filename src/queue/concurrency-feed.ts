@@ -7,7 +7,7 @@
  * Keyed by userId, not a single process-wide connection — each user now has their own
  * Featherless account/key, so each has its own independent concurrency limit. A connection is
  * opened lazily the first time a user's job is about to be dispatched (see
- * ensureConcurrencyFeedForUser, called from pipeline-runner.ts) rather than at boot, since
+ * ensureConcurrencyFeedForUser, called from dispatch.ts) rather than at boot, since
  * there's no "the" key to connect with anymore. Docs: one event immediately on connect, then
  * every 2s.
  */

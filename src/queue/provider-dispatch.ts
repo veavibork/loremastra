@@ -1,8 +1,8 @@
 /**
  * Provider dispatch — Featherless streaming with model fallback.
  *
- * Extracted from pipeline-runner.ts so the streaming/fallback logic is testable
- * independently of the scan loop. Horde submit/poll stays in pipeline-runner for now
+ * Extracted from dispatch.ts so the streaming/fallback logic is testable
+ * independently of the scan loop. Horde submit/poll stays in dispatch for now
  * (it has tighter coupling to the scan loop via maybeQueue* helpers).
  */
 import type { AgentProfile } from '../config.js'

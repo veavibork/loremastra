@@ -3,7 +3,7 @@ import { getBookByType } from '../src/db/book-store.js'
 import { getStoryDb } from '../src/db/story-db.js'
 import { listPendingJobs } from '../src/db/job-store.js'
 import { enqueueMemoryPipeline } from '../src/services/context/manifest.js'
-import { trackStoryDb } from '../src/queue/pipeline-runner.js'
+import { trackStoryDb } from '../src/queue/dispatch.js'
 
 const storyId = process.argv[2]
 const userId = process.argv[3] ?? '019f1e21-c547-75b2-8bc1-47b4b6cfdbe6'

@@ -63,7 +63,7 @@ messagesRoute.post('/:id/continue', async (c) => {
  * without touching the in-character story. Both pages are hidden immediately: it's what lets
  * these turns share the logbook's single page chain with in-character content (advancing the same
  * "head" as everything else) without ever being seen by the Author or shown in Play/IC mode — and
- * what lets buildSetupConversation (pipeline-runner.ts) find just this conversation's own history
+ * what lets buildSetupConversation (dispatch.ts) find just this conversation's own history
  * later, even with a whole IC story now interleaved in between.
  */
 messagesRoute.post('/:id/setup/messages', async (c) => {
@@ -80,7 +80,7 @@ messagesRoute.post('/:id/setup/messages', async (c) => {
 /**
  * One-shot kickoff: generates the opening post and immediately moves the story into story
  * phase — no separate review/approve step. If the result isn't right, the normal
- * Retry/Guided Retry on this page (via /posts/:pageId/retry) regenerates it; pipeline-runner
+ * Retry/Guided Retry on this page (via /posts/:pageId/retry) regenerates it; dispatch
  * keys the worldbook-only kickoff prompt off kickoffPageId identity, not current phase, so
  * that keeps working correctly after this point.
  */

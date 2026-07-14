@@ -136,7 +136,7 @@ Weave events into a causal throughline — this happened, BUT this complicated i
 You must write your summary wrapped in [SUMMARY] and [/SUMMARY], exactly matching that format, including opening and closing brackets. Nothing else in your reply is read.`
 
 /** Generic on purpose -- reused wherever a piece of prose needs a short name: the whole story
- * once it goes live still bearing its "Working Title" placeholder (see pipeline-runner.ts's
+ * once it goes live still bearing its "Working Title" placeholder (see dispatch.ts's
  * executeStoryNameJob), and later, individual archive/scene blocks once those are exposed. */
 export const NAMING_PROMPT = `You read a piece of fiction and come up with a short title in the story's Register — hook and mood, not plot summary. Two to six words, no subtitle, no colon-and-tagline construction, no surrounding quotation marks.
 

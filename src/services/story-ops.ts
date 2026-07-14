@@ -28,7 +28,7 @@ import {
   untrackStoryDb,
   setJobGuidance,
   setJobGenerationOptions,
-} from '../queue/pipeline-runner.js'
+} from '../queue/dispatch.js'
 import { publishJobCreated } from '../queue/job-events.js'
 import { enqueueEligibleStoryToDateJob } from './story-to-date/index.js'
 import { onCanonicalTextChangedForStory } from './context/invalidation.js'

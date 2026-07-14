@@ -35,8 +35,7 @@ async function main(): Promise<void> {
   const { Hono } = await import('hono')
   const { storiesRoute } = await import('../src/routes/stories.js')
   const { sessionGuard } = await import('../src/middleware/session-guard.js')
-  const { startPipelineRunner, stopPipelineRunner } =
-    await import('../src/queue/pipeline-runner.js')
+  const { startPipelineRunner, stopPipelineRunner } = await import('../src/queue/dispatch.js')
 
   const app = new Hono()
   app.use('*', sessionGuard)

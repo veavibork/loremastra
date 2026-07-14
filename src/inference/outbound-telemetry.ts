@@ -92,7 +92,7 @@ export function readRecentOutboundRequests(limit?: number): OutboundLogEntry[] {
 
 /**
  * Context-aware logger — every line auto-stamps storyId/jobId/jobType.
- * Use in pipeline-runner and services for grep-able structured output.
+ * Use in dispatch and services for grep-able structured output.
  */
 export function createLogger(context: LogContext = {}) {
   return {

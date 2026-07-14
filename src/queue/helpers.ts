@@ -1,6 +1,6 @@
 /**
  * Shared pipeline helpers — post-generation side effects called from multiple executors
- * and the Horde poll loop. Extracted from pipeline-runner.ts to avoid circular imports
+ * and the Horde poll loop. Extracted from dispatch.ts to avoid circular imports
  * between executors and the main dispatch module.
  */
 import type Database from 'better-sqlite3'

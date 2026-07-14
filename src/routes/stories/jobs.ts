@@ -39,7 +39,7 @@ jobsRoute.get('/:id/jobs/:jobId', (c) => {
 /**
  * Pending jobs (not yet claimed) have no in-flight call to abort — mark cancelled directly.
  * Running jobs are aborted via requestJobCancel; the executor's own catch/finally in
- * pipeline-runner.ts does the actual DB update, publishCancelled, and slot release once the
+ * dispatch.ts does the actual DB update, publishCancelled, and slot release once the
  * abort propagates, so this route doesn't race it by also writing the cancelled status itself.
  */
 jobsRoute.post('/:id/jobs/:jobId/cancel', (c) => {

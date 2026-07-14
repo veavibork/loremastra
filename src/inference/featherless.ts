@@ -459,7 +459,7 @@ function toWireMessage(m: ChatMessage): Record<string, unknown> {
 /**
  * A single plain non-streaming completion — no tools, no forced structure. For a short
  * background task whose output shape is enforced by a bracket-tag convention in the prompt
- * (see extractSummary in pipeline-runner.ts) rather than by the API's tool-calling machinery,
+ * (see extractSummary in dispatch.ts) rather than by the API's tool-calling machinery,
  * so the request itself stays as simple as streamInference's non-streaming twin.
  */
 export async function completeChat(

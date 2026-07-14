@@ -12,7 +12,7 @@ import { clientErrorsRoute } from './routes/client-errors.js'
 import { sessionsRoute } from './routes/sessions.js'
 import { accountRoute } from './routes/account.js'
 import { sessionGuard, type AppVariables } from './middleware/session-guard.js'
-import { startPipelineRunner, trackStoryDb } from './queue/pipeline-runner.js'
+import { startPipelineRunner, trackStoryDb } from './queue/dispatch.js'
 import { getQueueStatus } from './queue/slots.js'
 import { getGlobalDb } from './db/global-db.js'
 import { listAllStories } from './db/story-store.js'
@@ -53,7 +53,7 @@ app.get('/api/users', (c) => c.json(listUsers(getGlobalDb())))
 const port = Number(process.env.PORT ?? 4113)
 
 /**
- * The pipeline runner only scans stories it's tracking (src/queue/pipeline-runner.ts), which
+ * The pipeline runner only scans stories it's tracking (src/queue/dispatch.ts), which
  * previously only happened once an HTTP request touched that story this process lifetime — so
  * any story not reopened in the browser after a restart had its pending/running jobs sit frozen
  * indefinitely, even though nothing was actually wrong with them. Tracking every story at boot

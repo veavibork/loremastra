@@ -1,7 +1,7 @@
 /**
  * Gates job dispatch on Featherless's real account-wide concurrency
  * (src/queue/concurrency-feed.ts) rather than a purely local guess. The feed only updates every
- * ~2s while the scan loop ticks every 500ms (SCAN_INTERVAL_MS in pipeline-runner.ts), so jobs
+ * ~2s while the scan loop ticks every 500ms (SCAN_INTERVAL_MS in dispatch.ts), so jobs
  * this process has just dispatched are tracked as local "reservations" layered on top of the
  * feed's numbers until the feed has had time to catch up — otherwise several scan ticks in a
  * row could each see the same stale "free" snapshot and burst past the real limit.

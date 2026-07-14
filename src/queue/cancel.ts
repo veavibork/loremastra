@@ -1,9 +1,9 @@
 /**
- * Cancel handling for the pipeline runner — extracted from pipeline-runner.ts so that
+ * Cancel handling for the pipeline runner — extracted from dispatch.ts so that
  * route handlers (routes/stories/jobs.ts) can call requestJobCancel without importing
  * the entire pipeline module.
  *
- * The Maps are module-level singletons shared with pipeline-runner.ts — this is the
+ * The Maps are module-level singletons shared with dispatch.ts — this is the
  * right pattern for a singleton scan loop, but means the module is effectively a global.
  */
 import type Database from 'better-sqlite3'
