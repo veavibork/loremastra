@@ -5,6 +5,7 @@ import {
   setHordeRequestId,
   setJobModel,
   listRunningHordeJobs,
+  hasActiveJobByType,
   type JobRow,
   type JobType,
 } from '../db/job-store.js'
@@ -239,6 +240,15 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
 function dispatchProseJob(db: Database.Database, userId: string, storyId: string): void {
   const job = claimNextJob(db, PROSE_JOB_TYPES)
   if (!job) return
+
+  // Context-pressure gate: if a story-to-date (forward compression) job is in-flight,
+  // the segment isn't ready yet. Block prose until it completes — the user accepts the
+  // 4-5 minute wait since segment construction is the platform's purpose.
+  if (job.jobType === 'prose' && hasActiveJobByType(db, 'story-to-date')) {
+    unclaimJob(db, job.id)
+    return
+  }
+
   publishJobClaimed(job.id)
 
   // Horde prose: submit-then-poll — does not hold a slot (workers may run while queued).
