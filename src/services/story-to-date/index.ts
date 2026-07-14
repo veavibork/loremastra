@@ -1,8 +1,8 @@
 import type Database from 'better-sqlite3'
-import { createJob, hasActiveJobForStoryToDate } from '../db/job-store.js'
-import { publishJobCreated } from '../queue/job-events.js'
-import { getStoryState } from '../db/story-state-store.js'
-import { resolveIcStartPageId } from './story-transition.js'
+import { createJob, hasActiveJobForStoryToDate } from '../../db/job-store.js'
+import { publishJobCreated } from '../../queue/job-events.js'
+import { getStoryState } from '../../db/story-state-store.js'
+import { resolveIcStartPageId } from '../story-transition.js'
 import {
   createStoryToDateSegment,
   deleteStoryToDateSegment,
@@ -11,9 +11,9 @@ import {
   hasActiveJobForStoryToDateSegment,
   listStoryToDateSegments,
   setStoryToDateSegmentCoverage,
-} from '../db/story-to-date-store.js'
-import { getAgentProfile } from './agent-config.js'
-import { assembleAuthorPrompt } from './history.js'
+} from '../../db/story-to-date-store.js'
+import { getAgentProfile } from '../agent-config.js'
+import { assembleAuthorPrompt } from '../history.js'
 import {
   buildStoryCorpus,
   estimateTokens,
@@ -23,8 +23,8 @@ import {
   type StoryBlockKind,
   type StoryToDateSegment,
   type FoldableSegment,
-} from './story-to-date-engine.js'
-import { resolvePageIdForChainPost } from './post-index.js'
+} from './engine.js'
+import { resolvePageIdForChainPost } from '../post-index.js'
 
 export const STORY_TO_DATE_TRIGGER = 0.8
 export const STORY_TO_DATE_INPUT_CUTOFF = 0.8

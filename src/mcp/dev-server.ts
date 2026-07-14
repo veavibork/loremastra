@@ -32,7 +32,7 @@ import {
   buildMemorySummary,
   enqueueMemoryPipeline,
   runMemoryBackfill,
-} from '../services/context-manifest.js'
+} from '../services/context/manifest.js'
 import { findHeadPageId } from '../db/page-store.js'
 import { assembleAuthorPrompt } from '../services/history.js'
 

@@ -1,11 +1,14 @@
 import type Database from 'better-sqlite3'
-import { listChronologicalPages } from '../db/page-store.js'
-import { getText } from '../db/text-store.js'
-import { setContentHash } from '../db/page-store.js'
-import { listStoryToDateSegments } from '../db/story-to-date-store.js'
-import { hasActiveJobForStoryToDate, listPendingJobs } from '../db/job-store.js'
-import { computeTextContentStamp, postNeedsCompress } from './content-fingerprint.js'
-import { enqueueEligibleStoryToDateJob, enqueuePendingStoryToDateJobs } from './story-to-date.js'
+import { listChronologicalPages } from '../../db/page-store.js'
+import { getText } from '../../db/text-store.js'
+import { setContentHash } from '../../db/page-store.js'
+import { listStoryToDateSegments } from '../../db/story-to-date-store.js'
+import { hasActiveJobForStoryToDate, listPendingJobs } from '../../db/job-store.js'
+import { computeTextContentStamp, postNeedsCompress } from './fingerprint.js'
+import {
+  enqueueEligibleStoryToDateJob,
+  enqueuePendingStoryToDateJobs,
+} from '../story-to-date/index.js'
 
 /** Adopt content stamps for all canonical posts (idempotent). */
 export function backfillContentStamps(db: Database.Database): { stamped: number; skipped: number } {

@@ -2,14 +2,14 @@
  * Story-to-date corpus helpers — shared by experiment CLI and production pipeline.
  */
 import type Database from 'better-sqlite3'
-import { type TextRole } from '../db/text-store.js'
-import { getBookByType } from '../db/book-store.js'
+import { type TextRole } from '../../db/text-store.js'
+import { getBookByType } from '../../db/book-store.js'
 
-import { listWorldbookEntries, type WorldbookEntry } from '../db/worldbook-store.js'
-import { resolveIcStartPageId } from './story-transition.js'
-import { AUTHOR_SYSTEM_PROMPT } from '../prompts.js'
-import type { ChatMessage } from '../inference/featherless.js'
-import { buildChainPostIndex, countChainPosts, resolveChainPostNumber } from './post-index.js'
+import { listWorldbookEntries, type WorldbookEntry } from '../../db/worldbook-store.js'
+import { resolveIcStartPageId } from '../story-transition.js'
+import { AUTHOR_SYSTEM_PROMPT } from '../../prompts.js'
+import type { ChatMessage } from '../../inference/featherless.js'
+import { buildChainPostIndex, countChainPosts, resolveChainPostNumber } from '../post-index.js'
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4
 
@@ -28,7 +28,7 @@ export {
   resolvePageOrderForChainPost,
   resolveIcStartOrder,
   type ChainPostEntry,
-} from './post-index.js'
+} from '../post-index.js'
 
 /** @deprecated Use countChainPosts */
 export const countIcPosts = countChainPosts
@@ -37,7 +37,7 @@ export {
   resolveIcPostNumber,
   resolvePageIdForIcPost,
   resolvePageOrderForIcPost,
-} from './post-index.js'
+} from '../post-index.js'
 
 function formatWorldbookEntry(entry: WorldbookEntry): string {
   return `[${entry.entryType.toUpperCase()}]\n${entry.content}`

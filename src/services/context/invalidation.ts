@@ -1,15 +1,18 @@
 import type Database from 'better-sqlite3'
-import { getBookByType } from '../db/book-store.js'
-import { cancelPendingJobsForStoryToDate } from '../db/job-store.js'
-import { deleteStoryToDateSegment, listStoryToDateSegments } from '../db/story-to-date-store.js'
-import { getPage, listChronologicalPages, setContentHash } from '../db/page-store.js'
-import { getText, setTextBroken } from '../db/text-store.js'
-import { computeTextContentStamp } from './content-fingerprint.js'
-import { enqueueEligibleStoryToDateJob, enqueuePendingStoryToDateJobs } from './story-to-date.js'
-import { resolveChainPostNumber } from './post-index.js'
-import { invalidateStoryReadCache } from './story-read-cache.js'
+import { getBookByType } from '../../db/book-store.js'
+import { cancelPendingJobsForStoryToDate } from '../../db/job-store.js'
+import { deleteStoryToDateSegment, listStoryToDateSegments } from '../../db/story-to-date-store.js'
+import { getPage, listChronologicalPages, setContentHash } from '../../db/page-store.js'
+import { getText, setTextBroken } from '../../db/text-store.js'
+import { computeTextContentStamp } from './fingerprint.js'
+import {
+  enqueueEligibleStoryToDateJob,
+  enqueuePendingStoryToDateJobs,
+} from '../story-to-date/index.js'
+import { resolveChainPostNumber } from '../post-index.js'
+import { invalidateStoryReadCache } from '../story-read-cache.js'
 
-export { computeTextContentStamp, postNeedsCompress } from './content-fingerprint.js'
+export { computeTextContentStamp, postNeedsCompress } from './fingerprint.js'
 
 /** Called when a compress job finishes successfully for this page/text pair. */
 export function markCompressValid(db: Database.Database, pageId: string, textId: string): void {

@@ -67,11 +67,11 @@ Timebox: read key structural files, form judgment. No line-by-line review.
 
 Timebox: read key files, form judgment.
 
-- [ ] **Component separation** — Views vs reusable components vs hooks. Is the split clean?
-- [ ] **State management** — No state library (per clinerules). How is state coordinated across views and with the server?
-- [ ] **api.ts (34KB)** — Monolithic API layer. Is it organized internally? Duplication? Should it be split?
-- [ ] **CSS conventions** — Config-driven layout, no pixel values (per clinerules). Adhered to?
-- [ ] **Rendering patterns** — Any obvious re-render traps? Missing `key` props? Inline function/object creation in JSX?
+- [x] **Component separation** — Views vs reusable components vs hooks. Is the split clean?
+- [x] **State management** — No state library (per clinerules). How is state coordinated across views and with the server?
+- [x] **api.ts (34KB)** — Monolithic API layer. Is it organized internally? Duplication? Should it be split?
+- [x] **CSS conventions** — Config-driven layout, no pixel values (per clinerules). Adhered to?
+- [x] **Rendering patterns** — Any obvious re-render traps? Missing `key` props? Inline function/object creation in JSX?
 
 ### Phase 4: Documentation vs Reality
 

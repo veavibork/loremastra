@@ -43,15 +43,15 @@ import {
   estimateTokens,
   MIN_VERBOSE_IC_POSTS,
   type StoryBlockKind,
-} from '../src/services/story-to-date-engine.js'
+} from '../src/services/story-to-date/engine.js'
 import {
   STORY_TO_DATE_INPUT_CUTOFF,
   enqueueEligibleFoldJob,
-} from '../src/services/story-to-date.js'
+} from '../src/services/story-to-date/index.js'
 import {
   executeStoryToDateFoldJob,
   STORY_TO_DATE_FOLD_TIMEOUT_MS,
-} from '../src/services/story-to-date-fold-worker.js'
+} from '../src/services/story-to-date/fold-worker.js'
 import { buildChainPostIndex } from '../src/services/post-index.js'
 import {
   listStoryToDateSegments,

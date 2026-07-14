@@ -11,7 +11,7 @@ import {
   buildMemorySummary,
   buildMemoryManifest,
   backfillContentStamps,
-} from '../../src/services/context-manifest.js'
+} from '../../src/services/context/manifest.js'
 
 let db: Database.Database
 let logbookId: string

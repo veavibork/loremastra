@@ -8,7 +8,7 @@ import { getText } from '../../src/db/text-store.js'
 import {
   markCompressValid,
   computeTextContentStamp,
-} from '../../src/services/context-invalidation.js'
+} from '../../src/services/context/invalidation.js'
 
 let db: Database.Database
 

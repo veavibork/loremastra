@@ -1,20 +1,20 @@
 import type Database from 'better-sqlite3'
-import { getBookByType } from '../db/book-store.js'
-import { createJob, hasActiveWorldbookCompactJob, type JobRow } from '../db/job-store.js'
-import { getDecryptedFeatherlessKey } from '../db/user-store.js'
-import { getGlobalDb } from '../db/global-db.js'
+import { getBookByType } from '../../db/book-store.js'
+import { createJob, hasActiveWorldbookCompactJob, type JobRow } from '../../db/job-store.js'
+import { getDecryptedFeatherlessKey } from '../../db/user-store.js'
+import { getGlobalDb } from '../../db/global-db.js'
 import {
   listWorldbookEntries,
   updateWorldbookEntry,
   normalizeWorldbookStoredContent,
   type WorldbookEntry,
   type WorldbookEntryType,
-} from '../db/worldbook-store.js'
-import { completeChat, type ChatMessage } from '../inference/featherless.js'
-import { WORLDBOOK_COMPACT_SYSTEM_PROMPT } from '../prompts.js'
-import { getAgentProfile } from './agent-config.js'
-import { estimateTokens } from './story-to-date-engine.js'
-import { publishJobCreated } from '../queue/job-events.js'
+} from '../../db/worldbook-store.js'
+import { completeChat, type ChatMessage } from '../../inference/featherless.js'
+import { WORLDBOOK_COMPACT_SYSTEM_PROMPT } from '../../prompts.js'
+import { getAgentProfile } from '../agent-config.js'
+import { estimateTokens } from '../story-to-date/engine.js'
+import { publishJobCreated } from '../../queue/job-events.js'
 
 export interface WorldbookCompactOpts {
   entryType?: WorldbookEntryType

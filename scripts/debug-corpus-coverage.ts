@@ -4,9 +4,9 @@ import { getStoryDb } from '../src/db/story-db.js'
 import { getStory } from '../src/db/story-store.js'
 import { getBookByType } from '../src/db/book-store.js'
 import { buildChainPostIndex } from '../src/services/post-index.js'
-import { buildStoryCorpus } from '../src/services/story-to-date-engine.js'
+import { buildStoryCorpus } from '../src/services/story-to-date/engine.js'
 import { getAgentProfile } from '../src/services/agent-config.js'
-import { STORY_TO_DATE_INPUT_CUTOFF } from '../src/services/story-to-date.js'
+import { STORY_TO_DATE_INPUT_CUTOFF } from '../src/services/story-to-date/index.js'
 
 const storyId = process.argv[2] ?? '019f25e0-219c-7189-b481-9f389a9a3c39'
 const n = Number(process.argv[3] ?? 147)

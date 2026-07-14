@@ -16,7 +16,7 @@ import {
   resolvePageOrderForChainPost,
   resolveIcStartOrder,
   countChainPosts,
-} from './story-to-date-engine.js'
+} from './story-to-date/engine.js'
 
 const CHARS_PER_TOKEN_ESTIMATE = 4
 function estimateTokens(text: string): number {

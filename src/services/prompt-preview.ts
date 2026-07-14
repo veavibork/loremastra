@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3'
 import { assembleAuthorPrompt, estimateTokens } from './history.js'
 import { getAgentProfile } from './agent-config.js'
-import { STORY_TO_DATE_TRIGGER } from './story-to-date.js'
+import { STORY_TO_DATE_TRIGGER } from './story-to-date/index.js'
 import { buildChainPostIndex } from './post-index.js'
 
 export interface PromptPreviewMessage {

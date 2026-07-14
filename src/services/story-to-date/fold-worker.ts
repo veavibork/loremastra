@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { completeChat } from '../inference/featherless.js'
+import { completeChat } from '../../inference/featherless.js'
 
 /** Large merged segments can legitimately take several minutes — still bounded. */
 export const STORY_TO_DATE_FOLD_TIMEOUT_MS = 10 * 60_000
@@ -10,8 +10,8 @@ import {
   setStoryToDateSegmentCoverage,
   setStoryToDateSegmentName,
   deleteStoryToDateSegment,
-} from '../db/story-to-date-store.js'
-import { getAgentProfile } from './agent-config.js'
+} from '../../db/story-to-date-store.js'
+import { getAgentProfile } from '../agent-config.js'
 import {
   buildFoldSystem,
   selectFoldSet,
@@ -21,7 +21,7 @@ import {
   foldWordCount,
   looksFoldDigestTruncated,
   type FoldableSegment,
-} from './story-to-date-engine.js'
+} from './engine.js'
 
 /**
  * Feature A: fold the oldest STORY TO DATE segments into a single "deep past" digest so total

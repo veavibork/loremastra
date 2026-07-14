@@ -21,7 +21,7 @@ import {
   enqueuePendingStoryToDateNameJobs,
   requeueStoryToDateSegment,
   STORY_TO_DATE_TRIGGER,
-} from '../services/story-to-date.js'
+} from '../services/story-to-date/index.js'
 import {
   getStoryToDateSegment,
   setStoryToDateSegmentContent,
@@ -54,7 +54,7 @@ import {
 } from '../db/history-store.js'
 import { finalizeSetup } from '../services/story-transition.js'
 import { forkStory } from '../services/fork.js'
-import { onCanonicalTextChangedForStory } from '../services/context-invalidation.js'
+import { onCanonicalTextChangedForStory } from '../services/context/invalidation.js'
 import {
   trackStoryDb,
   untrackStoryDb,
@@ -74,11 +74,11 @@ import { buildLogView } from '../services/log-view.js'
 import {
   removeStoryToDateSegment,
   updateStoryToDateCoverageThroughPost,
-} from '../services/story-to-date.js'
-import { buildStoryToDateView } from '../services/story-to-date-view.js'
+} from '../services/story-to-date/index.js'
+import { buildStoryToDateView } from '../services/story-to-date/view.js'
 import { buildPromptPreview } from '../services/prompt-preview.js'
 import { cachedStoryRead } from '../services/story-read-cache.js'
-import { enqueueWorldbookCompactJob } from '../services/worldbook-compact.js'
+import { enqueueWorldbookCompactJob } from '../services/worldbook/compact.js'
 
 const STORY_READ_CACHE_TTL_MS = 2000
 import {
@@ -86,7 +86,7 @@ import {
   buildMemorySummary,
   enqueueMemoryPipeline,
   runMemoryBackfill,
-} from '../services/context-manifest.js'
+} from '../services/context/manifest.js'
 import { EDITOR_SETUP_OPENING } from '../prompts.js'
 import { getAgentProfile } from '../services/agent-config.js'
 

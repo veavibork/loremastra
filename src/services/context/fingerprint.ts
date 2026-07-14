@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { PageRow } from '../db/page-store.js'
-import type { TextRow } from '../db/text-store.js'
+import type { PageRow } from '../../db/page-store.js'
+import type { TextRow } from '../../db/text-store.js'
 
 /** Normalized gen_package fingerprint — same content must always produce the same stamp. */
 export function computeTextContentStamp(text: TextRow | null): string | null {

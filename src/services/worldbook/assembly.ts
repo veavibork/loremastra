@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
-import { getBookByType } from '../db/book-store.js'
-import { listContentEntries } from '../db/worldbook-store.js'
+import { getBookByType } from '../../db/book-store.js'
+import { listContentEntries } from '../../db/worldbook-store.js'
 
 const GENERIC_PC_NAMES = new Set(['you', 'player', 'pc', 'character', 'protagonist'])
 

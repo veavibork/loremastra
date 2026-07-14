@@ -65,20 +65,20 @@ import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from '../db/user-sto
 import type { AgentProfile } from '../config.js'
 import { isOpeningPostPage, resolveIcStartPageId } from '../services/story-transition.js'
 import { assembleAuthorPrompt, assembleKickoffPrompt } from '../services/history.js'
-import { applyExtractedWorldbookBlocks } from '../services/worldbook-extraction.js'
+import { applyExtractedWorldbookBlocks } from '../services/worldbook/extraction.js'
 import {
   compactStoryWorldbook,
   takeWorldbookCompactJobOpts,
   buildWorldbookCompactResultSummary,
-} from '../services/worldbook-compact.js'
-import { resolveRegisterFromContent } from '../services/worldbook-assembly.js'
+} from '../services/worldbook/compact.js'
+import { resolveRegisterFromContent } from '../services/worldbook/assembly.js'
 import {
   enqueueEligibleStoryToDateJob,
   enqueueStoryToDateNameJob,
   enqueueEligibleFoldJob,
-} from '../services/story-to-date.js'
-import { executeStoryToDateJob } from '../services/story-to-date-worker.js'
-import { executeStoryToDateFoldJob } from '../services/story-to-date-fold-worker.js'
+} from '../services/story-to-date/index.js'
+import { executeStoryToDateJob } from '../services/story-to-date/worker.js'
+import { executeStoryToDateFoldJob } from '../services/story-to-date/fold-worker.js'
 import { fillStoryToDateSegmentName, getStoryToDateSegment } from '../db/story-to-date-store.js'
 import { nowIso } from '../lib/time.js'
 import { getAgentProfile } from '../services/agent-config.js'

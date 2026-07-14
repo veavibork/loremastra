@@ -1,13 +1,13 @@
 import type Database from 'better-sqlite3'
-import type { ChatMessage } from '../inference/featherless.js'
-import { completeChat } from '../inference/featherless.js'
+import type { ChatMessage } from '../../inference/featherless.js'
+import { completeChat } from '../../inference/featherless.js'
 import {
   fillStoryToDateSegment,
   getStoryToDateSegment,
   listStoryToDateSegments,
-} from '../db/story-to-date-store.js'
-import { getAgentProfile } from './agent-config.js'
-import { STORY_TO_DATE_FOLD_TIMEOUT_MS } from './story-to-date-fold-worker.js'
+} from '../../db/story-to-date-store.js'
+import { getAgentProfile } from '../agent-config.js'
+import { STORY_TO_DATE_FOLD_TIMEOUT_MS } from './fold-worker.js'
 import {
   buildDefaultBeginsSystemPrompt,
   buildCoverageSprintRetryUserMessage,
@@ -29,9 +29,9 @@ import {
   type StoryBlockKind,
   type StoryToDateSegment,
   type VerbosePost,
-} from './story-to-date-engine.js'
-import { STORY_TO_DATE_INPUT_CUTOFF } from './story-to-date.js'
-import { buildChainPostIndex } from './post-index.js'
+} from './engine.js'
+import { STORY_TO_DATE_INPUT_CUTOFF } from './index.js'
+import { buildChainPostIndex } from '../post-index.js'
 
 const MAX_ATTEMPTS = 2
 

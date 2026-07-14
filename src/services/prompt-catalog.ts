@@ -12,7 +12,7 @@ import {
   WORLDBOOK_COMPACT_SYSTEM_PROMPT,
   buildIcProseSteering,
 } from '../prompts.js'
-import { INCLUDE_EXCLUDE_GUIDANCE } from './story-to-date-engine.js'
+import { INCLUDE_EXCLUDE_GUIDANCE } from './story-to-date/engine.js'
 
 export interface PromptCatalogEntry {
   id: string
@@ -104,7 +104,7 @@ export function getPromptCatalog(): PromptCatalogEntry[] {
       name: 'Editor — story-to-date INCLUDE/EXCLUDE guidance',
       usedBy: 'Editor (story-to-date begins/continues)',
       kind: 'instruction',
-      sourceFile: 'src/services/story-to-date-corpus.ts',
+      sourceFile: 'src/services/story-to-date/engine.ts',
       content: INCLUDE_EXCLUDE_GUIDANCE,
     },
     {

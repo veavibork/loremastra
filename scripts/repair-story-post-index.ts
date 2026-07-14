@@ -25,7 +25,7 @@ import {
 import {
   enqueueEligibleStoryToDateJob,
   enqueuePendingStoryToDateJobs,
-} from '../src/services/story-to-date.js'
+} from '../src/services/story-to-date/index.js'
 
 const storyId = process.argv[2]
 if (!storyId) {

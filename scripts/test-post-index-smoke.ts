@@ -13,7 +13,7 @@ import {
   countChainPosts,
   resolveChainPostNumber,
 } from '../src/services/post-index.js'
-import { buildStoryCorpus, formatCorpusForEditor } from '../src/services/story-to-date-engine.js'
+import { buildStoryCorpus, formatCorpusForEditor } from '../src/services/story-to-date/engine.js'
 import { buildLogView } from '../src/services/log-view.js'
 import { buildPromptPreview } from '../src/services/prompt-preview.js'
 import { listStoryToDateSegments } from '../src/db/story-to-date-store.js'

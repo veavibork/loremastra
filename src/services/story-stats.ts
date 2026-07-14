@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 import { getBookByType } from '../db/book-store.js'
-import { countIcPosts } from './story-to-date-engine.js'
+import { countIcPosts } from './story-to-date/engine.js'
 
 export interface StoryStats {
   /** Every text row in game+logbook books (includes superseded retry/edit versions). */

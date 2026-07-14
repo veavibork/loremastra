@@ -3,7 +3,7 @@ import {
   createWorldbookEntry,
   type WorldbookEntry,
   type WorldbookEntryType,
-} from '../db/worldbook-store.js'
+} from '../../db/worldbook-store.js'
 
 export interface ExtractedBlock {
   entryType: WorldbookEntryType
