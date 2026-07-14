@@ -46,6 +46,17 @@ import {
   handleStreamingCancel,
 } from './cancel.js'
 import { streamWithFallback } from './provider-dispatch.js'
+import {
+  maybeQueueStoryNameJob,
+  maybeEnqueueStoryToDateJob,
+  countRunningStoryToDateJobsForUser,
+} from './helpers.js'
+import {
+  extractStoryName,
+  NAMING_MAX_TOKENS,
+  STORY_NAME_MAX_ATTEMPTS,
+  ARCHIVE_NAME_MAX_ATTEMPTS,
+} from './executors/naming.js'
 import { createLogger } from '../inference/outbound-telemetry.js'
 import {
   completeChat,
@@ -59,7 +70,7 @@ import {
 import { submitTextGeneration, pollTextGeneration } from '../inference/horde.js'
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from '../db/user-store.js'
 import type { AgentProfile } from '../config.js'
-import { isOpeningPostPage, resolveIcStartPageId } from '../services/story-transition.js'
+import { resolveIcStartPageId } from '../services/story-transition.js'
 import {
   buildProseHistory,
   buildSetupConversation,
@@ -136,78 +147,6 @@ function applyGenerationOptions(
     profile,
     chatTemplateKwargs: Object.keys(chatTemplateKwargs).length ? chatTemplateKwargs : undefined,
   }
-}
-
-function withinWordLimit(text: string, maxWords: number): boolean {
-  return !!text && text.split(/\s+/).length <= maxWords
-}
-
-// Counts BOTH forward story-to-date and fold jobs — each is a full-cost Editor call, and the
-// account concurrency limit only permits one at a time, so they share the single-in-flight cap.
-function countRunningStoryToDateJobsForUser(
-  globalDb: ReturnType<typeof getGlobalDb>,
-  userId: string,
-): number {
-  let count = 0
-  for (const [storyId, db] of trackedDbs) {
-    const story = getStory(globalDb, storyId)
-    if (!story || story.ownerUserId !== userId) continue
-    const row = db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM jobs WHERE job_type IN ('story-to-date', 'story-to-date-fold') AND status = 'running'`,
-      )
-      .get() as { n: number }
-    count += row.n
-  }
-  return count
-}
-
-const STORY_NAME_MAX_ATTEMPTS = 2
-const NAMING_MAX_TOKENS = 64
-const ARCHIVE_NAME_MAX_ATTEMPTS = 3
-const STORY_NAME_MAX_WORDS = 12 // generous ceiling for a 2-6 word title — catches "wrote a sentence instead" cases
-const NAME_PATTERN = /\[NAME\]([\s\S]*?)\[\/NAME\]/i
-const NAME_OPEN_PATTERN = /\[NAME\]\s*([^\n[]+)/i
-function isValidExtractedName(content: string): boolean {
-  if (/<\|[^|>]*\|>/.test(content)) return false
-  if (/:\s+\S/.test(content)) return false
-  return withinWordLimit(content, STORY_NAME_MAX_WORDS)
-}
-
-function extractStoryName(text: string): string | null {
-  const trimmed = text.trim()
-  if (!trimmed) return null
-
-  let content: string | null = null
-  const closed = NAME_PATTERN.exec(trimmed)
-  if (closed?.[1]) {
-    content = closed[1].trim()
-  } else {
-    const open = NAME_OPEN_PATTERN.exec(trimmed)
-    if (open?.[1]) content = open[1].trim()
-  }
-
-  if (!content) {
-    const firstLine =
-      trimmed
-        .split(/\n/)
-        .map((l) => l.trim())
-        .find(Boolean) ?? ''
-    const cleaned = firstLine
-      .replace(/^(?:title|name|scene)\s*:\s*/i, '')
-      .replace(/^\[NAME\]\s*/i, '')
-      .replace(/^\*+|\*+$/g, '')
-      .replace(/^["'`""'']+|["'`""'']+$/g, '')
-      .trim()
-    if (cleaned && !/[[\]]/.test(cleaned) && isValidExtractedName(cleaned)) {
-      content = cleaned
-    }
-  }
-
-  if (!content) return null
-  content = content.replace(/^["'`""'']+|["'`""'']+$/g, '').trim()
-  if (!isValidExtractedName(content)) return null
-  return content
 }
 
 // Deliberately not gated by src/middleware/session-guard.ts — this loop isn't an HTTP
@@ -308,7 +247,7 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       // Editor archives (forward compression and folding alike) cost the full account limit — only one in flight per user.
       if (
         (job.jobType === 'story-to-date' || job.jobType === 'story-to-date-fold') &&
-        countRunningStoryToDateJobsForUser(globalDb, story.ownerUserId) > 1
+        countRunningStoryToDateJobsForUser(globalDb, story.ownerUserId, trackedDbs) > 1
       ) {
         unclaimJob(db, job.id)
         continue
@@ -893,34 +832,6 @@ async function executeSetupWorldbookJob(
 }
 
 /**
- * Fires once, right when the kickoff post's generation lands (OOC -> IC) -- checked by page
- * identity against story_state.kickoffPageId, the same check buildProseHistory itself uses, so
- * a later Retry/Guided Retry of that same post re-triggers this too (harmless: the story.name
- * check right after this is what actually gates it to "only while still unnamed"). Called from
- * both prose-completion paths (executeProseJob's Featherless/streamed success and
- * resolveHordeJob's Horde-poll success), since kickoff can run through either provider.
- */
-function maybeQueueStoryNameJob(
-  db: Database.Database,
-  userId: string,
-  storyId: string,
-  targetPage: PageRow,
-  targetTextId: string,
-): void {
-  if (!isOpeningPostPage(db, targetPage.bookId, targetPage.id)) return
-
-  const story = getStory(getGlobalDb(), storyId)
-  if (!story || story.name !== DEFAULT_STORY_NAME) return
-  const job = createJob(db, {
-    targetTextId,
-    jobType: 'story-name',
-    slotCost: getAgentProfile(userId, 'worker').concurrencyCost,
-    priority: -1,
-  })
-  publishJobCreated(job.id, job.jobType, storyId)
-}
-
-/**
  * Quietly renames a story off its "Working Title" placeholder once it's gone live — see
  * maybeQueueStoryNameJob for the trigger. Re-checks story.name against DEFAULT_STORY_NAME again
  * here (not just at queue time) since this runs some time later and the user could have renamed
@@ -1153,13 +1064,4 @@ async function executeStoryToDateFoldJobWrapper(
     releaseSlot(userId, jobId)
     releaseWorkerLane()
   }
-}
-
-function maybeEnqueueStoryToDateJob(
-  db: Database.Database,
-  userId: string,
-  storyId: string,
-  logbookId: string,
-): void {
-  enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId)
 }
