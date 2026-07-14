@@ -10,7 +10,7 @@ import {
   type ModelConfigInput,
 } from '../db/model-config-store.js'
 import { getAgentProfile } from '../services/agent-config.js'
-import { listModels } from '../inference/featherless-models.js'
+import { listModels, getModel } from '../inference/featherless-models.js'
 import { getHfTagsForModel } from '../inference/hf-model-tags.js'
 import { listTextModels } from '../inference/horde.js'
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from '../db/user-store.js'
@@ -123,8 +123,27 @@ agentsRoute.post('/', (c) => {
 
 agentsRoute.patch('/:id', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
-  const { db } = ensureSeeded(c)
-  const updated = updateModelConfig(db, c.req.param('id'), toPatch(body))
+  const { db, userId } = ensureSeeded(c)
+  const patch = toPatch(body)
+
+  // When the model string changes, fetch its actual concurrency cost from Featherless
+  // so slot reservations match the real per-call cost — no hardcoded guessing.
+  if (patch.model && patch.provider !== 'horde') {
+    const apiKey = getDecryptedFeatherlessKey(db, userId)
+    if (apiKey) {
+      try {
+        const modelInfo = await getModel(apiKey, patch.model)
+        if (modelInfo?.concurrencyCost != null) {
+          patch.concurrencyCost = modelInfo.concurrencyCost
+        }
+      } catch {
+        // Model lookup failed — leave concurrencyCost as-is (existing value or null).
+        // The concurrency feed's actual limits still prevent oversubscription.
+      }
+    }
+  }
+
+  const updated = updateModelConfig(db, c.req.param('id'), patch)
   if (!updated) return c.json({ error: 'model config not found' }, 404)
   return c.json({ config: updated })
 })

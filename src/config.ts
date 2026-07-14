@@ -20,7 +20,7 @@ export interface AgentProfile {
   topP?: number
   topK?: number
   minP?: number
-  /** Featherless-reported per-call concurrency cost (src/queue/slots.ts) — a property of the model, sourced from model_configs.concurrency_cost when set, falling back to this role's default below for models Featherless hasn't reported a cost for (or a config predating this field). Absent for profiles that aren't resolved through getAgentProfile() (e.g. the Horde smoke-test script, the legacy agent_configs override reader) — createJob's slotCost is itself optional and defaults safely. */
+  /** Featherless-reported per-call concurrency cost (src/queue/slots.ts) — a property of the model. Fetched live from Featherless when a model is saved in Config > Agents (routes/agents.ts PATCH). Falls back to 1 (minimum) when unknown — under-reserving is self-correcting via the concurrency feed within ~2s, while over-reserving would block work. */
   concurrencyCost?: number
   /** The model_configs row backing `model` above, when built from Config > Agents' DB-backed list — lets withModelFallback attribute success/fail/token stats to the right row. Absent for the hardcoded defaults below (only used as a last resort if that table is somehow empty). */
   configId?: string
@@ -37,7 +37,7 @@ export const DEFAULT_AUTHOR_PROFILE: AgentProfile = {
   responseLimit: 4096,
   contextLimit: 32000,
   provider: 'featherless',
-  concurrencyCost: 4,
+  concurrencyCost: 1,
 }
 
 // Deliberately not a "Heretic"/uncensored variant — the worker only summarizes
@@ -61,5 +61,5 @@ export const DEFAULT_EDITOR_PROFILE: AgentProfile = {
   responseLimit: 4096,
   contextLimit: 32000,
   provider: 'featherless',
-  concurrencyCost: 4,
+  concurrencyCost: 1,
 }
