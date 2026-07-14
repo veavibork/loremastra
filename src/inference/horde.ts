@@ -13,6 +13,27 @@ export class HordeError extends Error {
 }
 
 /**
+ * Horde returns HTTP 403 with `rc=KudosUpfront` when the user's kudos balance is too low
+ * for the requested max_length. The fix is to retry with a smaller max_length (512 tokens)
+ * — the model still works, just with shorter output. Once hit, we cap that model going
+ * forward so subsequent submissions don't waste a rate-limited slot on a guaranteed 403.
+ */
+export class HordeKudosUpfrontError extends Error {
+  constructor(message = 'insufficient kudos for requested max_length') {
+    super(message)
+    this.name = 'HordeKudosUpfrontError'
+  }
+}
+
+/** Models that have hit the KudosUpfront cap — future submissions use max_length=512. */
+const kudosCappedModels = new Set<string>()
+
+/** Returns true if this model has previously hit the KudosUpfront cap. */
+export function isModelKudosCapped(model: string): boolean {
+  return kudosCappedModels.has(model)
+}
+
+/**
  * `is_possible: false` is a live, continuously-recomputed flag (not a one-time submit
  * rejection) reflecting whether any currently-online worker matches the request's
  * constraints right now — it can flip back to true while a request is still queued. Kept as
@@ -105,22 +126,35 @@ export async function submitTextGeneration(
   profile: AgentProfile,
   apiKey: string | null,
   messages: ChatMessage[],
+  options?: { maxLengthOverride?: number },
 ): Promise<HordeSubmitResult> {
+  let params = hordeParams(profile)
+  if (options?.maxLengthOverride !== undefined) {
+    params = { ...params, max_length: options.maxLengthOverride }
+  } else if (isModelKudosCapped(profile.model)) {
+    params = { ...params, max_length: 512 }
+  }
+
   const response = await fetchWithTimeout(`${HORDE_BASE_URL}/v2/generate/text/async`, {
     method: 'POST',
     headers: headers(apiKey),
     body: JSON.stringify({
       prompt: buildPrompt(messages),
-      params: hordeParams(profile),
+      params,
       models: [profile.model],
     }),
   })
 
   if (!response.ok) {
-    throw new HordeError(
-      response.status,
-      `Horde submit failed: ${response.status} ${await safeText(response)}`,
-    )
+    const body = await safeText(response)
+    // Detect KudosUpfront: HTTP 403 with rc=KudosUpfront in the response body
+    if (response.status === 403 && body.includes('KudosUpfront')) {
+      kudosCappedModels.add(profile.model)
+      throw new HordeKudosUpfrontError(
+        `insufficient kudos for ${profile.model} at max_length=${params.max_length}`,
+      )
+    }
+    throw new HordeError(response.status, `Horde submit failed: ${response.status} ${body}`)
   }
 
   const data = (await response.json()) as { id: string; kudos: number }

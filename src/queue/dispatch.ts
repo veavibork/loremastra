@@ -40,7 +40,11 @@ import { executeProseJob } from './executors/prose.js'
 import { executeSetupJob } from './executors/setup.js'
 import { executeSetupWorldbookJob } from './executors/setup-worldbook.js'
 import { createLogger } from '../inference/outbound-telemetry.js'
-import { submitTextGeneration, pollTextGeneration } from '../inference/horde.js'
+import {
+  submitTextGeneration,
+  pollTextGeneration,
+  HordeKudosUpfrontError,
+} from '../inference/horde.js'
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from '../db/user-store.js'
 import { buildProseHistory } from '../services/history.js'
 import { nowIso } from '../lib/time.js'
@@ -329,9 +333,22 @@ async function executeHordeProseSubmit(
     const { history } = buildProseHistory(db, userId, targetTextId, guidance)
     const profile = getAgentProfile(userId, 'author')
     const hordeKey = getDecryptedHordeKey(getGlobalDb(), userId)
-    const { id: requestId } = await submitTextGeneration(profile, hordeKey, history)
-    setHordeRequestId(db, jobId, requestId)
-    setJobModel(db, jobId, profile.model)
+    try {
+      const { id: requestId } = await submitTextGeneration(profile, hordeKey, history)
+      setHordeRequestId(db, jobId, requestId)
+      setJobModel(db, jobId, profile.model)
+    } catch (err) {
+      if (err instanceof HordeKudosUpfrontError) {
+        // Retry with capped max_length — the model works, just with shorter output
+        const { id: requestId } = await submitTextGeneration(profile, hordeKey, history, {
+          maxLengthOverride: 512,
+        })
+        setHordeRequestId(db, jobId, requestId)
+        setJobModel(db, jobId, profile.model)
+      } else {
+        throw err
+      }
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     finishJob(db, jobId, 'failed', message)
