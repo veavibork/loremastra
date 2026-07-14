@@ -3,7 +3,7 @@ import { streamSSE } from 'hono/streaming'
 import type { AppVariables } from '../../middleware/session-guard.js'
 import { getJob, listRecentJobs, listActiveJobs, cancelJob } from '../../db/job-store.js'
 import { getText } from '../../db/text-store.js'
-import { requestJobCancel } from '../../queue/pipeline-runner.js'
+import { requestJobCancel } from '../../queue/cancel.js'
 import {
   subscribeJob,
   getJobBuffer,

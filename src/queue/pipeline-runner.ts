@@ -37,12 +37,17 @@ import {
   publishProgress,
   publishDone,
   publishError,
-  publishCancelled,
   publishJobCreated,
   publishJobClaimed,
   publishJobStarted,
-  getJobBuffer,
 } from './job-events.js'
+import {
+  streamingModels,
+  runningControllers,
+  beginCancellableWorkerJob,
+  endCancellableWorkerJob,
+  handleStreamingCancel,
+} from './cancel.js'
 import { createLogger } from '../inference/outbound-telemetry.js'
 import {
   streamInference,
@@ -239,51 +244,6 @@ const REASONING_LEAK_PEEK_CHARS = 16
  * EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE retries before handing off to the next fallback
  * candidate (if any).
  */
-/** Tracks which fallback candidate is actively streaming for a job — read on user cancel to finish telemetry. */
-const streamingModels = new Map<string, string>()
-
-/**
- * User hit Stop. If final content had started streaming, commit the partial reply as a normal
- * completion; otherwise discard the in-flight turn (thinking-only / prefill).
- */
-function handleStreamingCancel(
-  db: Database.Database,
-  jobId: string,
-  targetTextId: string,
-  startedAt: number,
-  options?: {
-    genOptions?: GenerationOptions
-    onPartialCommit?: (partial: string) => void
-  },
-): void {
-  const partial = getJobBuffer(jobId)?.text?.trim()
-  if (partial) {
-    const model = streamingModels.get(jobId) ?? 'unknown'
-    streamingModels.delete(jobId)
-    const tokenEstimate = Math.ceil(partial.length / 4)
-    const metrics: Record<string, unknown> = {
-      elapsedMs: Date.now() - startedAt,
-      tokenEstimate,
-      truncated: true,
-    }
-    if (options?.genOptions) metrics.toggles = options.genOptions
-    fillTextGeneration(db, targetTextId, {
-      genPackage: partial,
-      genMetrics: JSON.stringify(metrics),
-    })
-    options?.onPartialCommit?.(partial)
-    finishJob(db, jobId, 'done', undefined, {
-      model,
-      tokenEstimate,
-      elapsedMs: Date.now() - startedAt,
-    })
-    publishDone(jobId, partial)
-  } else {
-    streamingModels.delete(jobId)
-    cancelJob(db, jobId)
-    publishCancelled(jobId)
-  }
-}
 
 async function streamWithFallback(
   profile: AgentProfile,
@@ -422,34 +382,6 @@ async function streamWithFallback(
 // interactions, not what happens to work already in flight.
 let timer: NodeJS.Timeout | null = null
 const trackedDbs = new Map<string, Database.Database>()
-
-/** One AbortController per currently-running job, so a cancel request can actually abort its in-flight Featherless call instead of just flipping a DB flag. Populated when a job is claimed, deleted in its executor's `finally`. */
-const runningControllers = new Map<string, AbortController>()
-
-function beginCancellableWorkerJob(jobId: string): AbortController {
-  const controller = new AbortController()
-  runningControllers.set(jobId, controller)
-  return controller
-}
-
-function endCancellableWorkerJob(jobId: string): void {
-  runningControllers.delete(jobId)
-}
-
-/**
- * Aborts a running job's in-flight call. Returns false if the job isn't currently running here
- * (already terminal, still pending, or a job type with no mid-flight cancel support) — callers
- * should fall back to marking it cancelled directly in that case.
- *
- * Horde jobs deliberately fall into the "no mid-flight cancel support" bucket — explicit scope
- * decision (2026-07-03): a request that's already submitted just runs to completion.
- */
-export function requestJobCancel(jobId: string): boolean {
-  const controller = runningControllers.get(jobId)
-  if (!controller) return false
-  controller.abort(new JobCancelledError())
-  return true
-}
 
 /** The pipeline runner only scans stories the API has actually touched this process lifetime — fine for a handful of users, one active story each. */
 export function trackStoryDb(storyId: string, db: Database.Database): void {
