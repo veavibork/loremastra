@@ -10,6 +10,7 @@ import { settingsSpacesRoute } from './routes/settings-spaces.js'
 import { clientErrorsRoute } from './routes/client-errors.js'
 import { sessionsRoute } from './routes/sessions.js'
 import { accountRoute } from './routes/account.js'
+import { preferenceProfilesRoute } from './routes/preference-profiles.js'
 import { sessionGuard, type AppVariables } from './middleware/session-guard.js'
 import { startPipelineRunner, trackStoryDb } from './queue/dispatch.js'
 import { getQueueStatus } from './queue/slots.js'
@@ -45,6 +46,7 @@ app.route('/api/agents', agentsRoute)
 app.route('/api/prompts', promptsRoute)
 app.route('/api/settings', settingsSpacesRoute)
 app.route('/api/client-errors', clientErrorsRoute)
+app.route('/api/preference-profiles', preferenceProfilesRoute)
 app.get('/api/debug/slots', (c) => c.json(getQueueStatus(c.get('userId'))))
 // Exempt from session-guard (GET only) — the profile picker needs this before any session exists.
 app.get('/api/users', (c) => c.json(listUsers(getGlobalDb())))

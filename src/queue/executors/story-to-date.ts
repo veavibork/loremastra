@@ -1,6 +1,7 @@
 /** Forward-compression wrapper: summarizes recent IC posts into a story-to-date segment. */
 import type Database from 'better-sqlite3'
 import { finishJob, cancelJob } from '../../db/job-store.js'
+import { getStoryToDateSegment } from '../../db/story-to-date-store.js'
 import { getGlobalDb } from '../../db/global-db.js'
 import { getDecryptedFeatherlessKey } from '../../db/user-store.js'
 import { getAgentProfile } from '../../services/agent-config.js'
@@ -37,8 +38,13 @@ export async function executeStoryToDateJobWrapper(
       controller.signal,
     )
     const editor = getAgentProfile(userId, 'editor')
+    const filledSegment = getStoryToDateSegment(db, segmentId)
+    const tokenEstimate = filledSegment?.content
+      ? Math.ceil(filledSegment.content.length / 4)
+      : undefined
     finishJob(db, jobId, 'done', undefined, {
       model: editor.model,
+      tokenEstimate,
       elapsedMs: Date.now() - startedAt,
     })
     enqueueStoryToDateNameJob(db, userId, segmentId)

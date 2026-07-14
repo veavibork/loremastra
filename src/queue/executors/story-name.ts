@@ -62,7 +62,12 @@ export async function executeStoryNameJob(
       renameStory(globalDb, storyId, name)
     }
 
-    finishJob(db, jobId, 'done', undefined, { model: usedModel, elapsedMs: Date.now() - startedAt })
+    const tokenEstimate = Math.ceil(name.length / 4)
+    finishJob(db, jobId, 'done', undefined, {
+      model: usedModel,
+      tokenEstimate,
+      elapsedMs: Date.now() - startedAt,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     finishJob(db, jobId, 'failed', message)

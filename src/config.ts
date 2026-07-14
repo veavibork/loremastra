@@ -4,15 +4,12 @@ try {
   // no .env present; rely on process.env as-is
 }
 
-export interface AgentProfile {
+/** Per-model parameters that can differ across fallback candidates — extracted so fallback entries carry their own settings without a recursive AgentProfile. */
+export interface ModelParams {
   model: string
   temperature: number
   responseLimit: number
   contextLimit: number
-  /** Absent/undefined treated as "featherless" everywhere — every pre-Horde call site keeps working unchanged. */
-  provider?: 'featherless' | 'horde'
-  /** Ranked-choice fallback (loremaster.md's Provider Abstraction section) — tried in order if model is unavailable (see FeatherlessError/withModelFallback in inference/featherless.ts). Empty/absent means no fallback. */
-  fallbackModels?: string[]
   /** Optional sampler params (Featherless completions API) — omitted from the request body entirely when undefined, not sent as null. */
   presencePenalty?: number
   frequencyPenalty?: number
@@ -24,8 +21,17 @@ export interface AgentProfile {
   concurrencyCost?: number
   /** The model_configs row backing `model` above, when built from Config > Agents' DB-backed list — lets withModelFallback attribute success/fail/token stats to the right row. Absent for the hardcoded defaults below (only used as a last resort if that table is somehow empty). */
   configId?: string
+}
+
+export interface AgentProfile extends ModelParams {
+  /** Absent/undefined treated as "featherless" everywhere — every pre-Horde call site keeps working unchanged. */
+  provider?: 'featherless' | 'horde'
+  /** Ranked-choice fallback (loremaster.md's Provider Abstraction section) — tried in order if model is unavailable (see FeatherlessError/withModelFallback in inference/featherless.ts). Empty/absent means no fallback. */
+  fallbackModels?: string[]
   /** Parallel to fallbackModels — the model_configs row id for each fallback candidate, same order. */
   fallbackConfigIds?: string[]
+  /** Full per-candidate params for ranked fallback — each carries its own temperature, sampler params, concurrencyCost, and configId from its model_configs row. Populated by getAgentProfile; absent for hardcoded defaults and the old agent_configs path (which falls back to model/configId-only swapping). */
+  fallbackProfiles?: ModelParams[]
 }
 
 // Defaults, used when Config > Agents has no saved override yet (src/services/agent-config.ts

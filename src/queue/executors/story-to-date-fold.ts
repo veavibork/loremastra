@@ -1,6 +1,7 @@
 /** Fold wrapper: compresses old story-to-date segments into a deeper summary. */
 import type Database from 'better-sqlite3'
 import { finishJob, cancelJob } from '../../db/job-store.js'
+import { getStoryToDateSegment } from '../../db/story-to-date-store.js'
 import { getGlobalDb } from '../../db/global-db.js'
 import { getDecryptedFeatherlessKey } from '../../db/user-store.js'
 import { getAgentProfile } from '../../services/agent-config.js'
@@ -30,8 +31,13 @@ export async function executeStoryToDateFoldJobWrapper(
       controller.signal,
     )
     const editor = getAgentProfile(userId, 'editor')
+    const foldedSegment = getStoryToDateSegment(db, targetSegmentId)
+    const tokenEstimate = foldedSegment?.content
+      ? Math.ceil(foldedSegment.content.length / 4)
+      : undefined
     finishJob(db, jobId, 'done', undefined, {
       model: editor.model,
+      tokenEstimate,
       elapsedMs: Date.now() - startedAt,
     })
   } catch (err) {

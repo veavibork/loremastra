@@ -12,6 +12,7 @@ import {
   DEFAULT_WORKER_PROFILE,
   DEFAULT_EDITOR_PROFILE,
   type AgentProfile,
+  type ModelParams,
 } from '../config.js'
 
 export type { AgentRole } from '../db/model-config-store.js'
@@ -101,8 +102,22 @@ export function getAgentProfile(userId: string, role: AgentRole): AgentProfile {
     topK: primary.topK ?? undefined,
     minP: primary.minP ?? undefined,
     concurrencyCost: primary.concurrencyCost ?? DEFAULTS[role].concurrencyCost,
-    fallbackModels: fallbacks.map((f) => f.model),
     configId: primary.id,
+    fallbackModels: fallbacks.map((f) => f.model),
     fallbackConfigIds: fallbacks.map((f) => f.id),
+    fallbackProfiles: fallbacks.map((f): ModelParams => ({
+      model: f.model,
+      temperature: f.temperature,
+      responseLimit: f.responseLimit,
+      contextLimit: f.contextLimit,
+      presencePenalty: f.presencePenalty ?? undefined,
+      frequencyPenalty: f.frequencyPenalty ?? undefined,
+      repetitionPenalty: f.repetitionPenalty ?? undefined,
+      topP: f.topP ?? undefined,
+      topK: f.topK ?? undefined,
+      minP: f.minP ?? undefined,
+      concurrencyCost: f.concurrencyCost ?? DEFAULTS[role].concurrencyCost,
+      configId: f.id,
+    })),
   }
 }

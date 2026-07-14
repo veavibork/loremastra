@@ -1,4 +1,4 @@
-import type { AgentProfile } from '../config.js'
+import type { AgentProfile, ModelParams } from '../config.js'
 import { FEATHERLESS_BASE_URL, FEATHERLESS_USER_AGENT } from './featherless-config.js'
 import { getGlobalDb } from '../db/global-db.js'
 import { recordModelOutcome } from '../db/model-config-store.js'
@@ -164,19 +164,39 @@ export async function withModelFallback<T>(
   profile: AgentProfile,
   attempt: (profile: AgentProfile) => Promise<T>,
 ): Promise<T> {
-  const candidates = [profile.model, ...(profile.fallbackModels ?? [])]
-  const candidateConfigIds = [profile.configId, ...(profile.fallbackConfigIds ?? [])]
+  // Build the candidate list: primary first, then fallbacks. When fallbackProfiles is
+  // populated (getAgentProfile from model_configs), each candidate carries its own
+  // temperature, sampler params, and configId — not just a model string. When absent
+  // (hardcoded defaults, old agent_configs path), fall back to model/configId-only swapping.
+  const primaryParams: ModelParams = {
+    model: profile.model,
+    temperature: profile.temperature,
+    responseLimit: profile.responseLimit,
+    contextLimit: profile.contextLimit,
+    presencePenalty: profile.presencePenalty,
+    frequencyPenalty: profile.frequencyPenalty,
+    repetitionPenalty: profile.repetitionPenalty,
+    topP: profile.topP,
+    topK: profile.topK,
+    minP: profile.minP,
+    concurrencyCost: profile.concurrencyCost,
+    configId: profile.configId,
+  }
+  const candidates: ModelParams[] = [
+    primaryParams,
+    ...(profile.fallbackProfiles ??
+      profile.fallbackModels?.map((model, i) => ({
+        ...primaryParams,
+        model,
+        configId: profile.fallbackConfigIds?.[i],
+      })) ??
+      []),
+  ]
   let lastError: unknown
 
   for (let i = 0; i < candidates.length; i++) {
     try {
-      // configId is swapped per candidate too, not just model — each candidate is its own
-      // model_configs row (see model-config-store.ts), and the actual stats/token recording
-      // inside streamInference/completeChat/callWithTools reads profile.configId to
-      // know which row to credit.
-      return await withTransientRetry(() =>
-        attempt({ ...profile, model: candidates[i], configId: candidateConfigIds[i] }),
-      )
+      return await withTransientRetry(() => attempt({ ...profile, ...candidates[i]! }))
     } catch (err) {
       lastError = err
       const isLast = i === candidates.length - 1

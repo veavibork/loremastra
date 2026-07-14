@@ -61,7 +61,12 @@ export async function executeStoryToDateNameJob(
         `segment naming failed after ${SEGMENT_NAME_MAX_ATTEMPTS} attempts — ${lastError}`,
       )
     fillStoryToDateSegmentName(db, segmentId, name)
-    finishJob(db, jobId, 'done', undefined, { model: usedModel, elapsedMs: Date.now() - startedAt })
+    const tokenEstimate = Math.ceil(name.length / 4)
+    finishJob(db, jobId, 'done', undefined, {
+      model: usedModel,
+      tokenEstimate,
+      elapsedMs: Date.now() - startedAt,
+    })
   } catch (err) {
     if (err instanceof JobCancelledError) {
       cancelJob(db, jobId)
