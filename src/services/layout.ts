@@ -37,19 +37,26 @@ export interface LayoutConfigData {
 }
 
 /** Tab ids removed from the product — stripped from saved layouts on load. */
-const REMOVED_TAB_IDS = new Set(['story:summary', 'lore:tags', 'debug:'])
+const REMOVED_TAB_IDS = new Set([
+  'story:summary',
+  'lore:tags',
+  'debug:',
+  'story:archives',
+  'lore:memory',
+  'settings:',
+])
 
 const TAB_LABELS: Record<string, string> = {
   'story:play': 'Story',
   'story:saves': 'Saves',
   'story:logs': 'Logs',
   'story:queue': 'Queue',
-  'story:archives': 'Archives',
+  'story:segments': 'Segments',
   'lore:worldbook': 'Worldbook',
-  'lore:memory': 'Memory',
+  'lore:context': 'Context',
   'config:agents': 'Agents',
   'config:prompts': 'Prompts',
-  'settings:': 'Settings',
+  'preferences:': 'Settings',
 }
 
 export const INPUT_BAR_BUTTON_LABELS: Record<string, string> = {
@@ -81,8 +88,8 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         buttons: [
           { id: 'story:play', label: 'Story', visible: true },
           { id: 'lore:worldbook', label: 'Worldbook', visible: true },
-          { id: 'story:archives', label: 'Archives', visible: true },
-          { id: 'lore:memory', label: 'Memory', visible: true },
+          { id: 'story:segments', label: 'Segments', visible: true },
+          { id: 'lore:context', label: 'Context', visible: true },
         ],
       },
       {
@@ -106,7 +113,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: 'right',
         buttons: [
-          { id: 'settings:', label: 'Settings', visible: true },
+          { id: 'preferences:', label: 'Settings', visible: true },
           { id: 'story:saves', label: 'Saves', visible: true },
         ],
       },
