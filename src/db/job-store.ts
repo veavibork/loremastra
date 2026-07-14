@@ -186,6 +186,14 @@ export function hasActiveWorldbookCompactJob(db: Database.Database): boolean {
   return !!row
 }
 
+/** Any pending or running job of the given type — used by story-to-date to check if a job is already queued. */
+export function hasActiveJobByType(db: Database.Database, jobType: JobType): boolean {
+  const row = db
+    .prepare(`SELECT 1 FROM jobs WHERE job_type = ? AND status IN ('pending', 'running') LIMIT 1`)
+    .get(jobType)
+  return !!row
+}
+
 export function hasActiveJobForStoryToDate(
   db: Database.Database,
   targetStoryToDateId: string,

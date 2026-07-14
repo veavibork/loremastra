@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { createJob, hasActiveJobForStoryToDate } from '../../db/job-store.js'
+import { createJob, hasActiveJobForStoryToDate, hasActiveJobByType } from '../../db/job-store.js'
 import { publishJobCreated } from '../../queue/job-events.js'
 import { getStoryState } from '../../db/story-state-store.js'
 import { resolveIcStartPageId } from '../story-transition.js'
@@ -62,24 +62,6 @@ export function wouldTriggerStoryToDateJob(
   return assembled >= usable * STORY_TO_DATE_TRIGGER
 }
 
-function hasPendingStoryToDateJob(db: Database.Database): boolean {
-  const row = db
-    .prepare(
-      `SELECT 1 FROM jobs WHERE job_type = 'story-to-date' AND status IN ('pending', 'running') LIMIT 1`,
-    )
-    .get()
-  return !!row
-}
-
-function hasPendingFoldJob(db: Database.Database): boolean {
-  const row = db
-    .prepare(
-      `SELECT 1 FROM jobs WHERE job_type = 'story-to-date-fold' AND status IN ('pending', 'running') LIMIT 1`,
-    )
-    .get()
-  return !!row
-}
-
 /**
  * Feature A: when total STORY TO DATE crosses the soft cap, queue a fold job to compress the
  * oldest segments into a "deep past" digest — keeping total memory bounded as a story runs
@@ -90,7 +72,7 @@ export function enqueueEligibleFoldJob(
   userId: string,
   logbookId: string,
 ): string | null {
-  if (hasPendingFoldJob(db)) return null
+  if (hasActiveJobByType(db, 'story-to-date-fold')) return null
   const rows = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken)
   const totalTokens = rows.reduce((sum, s) => sum + estimateTokens(s.content!), 0)
   if (totalTokens <= STORY_TO_DATE_SOFT_CAP_TOKENS) return null
@@ -136,7 +118,7 @@ export function enqueueEligibleStoryToDateJob(
   const state = getStoryState(db)
   if (state.phase !== 'active' || !resolveIcStartPageId(db, logbookId)) return null
   if (!wouldTriggerStoryToDateJob(db, userId, logbookId, fromPageId)) return null
-  if (hasPendingStoryToDateJob(db)) return null
+  if (hasActiveJobByType(db, 'story-to-date')) return null
 
   const kind = nextSegmentKind(db, logbookId)
   if (!kind) return null
