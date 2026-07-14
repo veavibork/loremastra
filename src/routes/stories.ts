@@ -1,20 +1,11 @@
-import { unlinkSync } from 'node:fs'
 import { Hono, type Context, type Next } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { getGlobalDb } from '../db/global-db.js'
-import { getStoryDb, closeStoryDb } from '../db/story-db.js'
 import type { AppVariables } from '../middleware/session-guard.js'
-import {
-  createStory,
-  listStories,
-  getStory,
-  renameStory,
-  deleteStory,
-  DEFAULT_STORY_NAME,
-} from '../db/story-store.js'
+import { listStories, getStory, renameStory } from '../db/story-store.js'
 import { getStoryStats } from '../services/story-stats.js'
-import { createBook, getBookByType } from '../db/book-store.js'
-import { findHeadPageId, collectAncestorIds, listChronologicalPages } from '../db/page-store.js'
+import { getBookByType } from '../db/book-store.js'
+import { findHeadPageId, collectAncestorIds } from '../db/page-store.js'
 import {
   enqueueEligibleStoryToDateJob,
   enqueuePendingStoryToDateJobs,
@@ -27,9 +18,7 @@ import {
   setStoryToDateSegmentContent,
   setStoryToDateSegmentName,
 } from '../db/story-to-date-store.js'
-import { createPageWithText, createRetryText } from '../db/content-store.js'
-import { createJob, getJob, listRecentJobs, listActiveJobs, cancelJob } from '../db/job-store.js'
-import { getPage, setPageHidden } from '../db/page-store.js'
+import { getJob, listRecentJobs, listActiveJobs, cancelJob } from '../db/job-store.js'
 import { getText } from '../db/text-store.js'
 import {
   createWorldbookEntry,
@@ -38,38 +27,14 @@ import {
   setWorldbookEntryHidden,
   type WorldbookEntryType,
 } from '../db/worldbook-store.js'
-import {
-  getStoryState,
-  setStoryPhase,
-  setCurrentPageId,
-  setOocSessionStartPageId,
-} from '../db/story-state-store.js'
+import { getStoryState, setCurrentPageId } from '../db/story-state-store.js'
 import { resolveIcStartPageId } from '../services/story-transition.js'
-import {
-  recordHistoryEvent,
-  undoHistory,
-  redoHistory,
-  canUndoHistory,
-  canRedoHistory,
-} from '../db/history-store.js'
-import { finalizeSetup } from '../services/story-transition.js'
+import { recordHistoryEvent, undoHistory, redoHistory } from '../db/history-store.js'
 import { forkStory } from '../services/fork.js'
 import { onCanonicalTextChangedForStory } from '../services/context/invalidation.js'
-import {
-  trackStoryDb,
-  untrackStoryDb,
-  setJobGuidance,
-  setJobGenerationOptions,
-  requestJobCancel,
-} from '../queue/pipeline-runner.js'
+import { requestJobCancel } from '../queue/pipeline-runner.js'
 import type { GenerationOptions } from '../services/settings-space-registry.js'
-import {
-  subscribeJob,
-  getJobBuffer,
-  publishCancelled,
-  publishJobCreated,
-  type JobEvent,
-} from '../queue/job-events.js'
+import { subscribeJob, getJobBuffer, publishCancelled, type JobEvent } from '../queue/job-events.js'
 import { buildLogView } from '../services/log-view.js'
 import {
   removeStoryToDateSegment,
@@ -79,16 +44,28 @@ import { buildStoryToDateView } from '../services/story-to-date/view.js'
 import { buildPromptPreview } from '../services/prompt-preview.js'
 import { cachedStoryRead } from '../services/story-read-cache.js'
 import { enqueueWorldbookCompactJob } from '../services/worldbook/compact.js'
-
-const STORY_READ_CACHE_TTL_MS = 2000
 import {
   buildMemoryManifest,
   buildMemorySummary,
   enqueueMemoryPipeline,
   runMemoryBackfill,
 } from '../services/context/manifest.js'
-import { EDITOR_SETUP_OPENING } from '../prompts.js'
 import { getAgentProfile } from '../services/agent-config.js'
+import {
+  openTrackedStoryDb,
+  createStoryWithBooks,
+  deleteStoryWithFiles,
+  postMessage,
+  retryPost,
+  editPost,
+  continueStory,
+  postSetupMessage,
+  kickoffStory,
+  startOocSession,
+  currentPosition,
+} from '../services/story-ops.js'
+
+const STORY_READ_CACHE_TTL_MS = 2000
 
 export const storiesRoute = new Hono<{ Variables: AppVariables }>()
 
@@ -117,33 +94,9 @@ async function requireStoryOwnership(
 storiesRoute.use('/:id', requireStoryOwnership)
 storiesRoute.use('/:id/*', requireStoryOwnership)
 
-function openTrackedStoryDb(storyId: string) {
-  const db = getStoryDb(storyId)
-  trackStoryDb(storyId, db)
-  return db
-}
-
 storiesRoute.post('/', async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { name?: string }
-  const name = body.name?.trim() || DEFAULT_STORY_NAME
-
-  const globalDb = getGlobalDb()
-  const story = createStory(globalDb, { ownerUserId: c.get('userId'), name })
-
-  const storyDb = openTrackedStoryDb(story.id)
-  const gameBook = createBook(storyDb, { bookType: 'story' })
-  const logbook = createBook(storyDb, { bookType: 'logbook', parentBookId: gameBook.id })
-  createBook(storyDb, { bookType: 'worldbook', parentBookId: gameBook.id })
-
-  // The Editor "speaks first" — a canned opening line, no inference call, before the user
-  // has typed anything. See EDITOR_SETUP_OPENING in src/prompts.ts.
-  const { page: openingPage } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    role: 'agent',
-    genPackage: EDITOR_SETUP_OPENING,
-  })
-  setPageHidden(storyDb, openingPage.id, true)
-
+  const { story } = createStoryWithBooks(c.get('userId'), body.name)
   return c.json({ story })
 })
 
@@ -169,37 +122,7 @@ storiesRoute.patch('/:id', async (c) => {
 })
 
 storiesRoute.delete('/:id', async (c) => {
-  const globalDb = getGlobalDb()
-  const id = c.req.param('id')
-  const story = getStory(globalDb, id)
-  if (!story) return c.json({ error: 'story not found' }, 404)
-
-  closeStoryDb(id)
-  untrackStoryDb(id)
-  deleteStory(globalDb, id)
-
-  // The DB row above is the authoritative delete — it already succeeded by this point. WAL mode's
-  // -wal/-shm sidecars can stay briefly locked on Windows even after close() returns (checkpoint
-  // flush, AV scan, etc.), so a stubborn file is retried a few times and then just logged rather
-  // than failing a request whose real work is already done.
-  for (const suffix of ['', '-wal', '-shm']) {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        unlinkSync(story.filePath + suffix)
-        break
-      } catch (err) {
-        const code = (err as NodeJS.ErrnoException).code
-        if (code === 'ENOENT') break
-        if (code === 'EBUSY' && attempt < 4) {
-          await new Promise((resolve) => setTimeout(resolve, 100))
-          continue
-        }
-        console.error(`[stories] failed to delete story file ${story.filePath}${suffix}:`, err)
-        break
-      }
-    }
-  }
-
+  await deleteStoryWithFiles(c.req.param('id'))
   return c.json({ ok: true })
 })
 
@@ -395,48 +318,15 @@ storiesRoute.post('/:id/messages', async (c) => {
   if (!content.trim()) return c.json({ error: 'content is required' }, 400)
 
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  if (getStoryState(storyDb).phase !== 'active') {
-    return c.json({ error: "story hasn't reached story phase yet" }, 400)
-  }
-  const logbook = getBookByType(storyDb, 'logbook')
-  if (!logbook) return c.json({ error: 'logbook not found' }, 404)
-
-  // Attach at the current position (which is the head unless the user has undone/rewound) —
-  // submitting new content from an earlier point creates a sibling fork, per loremaster.md's
-  // Post Controls: non-destructive, nothing after the current position is touched or lost.
-  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id)
-
-  const { page: userPage, text: _userText } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    prevPageId: attachAt,
-    role: 'user',
-    genPackage: content,
-  })
-
-  const { page: agentPage, text: agentText } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    prevPageId: userPage.id,
-    role: 'agent',
-  })
-  setCurrentPageId(storyDb, null)
-  recordHistoryEvent(storyDb, {
-    kind: 'page',
-    pageId: agentPage.id,
-    fromValue: attachAt,
-    toValue: agentPage.id,
-  })
-
-  const job = createJob(storyDb, {
-    targetTextId: agentText.id,
-    jobType: 'prose',
-    slotCost: getAgentProfile(c.get('userId'), 'author').concurrencyCost,
-    priority: 10,
-  })
-  publishJobCreated(job.id, job.jobType, c.req.param('id'))
-  if (body.generationOptions) setJobGenerationOptions(job.id, body.generationOptions)
-  enqueueEligibleStoryToDateJob(storyDb, c.get('userId'), logbook.id, c.req.param('id'))
-
-  return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id })
+  const result = postMessage(
+    storyDb,
+    c.get('userId'),
+    c.req.param('id'),
+    content,
+    body.generationOptions,
+  )
+  if ('error' in result) return c.json({ error: result.error }, result.status)
+  return c.json(result)
 })
 
 /**
@@ -457,41 +347,16 @@ storiesRoute.post('/:id/posts/:pageId/retry', async (c) => {
     generationOptions?: GenerationOptions
   }
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  const pageId = c.req.param('pageId')
-
-  const page = getPage(storyDb, pageId)
-  if (!page) return c.json({ error: 'page not found' }, 404)
-  if (!page.selectedTextId) return c.json({ error: 'page has no current text' }, 400)
-  const currentText = getText(storyDb, page.selectedTextId)
-  if (!currentText) return c.json({ error: 'current text not found' }, 404)
-  if (currentText.role !== 'agent') return c.json({ error: 'only agent posts can be retried' }, 400)
-
-  const isSetupPage = page.hidden
-
-  const newText = createRetryText(storyDb, {
-    pageId,
-    priorTextId: currentText.id,
-    role: 'agent',
-  })
-  recordHistoryEvent(storyDb, {
-    kind: 'text',
-    pageId,
-    fromValue: currentText.id,
-    toValue: newText.id,
-  })
-  onCanonicalTextChangedForStory(storyDb, c.get('userId'), c.req.param('id'), pageId)
-  const job = createJob(storyDb, {
-    targetTextId: newText.id,
-    jobType: isSetupPage ? 'setup' : 'prose',
-    slotCost: getAgentProfile(c.get('userId'), isSetupPage ? 'editor' : 'author').concurrencyCost,
-    priority: 10,
-  })
-  publishJobCreated(job.id, job.jobType, c.req.param('id'))
-  if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), 'regenerate')
-  if (!isSetupPage && body.generationOptions)
-    setJobGenerationOptions(job.id, body.generationOptions)
-
-  return c.json({ jobId: job.id, pageId, textId: newText.id })
+  const result = retryPost(
+    storyDb,
+    c.get('userId'),
+    c.req.param('id'),
+    c.req.param('pageId'),
+    body.guidance,
+    body.generationOptions,
+  )
+  if ('error' in result) return c.json({ error: result.error }, result.status)
+  return c.json(result)
 })
 
 /** Directly overwrite a post's content — a new text version with user-supplied text, no inference call. Re-indexed against tags immediately. */
@@ -501,29 +366,15 @@ storiesRoute.post('/:id/posts/:pageId/edit', async (c) => {
   if (!content.trim()) return c.json({ error: 'content is required' }, 400)
 
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  const pageId = c.req.param('pageId')
-
-  const page = getPage(storyDb, pageId)
-  if (!page) return c.json({ error: 'page not found' }, 404)
-  if (!page.selectedTextId) return c.json({ error: 'page has no current text' }, 400)
-  const currentText = getText(storyDb, page.selectedTextId)
-  if (!currentText) return c.json({ error: 'current text not found' }, 404)
-
-  const newText = createRetryText(storyDb, {
-    pageId,
-    priorTextId: currentText.id,
-    role: currentText.role,
-    genPackage: content,
-  })
-  recordHistoryEvent(storyDb, {
-    kind: 'text',
-    pageId,
-    fromValue: currentText.id,
-    toValue: newText.id,
-  })
-  onCanonicalTextChangedForStory(storyDb, c.get('userId'), c.req.param('id'), pageId)
-
-  return c.json({ ok: true, textId: newText.id })
+  const result = editPost(
+    storyDb,
+    c.get('userId'),
+    c.req.param('id'),
+    c.req.param('pageId'),
+    content,
+  )
+  if ('error' in result) return c.json({ error: result.error }, result.status)
+  return c.json({ ok: true, ...result })
 })
 
 /**
@@ -540,65 +391,22 @@ storiesRoute.post('/:id/continue', async (c) => {
     generationOptions?: GenerationOptions
   }
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  const phase = getStoryState(storyDb).phase
-  if (phase !== 'setup' && phase !== 'active') {
-    return c.json({ error: "story isn't in a phase that can continue" }, 400)
-  }
-  const logbook = getBookByType(storyDb, 'logbook')
-  if (!logbook) return c.json({ error: 'logbook not found' }, 404)
-
-  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id)
-  const isSetupContinuation =
-    phase === 'setup' || !!(attachAt && getPage(storyDb, attachAt)?.hidden)
-
-  const { page, text } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    prevPageId: attachAt,
-    role: 'agent',
-  })
-  if (isSetupContinuation) setPageHidden(storyDb, page.id, true)
-  setCurrentPageId(storyDb, null)
-  recordHistoryEvent(storyDb, {
-    kind: 'page',
-    pageId: page.id,
-    fromValue: attachAt,
-    toValue: page.id,
-  })
-
-  const job = createJob(storyDb, {
-    targetTextId: text.id,
-    jobType: isSetupContinuation ? 'setup' : 'prose',
-    slotCost: getAgentProfile(c.get('userId'), isSetupContinuation ? 'editor' : 'author')
-      .concurrencyCost,
-    priority: 10,
-  })
-  publishJobCreated(job.id, job.jobType, c.req.param('id'))
-  if (body.guidance?.trim()) setJobGuidance(job.id, body.guidance.trim(), 'continue')
-  if (!isSetupContinuation && body.generationOptions)
-    setJobGenerationOptions(job.id, body.generationOptions)
-
-  return c.json({ agentPageId: page.id, jobId: job.id })
+  const result = continueStory(
+    storyDb,
+    c.get('userId'),
+    c.req.param('id'),
+    body.guidance,
+    body.generationOptions,
+  )
+  if ('error' in result) return c.json({ error: result.error }, result.status)
+  return c.json(result)
 })
 
-function currentPositionResponse(storyDb: ReturnType<typeof getStoryDb>) {
-  const logbook = getBookByType(storyDb, 'logbook')
-  const headPageId = logbook ? findHeadPageId(storyDb, logbook.id) : null
-  const currentPageId = getStoryState(storyDb).currentPageId ?? headPageId
-  return {
-    currentPageId,
-    headPageId,
-    atHead: currentPageId === headPageId,
-    canUndo: canUndoHistory(storyDb),
-    canRedo: canRedoHistory(storyDb),
-  }
-}
-
-/** Where the "cursor" is right now — the head unless Undo/Redo/Rewind has moved it. See loremaster.md's Post Controls: Undo/Redo. */
 storiesRoute.get('/:id/position', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
   const logbook = getBookByType(storyDb, 'logbook')
   if (!logbook) return c.json({ error: 'logbook not found' }, 404)
-  return c.json(currentPositionResponse(storyDb))
+  return c.json(currentPosition(storyDb))
 })
 
 /** Reverses whatever happened most recently on the unified history ledger — navigation, retry, or edit. See history-store.ts. */
@@ -614,7 +422,7 @@ storiesRoute.post('/:id/position/undo', (c) => {
       result.canonicalTextPageId,
     )
   }
-  return c.json(currentPositionResponse(storyDb))
+  return c.json(currentPosition(storyDb))
 })
 
 storiesRoute.post('/:id/position/redo', (c) => {
@@ -629,7 +437,7 @@ storiesRoute.post('/:id/position/redo', (c) => {
       result.canonicalTextPageId,
     )
   }
-  return c.json(currentPositionResponse(storyDb))
+  return c.json(currentPosition(storyDb))
 })
 
 /** Rewind directly to any page in the current head's history (not just one step) — same underlying cursor as Undo/Redo, just a bigger jump. */
@@ -657,7 +465,7 @@ storiesRoute.post('/:id/position', async (c) => {
     fromValue: fromPageId,
     toValue: body.pageId,
   })
-  return c.json(currentPositionResponse(storyDb))
+  return c.json(currentPosition(storyDb))
 })
 
 /** Genuinely new save slot — a full copy of the story file, truncated after the fork point. */
@@ -704,40 +512,9 @@ storiesRoute.post('/:id/setup/messages', async (c) => {
   if (!content.trim()) return c.json({ error: 'content is required' }, 400)
 
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  const logbook = getBookByType(storyDb, 'logbook')
-  if (!logbook) return c.json({ error: 'logbook not found' }, 404)
-
-  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id)
-  const { page: userPage, text: _userText } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    prevPageId: attachAt,
-    role: 'user',
-    genPackage: content,
-  })
-  setPageHidden(storyDb, userPage.id, true)
-
-  const { page: agentPage, text: agentText } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    prevPageId: userPage.id,
-    role: 'agent',
-  })
-  setPageHidden(storyDb, agentPage.id, true)
-  setCurrentPageId(storyDb, null)
-  recordHistoryEvent(storyDb, {
-    kind: 'page',
-    pageId: agentPage.id,
-    fromValue: attachAt,
-    toValue: agentPage.id,
-  })
-
-  const job = createJob(storyDb, {
-    targetTextId: agentText.id,
-    jobType: 'setup',
-    slotCost: getAgentProfile(c.get('userId'), 'editor').concurrencyCost,
-    priority: 10,
-  })
-  publishJobCreated(job.id, job.jobType, c.req.param('id'))
-  return c.json({ userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id })
+  const result = postSetupMessage(storyDb, c.get('userId'), c.req.param('id'), content)
+  if ('error' in result) return c.json({ error: result.error }, result.status)
+  return c.json(result)
 })
 
 /**
@@ -749,37 +526,9 @@ storiesRoute.post('/:id/setup/messages', async (c) => {
  */
 storiesRoute.post('/:id/kickoff', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  if (getStoryState(storyDb).phase !== 'setup')
-    return c.json({ error: 'story is not in setup phase' }, 400)
-
-  const logbook = getBookByType(storyDb, 'logbook')
-  if (!logbook) return c.json({ error: 'logbook not found' }, 404)
-
-  const attachAt = getStoryState(storyDb).currentPageId ?? findHeadPageId(storyDb, logbook.id)
-  const { page, text } = createPageWithText(storyDb, {
-    bookId: logbook.id,
-    prevPageId: attachAt,
-    role: 'agent',
-  })
-
-  finalizeSetup(storyDb, logbook.id, page.id)
-  setStoryPhase(storyDb, 'active')
-  setCurrentPageId(storyDb, null)
-  recordHistoryEvent(storyDb, {
-    kind: 'page',
-    pageId: page.id,
-    fromValue: attachAt,
-    toValue: page.id,
-  })
-
-  const job = createJob(storyDb, {
-    targetTextId: text.id,
-    jobType: 'prose',
-    slotCost: getAgentProfile(c.get('userId'), 'author').concurrencyCost,
-    priority: 10,
-  })
-  publishJobCreated(job.id, job.jobType, c.req.param('id'))
-  return c.json({ agentPageId: page.id, jobId: job.id })
+  const result = kickoffStory(storyDb, c.get('userId'), c.req.param('id'))
+  if ('error' in result) return c.json({ error: result.error }, result.status)
+  return c.json(result)
 })
 
 /**
@@ -794,17 +543,9 @@ storiesRoute.post('/:id/kickoff', (c) => {
  */
 storiesRoute.post('/:id/ooc/start-session', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  if (getStoryState(storyDb).phase !== 'active')
-    return c.json({ error: "story hasn't reached story phase yet" }, 400)
-
-  const logbook = getBookByType(storyDb, 'logbook')
-  if (!logbook) return c.json({ error: 'logbook not found' }, 404)
-
-  const hiddenPages = listChronologicalPages(storyDb, logbook.id).filter((p) => p.hidden)
-  const boundaryPageId = hiddenPages.length > 0 ? hiddenPages[hiddenPages.length - 1].id : null
-  setOocSessionStartPageId(storyDb, boundaryPageId)
-
-  return c.json({ ok: true })
+  const result = startOocSession(storyDb)
+  if ('error' in result) return c.json({ error: result.error }, result.status)
+  return c.json(result)
 })
 
 storiesRoute.get('/:id/worldbook', (c) => {
