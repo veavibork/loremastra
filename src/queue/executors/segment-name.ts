@@ -5,7 +5,7 @@ import { getStoryToDateSegment, fillStoryToDateSegmentName } from '../../db/stor
 import { getGlobalDb } from '../../db/global-db.js'
 import { getDecryptedFeatherlessKey } from '../../db/user-store.js'
 import { getAgentProfile } from '../../services/agent-config.js'
-import { ARCHIVE_NAMING_PROMPT } from '../../prompts.js'
+import { SEGMENT_NAMING_PROMPT } from '../../prompts.js'
 import {
   completeChat,
   withModelFallback,
@@ -14,7 +14,7 @@ import {
 } from '../../inference/featherless.js'
 import { releaseSlot } from '../slots.js'
 import { beginCancellableWorkerJob, endCancellableWorkerJob } from '../cancel.js'
-import { extractStoryName, NAMING_MAX_TOKENS, ARCHIVE_NAME_MAX_ATTEMPTS } from './naming.js'
+import { extractStoryName, NAMING_MAX_TOKENS, SEGMENT_NAME_MAX_ATTEMPTS } from './naming.js'
 
 export async function executeStoryToDateNameJob(
   db: Database.Database,
@@ -29,7 +29,7 @@ export async function executeStoryToDateNameJob(
     if (!segment?.content?.trim()) throw new Error('segment has no content to name from')
 
     const nameMessages: ChatMessage[] = [
-      { role: 'system', content: ARCHIVE_NAMING_PROMPT },
+      { role: 'system', content: SEGMENT_NAMING_PROMPT },
       { role: 'user', content: `Scene summary:\n${segment.content.trim()}` },
     ]
 
@@ -38,7 +38,7 @@ export async function executeStoryToDateNameJob(
     let lastError = 'unknown error'
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? ''
     const workerProfile = getAgentProfile(userId, 'worker')
-    for (let attempt = 1; attempt <= ARCHIVE_NAME_MAX_ATTEMPTS && !name; attempt++) {
+    for (let attempt = 1; attempt <= SEGMENT_NAME_MAX_ATTEMPTS && !name; attempt++) {
       try {
         const rawText = await withModelFallback(workerProfile, (profile) => {
           usedModel = profile.model
@@ -58,7 +58,7 @@ export async function executeStoryToDateNameJob(
 
     if (!name)
       throw new Error(
-        `segment naming failed after ${ARCHIVE_NAME_MAX_ATTEMPTS} attempts — ${lastError}`,
+        `segment naming failed after ${SEGMENT_NAME_MAX_ATTEMPTS} attempts — ${lastError}`,
       )
     fillStoryToDateSegmentName(db, segmentId, name)
     finishJob(db, jobId, 'done', undefined, { model: usedModel, elapsedMs: Date.now() - startedAt })

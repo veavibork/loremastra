@@ -8,7 +8,7 @@ import {
   ARCHIVE_SYSTEM_PROMPT,
   EDITOR_UPDATE_PROMPT,
   NAMING_PROMPT,
-  ARCHIVE_NAMING_PROMPT,
+  SEGMENT_NAMING_PROMPT,
   WORLDBOOK_COMPACT_SYSTEM_PROMPT,
   buildIcProseSteering,
 } from '../prompts.js'
@@ -121,7 +121,7 @@ export function getPromptCatalog(): PromptCatalogEntry[] {
       usedBy: 'Worker (segment-name from summary)',
       kind: 'system-prompt',
       sourceFile: 'src/prompts.ts',
-      content: ARCHIVE_NAMING_PROMPT,
+      content: SEGMENT_NAMING_PROMPT,
     },
     {
       id: 'compress-system-prompt',

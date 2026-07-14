@@ -1,4 +1,7 @@
 import { Hono } from 'hono'
+import { sValidator } from '@hono/standard-validator'
+import { z } from 'zod'
+import { validationHook } from '../../lib/validation-hook.js'
 import type { AppVariables } from '../../middleware/session-guard.js'
 import { getGlobalDb } from '../../db/global-db.js'
 import { getStory } from '../../db/story-store.js'
@@ -8,10 +11,15 @@ import { openTrackedStoryDb } from '../../services/story-ops.js'
 
 export const forkRoute = new Hono<{ Variables: AppVariables }>()
 
+const forkSchema = z.object({
+  pageId: z.string().optional(),
+  name: z.string().optional(),
+})
+
 /** Genuinely new save slot — a full copy of the story file, truncated after the fork point. */
-forkRoute.post('/:id/fork', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { pageId?: string; name?: string }
-  const sourceStoryId = c.req.param('id')
+forkRoute.post('/:id/fork', sValidator('json', forkSchema, validationHook), async (c) => {
+  const body = c.req.valid('json')
+  const sourceStoryId = c.req.param('id')!
   const storyDb = openTrackedStoryDb(sourceStoryId)
 
   if (getStoryState(storyDb).phase !== 'active') {

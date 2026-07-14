@@ -142,8 +142,8 @@ export const NAMING_PROMPT = `You read a piece of fiction and come up with a sho
 
 You must write your answer wrapped in [NAME] and [/NAME], exactly matching this format including opening and closing brackets. Nothing else in your reply is read.`
 
-/** Archive blocks receive a scene summary, not raw prose — same [NAME] output shape. */
-export const ARCHIVE_NAMING_PROMPT = `You name a scene from a story. You receive a short plot summary (not the full prose). Reply with a short title in the story's Register — hook and mood, not plot summary. Two to six words. No subtitle, no colon-and-tagline construction, no surrounding quotation marks.
+/** Segment blocks receive a scene summary, not raw prose — same [NAME] output shape. */
+export const SEGMENT_NAMING_PROMPT = `You name a scene from a story. You receive a short plot summary (not the full prose). Reply with a short title in the story's Register — hook and mood, not plot summary. Two to six words. No subtitle, no colon-and-tagline construction, no surrounding quotation marks.
 
 You must write your answer wrapped in [NAME] and [/NAME], exactly matching this format including opening and closing brackets. Nothing else in your reply is read.`
 

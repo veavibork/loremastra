@@ -55,4 +55,4 @@ export function extractStoryName(text: string): string | null {
 
 export const NAMING_MAX_TOKENS = 64
 export const STORY_NAME_MAX_ATTEMPTS = 2
-export const ARCHIVE_NAME_MAX_ATTEMPTS = 3
+export const SEGMENT_NAME_MAX_ATTEMPTS = 3

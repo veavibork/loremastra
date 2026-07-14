@@ -1,4 +1,7 @@
 import { Hono, type Context } from 'hono'
+import { sValidator } from '@hono/standard-validator'
+import { z } from 'zod'
+import { validationHook } from '../lib/validation-hook.js'
 import { getGlobalDb } from '../db/global-db.js'
 import type { AppVariables } from '../middleware/session-guard.js'
 import {
@@ -73,30 +76,28 @@ const DEFAULT_NEW_MODEL: ModelConfigInput = {
   active: true,
 }
 
-function toPatch(body: Record<string, unknown>): Partial<ModelConfigInput> {
-  const patch: Partial<ModelConfigInput> = {}
-  if (body.provider === 'featherless' || body.provider === 'horde') patch.provider = body.provider
-  if (typeof body.model === 'string') patch.model = body.model.trim()
-  if (typeof body.temperature === 'number') patch.temperature = body.temperature
-  if (typeof body.responseLimit === 'number') patch.responseLimit = body.responseLimit
-  if (typeof body.contextLimit === 'number') patch.contextLimit = body.contextLimit
-  if (typeof body.presencePenalty === 'number' || body.presencePenalty === null)
-    patch.presencePenalty = body.presencePenalty
-  if (typeof body.frequencyPenalty === 'number' || body.frequencyPenalty === null)
-    patch.frequencyPenalty = body.frequencyPenalty
-  if (typeof body.repetitionPenalty === 'number' || body.repetitionPenalty === null)
-    patch.repetitionPenalty = body.repetitionPenalty
-  if (typeof body.topP === 'number' || body.topP === null) patch.topP = body.topP
-  if (typeof body.topK === 'number' || body.topK === null) patch.topK = body.topK
-  if (typeof body.minP === 'number' || body.minP === null) patch.minP = body.minP
-  if (typeof body.concurrencyCost === 'number' || body.concurrencyCost === null)
-    patch.concurrencyCost = body.concurrencyCost
-  if (typeof body.useAuthor === 'boolean') patch.useAuthor = body.useAuthor
-  if (typeof body.useEditor === 'boolean') patch.useEditor = body.useEditor
-  if (typeof body.useWorker === 'boolean') patch.useWorker = body.useWorker
-  if (typeof body.active === 'boolean') patch.active = body.active
-  return patch
-}
+const patchSchema = z.object({
+  provider: z.enum(['featherless', 'horde']).optional(),
+  model: z.string().optional(),
+  temperature: z.number().optional(),
+  responseLimit: z.number().int().positive().optional(),
+  contextLimit: z.number().int().positive().optional(),
+  presencePenalty: z.number().nullable().optional(),
+  frequencyPenalty: z.number().nullable().optional(),
+  repetitionPenalty: z.number().nullable().optional(),
+  topP: z.number().nullable().optional(),
+  topK: z.number().nullable().optional(),
+  minP: z.number().nullable().optional(),
+  concurrencyCost: z.number().nullable().optional(),
+  useAuthor: z.boolean().optional(),
+  useEditor: z.boolean().optional(),
+  useWorker: z.boolean().optional(),
+  active: z.boolean().optional(),
+})
+
+const reorderSchema = z.object({
+  orderedIds: z.array(z.string()),
+})
 
 // Ensures Config > Agents always reflects the current live state (including the one-time
 // migration from the old per-role table) before any read/write below touches the list.
@@ -121,10 +122,11 @@ agentsRoute.post('/', (c) => {
   return c.json({ config: created })
 })
 
-agentsRoute.patch('/:id', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>
+agentsRoute.patch('/:id', sValidator('json', patchSchema, validationHook), async (c) => {
+  const body = c.req.valid('json')
   const { db, userId } = ensureSeeded(c)
-  const patch = toPatch(body)
+  const patch: Partial<ModelConfigInput> = { ...body }
+  if (typeof patch.model === 'string') patch.model = patch.model.trim()
 
   // When the model string changes, fetch its actual concurrency cost from Featherless
   // so slot reservations match the real per-call cost — no hardcoded guessing.
@@ -143,7 +145,7 @@ agentsRoute.patch('/:id', async (c) => {
     }
   }
 
-  const updated = updateModelConfig(db, c.req.param('id'), patch)
+  const updated = updateModelConfig(db, c.req.param('id')!, patch)
   if (!updated) return c.json({ error: 'model config not found' }, 404)
   return c.json({ config: updated })
 })
@@ -154,10 +156,9 @@ agentsRoute.delete('/:id', (c) => {
   return c.json({ ok: true })
 })
 
-agentsRoute.post('/reorder', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { orderedIds?: string[] }
-  if (!Array.isArray(body.orderedIds)) return c.json({ error: 'orderedIds is required' }, 400)
+agentsRoute.post('/reorder', sValidator('json', reorderSchema, validationHook), (c) => {
+  const { orderedIds } = c.req.valid('json')
   const { db, userId } = ensureSeeded(c)
-  reorderModelConfigs(db, userId, body.orderedIds)
+  reorderModelConfigs(db, userId, orderedIds)
   return c.json({ configs: listModelConfigs(db, userId) })
 })

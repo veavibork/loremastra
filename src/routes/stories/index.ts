@@ -1,4 +1,7 @@
 import { Hono, type Context, type Next } from 'hono'
+import { sValidator } from '@hono/standard-validator'
+import { z } from 'zod'
+import { validationHook } from '../../lib/validation-hook.js'
 import type { AppVariables } from '../../middleware/session-guard.js'
 import { getGlobalDb } from '../../db/global-db.js'
 import { listStories, getStory, renameStory } from '../../db/story-store.js'
@@ -30,6 +33,13 @@ const STORY_READ_CACHE_TTL_MS = 2000
 
 export const storiesRoute = new Hono<{ Variables: AppVariables }>()
 
+const createStorySchema = z.object({
+  name: z.string().optional(),
+})
+
+const renameStorySchema = z.object({
+  name: z.string().optional(),
+})
 storiesRoute.use('*', async (c, next) => {
   c.header('Access-Control-Allow-Origin', '*')
   c.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
@@ -57,9 +67,9 @@ storiesRoute.use('/:id/*', requireStoryOwnership)
 
 // --- CRUD (no :id param on create/list) ---
 
-storiesRoute.post('/', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { name?: string }
-  const { story } = createStoryWithBooks(c.get('userId'), body.name)
+storiesRoute.post('/', sValidator('json', createStorySchema, validationHook), (c) => {
+  const { name } = c.req.valid('json')
+  const { story } = createStoryWithBooks(c.get('userId'), name)
   return c.json({ story })
 })
 
@@ -72,14 +82,14 @@ storiesRoute.get('/', (c) => {
   return c.json({ stories })
 })
 
-storiesRoute.patch('/:id', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { name?: string }
+storiesRoute.patch('/:id', sValidator('json', renameStorySchema, validationHook), (c) => {
+  const { name } = c.req.valid('json')
   const globalDb = getGlobalDb()
-  const id = c.req.param('id')
+  const id = c.req.param('id')!
   if (!getStory(globalDb, id)) return c.json({ error: 'story not found' }, 404)
 
-  if (typeof body.name === 'string' && body.name.trim()) {
-    renameStory(globalDb, id, body.name.trim())
+  if (typeof name === 'string' && name.trim()) {
+    renameStory(globalDb, id, name.trim())
   }
   return c.json({ story: getStory(globalDb, id) })
 })

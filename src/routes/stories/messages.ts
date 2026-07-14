@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
+import { sValidator } from '@hono/standard-validator'
+import { z } from 'zod'
+import { validationHook } from '../../lib/validation-hook.js'
 import type { AppVariables } from '../../middleware/session-guard.js'
-import type { GenerationOptions } from '../../services/settings-space-registry.js'
 import {
   openTrackedStoryDb,
   postMessage,
@@ -12,19 +14,30 @@ import {
 
 export const messagesRoute = new Hono<{ Variables: AppVariables }>()
 
-messagesRoute.post('/:id/messages', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    content?: string
-    generationOptions?: GenerationOptions
-  }
+const messageSchema = z.object({
+  content: z.string().optional(),
+  generationOptions: z.any().optional(),
+})
+
+const continueSchema = z.object({
+  guidance: z.string().optional(),
+  generationOptions: z.any().optional(),
+})
+
+const setupMessageSchema = z.object({
+  content: z.string().optional(),
+})
+
+messagesRoute.post('/:id/messages', sValidator('json', messageSchema, validationHook), (c) => {
+  const body = c.req.valid('json')
   const content = body.content ?? ''
   if (!content.trim()) return c.json({ error: 'content is required' }, 400)
 
-  const storyDb = openTrackedStoryDb(c.req.param('id'))
+  const storyDb = openTrackedStoryDb(c.req.param('id')!)
   const result = postMessage(
     storyDb,
     c.get('userId'),
-    c.req.param('id'),
+    c.req.param('id')!,
     content,
     body.generationOptions,
   )
@@ -40,16 +53,13 @@ messagesRoute.post('/:id/messages', async (c) => {
  * the same page chain. Checking the attach point's own hidden flag (same invariant as retry, see
  * POST /:id/posts/:pageId/retry) gets this right in both cases.
  */
-messagesRoute.post('/:id/continue', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as {
-    guidance?: string
-    generationOptions?: GenerationOptions
-  }
-  const storyDb = openTrackedStoryDb(c.req.param('id'))
+messagesRoute.post('/:id/continue', sValidator('json', continueSchema, validationHook), (c) => {
+  const body = c.req.valid('json')
+  const storyDb = openTrackedStoryDb(c.req.param('id')!)
   const result = continueStory(
     storyDb,
     c.get('userId'),
-    c.req.param('id'),
+    c.req.param('id')!,
     body.guidance,
     body.generationOptions,
   )
@@ -66,16 +76,20 @@ messagesRoute.post('/:id/continue', async (c) => {
  * what lets buildSetupConversation (dispatch.ts) find just this conversation's own history
  * later, even with a whole IC story now interleaved in between.
  */
-messagesRoute.post('/:id/setup/messages', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { content?: string }
-  const content = body.content ?? ''
-  if (!content.trim()) return c.json({ error: 'content is required' }, 400)
+messagesRoute.post(
+  '/:id/setup/messages',
+  sValidator('json', setupMessageSchema, validationHook),
+  (c) => {
+    const body = c.req.valid('json')
+    const content = body.content ?? ''
+    if (!content.trim()) return c.json({ error: 'content is required' }, 400)
 
-  const storyDb = openTrackedStoryDb(c.req.param('id'))
-  const result = postSetupMessage(storyDb, c.get('userId'), c.req.param('id'), content)
-  if ('error' in result) return c.json({ error: result.error }, result.status)
-  return c.json(result)
-})
+    const storyDb = openTrackedStoryDb(c.req.param('id')!)
+    const result = postSetupMessage(storyDb, c.get('userId'), c.req.param('id')!, content)
+    if ('error' in result) return c.json({ error: result.error }, result.status)
+    return c.json(result)
+  },
+)
 
 /**
  * One-shot kickoff: generates the opening post and immediately moves the story into story
@@ -85,8 +99,8 @@ messagesRoute.post('/:id/setup/messages', async (c) => {
  * that keeps working correctly after this point.
  */
 messagesRoute.post('/:id/kickoff', (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param('id'))
-  const result = kickoffStory(storyDb, c.get('userId'), c.req.param('id'))
+  const storyDb = openTrackedStoryDb(c.req.param('id')!)
+  const result = kickoffStory(storyDb, c.get('userId'), c.req.param('id')!)
   if ('error' in result) return c.json({ error: result.error }, result.status)
   return c.json(result)
 })
@@ -102,7 +116,7 @@ messagesRoute.post('/:id/kickoff', (c) => {
  * from story creation's own canned opener.
  */
 messagesRoute.post('/:id/ooc/start-session', (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param('id'))
+  const storyDb = openTrackedStoryDb(c.req.param('id')!)
   const result = startOocSession(storyDb)
   if ('error' in result) return c.json({ error: result.error }, result.status)
   return c.json(result)
