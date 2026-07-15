@@ -44,3 +44,16 @@
   align-items: center;
   gap: 0.35rem;
 }
+
+.button-container-buttons button {
+  cursor: grab;
+}
+
+.button-container-buttons button.dragging {
+  cursor: grabbing;
+  z-index: 1;
+}
+
+.button-container-buttons button:disabled {
+  cursor: default;
+}

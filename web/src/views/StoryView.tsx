@@ -27,7 +27,7 @@ import {
   saveReasoningTrace,
   useReasoningDisplayPrefs,
 } from '../components/ReasoningDisplay'
-import type { LayoutRegion } from '../api'
+import type { LayoutButton, LayoutRegion } from '../api'
 import './StoryView.css'
 import StoryLog from '../components/StoryLog'
 import StoryFooter from '../components/StoryFooter'
@@ -258,11 +258,17 @@ export default function StoryView({
   phase,
   onKickedOff,
   inputBar,
+  onReorder,
 }: {
   storyId: string
   phase: StoryPhase
   onKickedOff?: () => void
   inputBar?: LayoutRegion
+  onReorder?: (
+    region: 'nav' | 'inputBar',
+    containerId: string,
+    reorderedButtons: LayoutButton[],
+  ) => void
 }) {
   const toggles = useStoryToggles(storyId)
   const reasoningPrefs = useReasoningDisplayPrefs()
@@ -848,6 +854,7 @@ export default function StoryView({
         draft={draft}
         onDraftChange={setDraft}
         onSubmit={handleSubmit}
+        onReorder={onReorder}
       />
     </div>
   )

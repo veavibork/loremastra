@@ -5,10 +5,12 @@ const queryClient = new QueryClient()
 import {
   createStory,
   fetchLayout,
+  updateLayout,
   fetchPhase,
   getSessionId,
   listStories,
   onSuperseded,
+  type LayoutButton,
   type LayoutConfigData,
   type Story,
   type StoryPhase,
@@ -34,6 +36,24 @@ export default function App() {
   const [story, setStory] = useState<Story | null>(null)
   const [phase, setPhase] = useState<StoryPhase | null>(null)
   const [layout, setLayout] = useState<LayoutConfigData | null>(null)
+
+  function handleReorder(
+    region: 'nav' | 'inputBar',
+    containerId: string,
+    reorderedButtons: LayoutButton[],
+  ) {
+    if (!layout) return
+    const next: LayoutConfigData = {
+      ...layout,
+      [region]: {
+        containers: layout[region].containers.map((c) =>
+          c.id === containerId ? { ...c, buttons: reorderedButtons } : c,
+        ),
+      },
+    }
+    setLayout(next)
+    void updateLayout(next)
+  }
 
   useGlobalCssSettings(!gate)
   useVisualViewport()
@@ -91,6 +111,7 @@ export default function App() {
               onStoryChange: selectStory,
               onPhaseChange: setPhase,
             }}
+            onReorder={handleReorder}
           />
         </div>
       </PlayTabProvider>

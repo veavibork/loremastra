@@ -1,7 +1,7 @@
 import type { FormEvent, KeyboardEvent } from 'react'
 import ButtonContainerRow from './ButtonContainerRow'
 import AutoGrowTextarea from './AutoGrowTextarea'
-import type { LayoutContainer, Position, StoryPhase } from '../api'
+import type { LayoutButton, LayoutContainer, Position, StoryPhase } from '../api'
 
 interface StoryFooterProps {
   error: string | null
@@ -38,6 +38,11 @@ interface StoryFooterProps {
   draft: string
   onDraftChange: (value: string) => void
   onSubmit: (e?: FormEvent) => void
+  onReorder?: (
+    region: 'nav' | 'inputBar',
+    containerId: string,
+    reorderedButtons: LayoutButton[],
+  ) => void
 }
 
 export default function StoryFooter({
@@ -75,6 +80,7 @@ export default function StoryFooter({
   draft,
   onDraftChange,
   onSubmit,
+  onReorder,
 }: StoryFooterProps) {
   return (
     <div className="story-view-footer">
@@ -197,6 +203,12 @@ export default function StoryFooter({
               }
               return null
             }}
+            onReorder={
+              onReorder
+                ? (containerId, reorderedButtons) =>
+                    onReorder('inputBar', containerId, reorderedButtons)
+                : undefined
+            }
           />
         )}
       </div>

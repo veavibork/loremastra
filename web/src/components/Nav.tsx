@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { LayoutConfigData } from '../api'
+import type { LayoutButton, LayoutConfigData } from '../api'
 import ButtonContainerRow from './ButtonContainerRow'
 import { flattenNavTabs } from '../lib/layoutUtils'
 import { resolvePanel } from './Registry'
@@ -12,9 +12,15 @@ const MIN_COLUMN_PERCENT = 12
 export default function Nav({
   config,
   panelProps,
+  onReorder,
 }: {
   config: LayoutConfigData
   panelProps: PanelProps
+  onReorder?: (
+    region: 'nav' | 'inputBar',
+    containerId: string,
+    reorderedButtons: LayoutButton[],
+  ) => void
 }) {
   const allTabs = flattenNavTabs(config)
 
@@ -73,6 +79,11 @@ export default function Nav({
             onClick: () => toggleTab(id),
             active: openIds.includes(id),
           })}
+          onReorder={
+            onReorder
+              ? (containerId, reorderedButtons) => onReorder('nav', containerId, reorderedButtons)
+              : undefined
+          }
         />
       </nav>
 
@@ -101,7 +112,7 @@ export default function Nav({
                 </div>
                 <div className="nav-column-body">
                   {Panel ? (
-                    <Panel {...panelProps} inputBar={config.inputBar} />
+                    <Panel {...panelProps} inputBar={config.inputBar} onReorder={onReorder} />
                   ) : (
                     <p>Nothing configured here yet.</p>
                   )}
