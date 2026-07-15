@@ -205,6 +205,7 @@ function handlePrefill(
   event: { type: 'prefill'; inputTokenEstimate?: number },
   { dispatch, pageId }: StreamHandlerCtx,
 ): void {
+  dispatch({ type: 'PENDING_PROGRESS', pageId, label: undefined })
   dispatch({ type: 'PENDING_META', pageId, inputTokenEstimate: event.inputTokenEstimate })
 }
 

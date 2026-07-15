@@ -71,7 +71,7 @@ export type StoryViewAction =
       runningStartedAt?: number
     }
   | { type: 'PENDING_RESET'; pageId: string; text: boolean; thinking: boolean; label?: string }
-  | { type: 'PENDING_PROGRESS'; pageId: string; label: string }
+  | { type: 'PENDING_PROGRESS'; pageId: string; label: string | undefined }
   | {
       type: 'PENDING_TEXT_SNAPSHOT'
       pageId: string
