@@ -33,7 +33,7 @@ import StoryLog from '../components/StoryLog'
 import StoryFooter from '../components/StoryFooter'
 import { useStoryMode } from '../store'
 import { jobElapsedAnchor, stableElapsedAnchor } from './StoryViewHelpers'
-import type { PendingReply } from './StoryViewReducer'
+import type { PendingReply, StoryViewAction } from './StoryViewReducer'
 import { initialStoryViewState, storyViewReducer } from './StoryViewReducer'
 
 const MEMORY_JOB_TYPES = new Set(['story-to-date', 'story-to-date-fold'])
@@ -268,7 +268,14 @@ export default function StoryView({
   const reasoningPrefs = useReasoningDisplayPrefs()
   const { showReasoning, reasoningExpanded, toggleShowReasoning, toggleReasoningExpanded } =
     reasoningPrefs
-  const [state, dispatch] = useReducer(storyViewReducer, undefined, initialStoryViewState)
+  const [state, rawDispatch] = useReducer(storyViewReducer, undefined, initialStoryViewState)
+  // Toggle from browser console: window.DEBUG_STORY = true
+  const dispatch = (action: StoryViewAction) => {
+    if (window.DEBUG_STORY) {
+      console.log('[dispatch]', action.type, action)
+    }
+    rawDispatch(action)
+  }
   const {
     entries,
     hasMoreEntries,
@@ -459,6 +466,9 @@ export default function StoryView({
   function watchJob(jobId: string, pageId: string, onDone?: () => void, startedAt?: number) {
     dispatch({ type: 'PENDING_WATCH', pageId, jobId, startedAt: startedAt ?? Date.now() })
     streamJob(storyId, jobId, (event) => {
+      if (window.DEBUG_STORY) {
+        console.log('[sse]', event.type, event)
+      }
       if (event.type === 'token') {
         dispatch({ type: 'PENDING_TOKEN', pageId, text: event.text })
       } else if (event.type === 'thinking') {
