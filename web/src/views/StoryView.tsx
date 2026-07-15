@@ -278,6 +278,11 @@ export default function StoryView({
     starting,
     traceCacheVersion,
   } = state
+  // streamJob's EventSource outlives the render that created it — without this ref, the sync/done
+  // handlers close over a stale pendingReplies snapshot and either drop the snapshot or lose the
+  // reasoning trace. The ref is kept in sync on every render so the callback always sees latest.
+  const pendingRepliesRef = useRef(pendingReplies)
+  pendingRepliesRef.current = pendingReplies
   const reasoningTraces = useMemo(
     () => (showReasoning ? loadAllReasoningTraces(storyId) : {}),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- traceCacheVersion is a cache-bust sentinel
@@ -473,7 +478,7 @@ export default function StoryView({
       } else if (event.type === 'sync') {
         // Replay of whatever the job had already produced before this connection opened —
         // sets rather than appends, since it's a full snapshot, not an incremental token.
-        const cur = pendingReplies[pageId]
+        const cur = pendingRepliesRef.current[pageId]
         if (cur) {
           const hasText = !!event.text.trim()
           const hasThinking = !!event.thinking?.trim()
@@ -494,8 +499,9 @@ export default function StoryView({
           })
         }
       } else if (event.type === 'done') {
-        if (pendingReplies[pageId]?.thinking?.trim()) {
-          saveReasoningTrace(storyId, pageId, pendingReplies[pageId]!.thinking)
+        const cur = pendingRepliesRef.current[pageId]
+        if (cur?.thinking?.trim()) {
+          saveReasoningTrace(storyId, pageId, cur.thinking)
         }
         // Don't drop the pending entry yet — entries[] still has this page's content as null
         // (refresh() below hasn't landed), so removing it here would flip shown.map's render to
@@ -506,9 +512,15 @@ export default function StoryView({
         // actually has the real content means the pending→shown handoff never has a gap to fall
         // into in the first place.
         dispatch({ type: 'PENDING_DONE', pageId })
-        void refresh().then(() => {
-          dispatch({ type: 'PENDING_REMOVE', pageId })
-        })
+        void refresh()
+          .then(() => {
+            dispatch({ type: 'PENDING_REMOVE', pageId })
+          })
+          .catch((err) => {
+            console.error('refresh after job done failed', err)
+            setError(err instanceof Error ? err.message : String(err))
+            dispatch({ type: 'PENDING_REMOVE', pageId })
+          })
         // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring
         // message may have been queued as a direct consequence of this one finishing. Chain a
         // watch onto it so it streams in and gets highlighted live, instead of a generic poll.
