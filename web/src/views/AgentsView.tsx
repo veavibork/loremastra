@@ -12,13 +12,11 @@ import {
 import { useModelConfigs } from '../hooks/use-agents'
 import { useQueryClient } from '@tanstack/react-query'
 import ApiKeysSection from './ApiKeysSection'
+import NumberField from '../components/fields/NumberField.js'
+import CheckboxField from '../components/fields/CheckboxField.js'
+import SelectField from '../components/fields/SelectField.js'
+import '../components/fields/fields.css'
 import './AgentsView.css'
-
-function numOrUndefined(value: string): number | undefined {
-  if (value.trim() === '') return undefined
-  const n = Number(value)
-  return Number.isNaN(n) ? undefined : n
-}
 
 export default function AgentsView() {
   const { data: configs, isLoading } = useModelConfigs()
@@ -26,20 +24,9 @@ export default function AgentsView() {
   const [error, setError] = useState<string | null>(null)
   const [featherlessCatalog, setFeatherlessCatalog] = useState<CatalogModel[] | null>(null)
   const [hordeCatalog, setHordeCatalog] = useState<CatalogModel[] | null>(null)
-  // Unsaved edits, keyed by row id — nothing here reaches the server until "Save changes" is
-  // clicked, mirroring the Settings tab's draft/save/cancel pattern instead of committing every
-  // field on blur/change.
   const [drafts, setDrafts] = useState<Record<string, ModelConfigPatch>>({})
   const [saving, setSaving] = useState(false)
-  // Row order, like every other field, is a draft until "Save changes" — reordering used to call
-  // reorderModelConfigs immediately, committing instantly while every other edit on the same row
-  // still sat unsaved. Null means "no pending reorder."
   const [pendingOrder, setPendingOrder] = useState<string[] | null>(null)
-  // Delete used to fire immediately on click, with no confirmation and no way to back out —
-  // the only field on this whole screen that didn't wait for "Save changes." Now it's a
-  // two-step inline confirm (mirroring SavesView's delete UX) that just stages the row for
-  // removal; the actual deleteModelConfig call happens in handleSaveAll like everything else,
-  // and "Cancel" un-stages it same as any other draft.
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set())
 
@@ -147,10 +134,6 @@ export default function AgentsView() {
     })
   }
 
-  // Looks up the just-selected model in whichever catalog is loaded for the row's provider, and
-  // if Featherless reported a real concurrency cost for it, carries that into the same draft —
-  // the point of this whole column is that cost is a property of the model, not something to
-  // leave at whatever the row happened to default to.
   function applyModel(id: string, provider: ModelConfig['provider'], model: string) {
     const catalog = provider === 'horde' ? hordeCatalog : featherlessCatalog
     const match = catalog?.find((m) => m.id === model)
@@ -187,7 +170,6 @@ export default function AgentsView() {
     setPendingOrder(next.map((c) => c.id))
   }
 
-  // Use pending order if set, otherwise the server order.
   const orderedConfigs = pendingOrder
     ? (configs ?? [])
         .slice()
@@ -200,11 +182,10 @@ export default function AgentsView() {
     <div className="agents-view">
       <h2>Agents</h2>
       <p className="agents-note">
-        Each row is a model call profile. Check which agent role(s) it's eligible for; within a
-        role, active rows are tried top to bottom — the first is primary, the rest are ranked
-        fallbacks. Row order is shared across all three roles, so reordering affects every role's
-        fallback chain at once. Field edits are drafts until you click "Save changes" below the
-        table.
+        Each card is a model call profile. Check which agent role(s) it's eligible for; within a
+        role, active cards are tried top to bottom — the first is primary, the rest are ranked
+        fallbacks. Card order is shared across all three roles, so reordering affects every role's
+        fallback chain at once. Field edits are drafts until you click "Save changes" below.
       </p>
       {error && <div className="error-banner">{error}</div>}
 
@@ -235,46 +216,24 @@ export default function AgentsView() {
         ))}
       </datalist>
 
-      <div className="agents-table-wrap">
-        <table className="agents-table">
-          <thead>
-            <tr>
-              <th></th>
-              <th>Provider</th>
-              <th>Model</th>
-              <th>Temp</th>
-              <th>Resp</th>
-              <th>Ctx</th>
-              <th>PresP</th>
-              <th>FreqP</th>
-              <th>RepP</th>
-              <th>TopP</th>
-              <th>TopK</th>
-              <th>MinP</th>
-              <th title="Concurrency units this model consumes against the account's slot limit — auto-filled from Fetch models, editable, blank falls back to a per-role default.">
-                Cost
-              </th>
-              <th>A</th>
-              <th>E</th>
-              <th>W</th>
-              <th>Active</th>
-              <th>Stats</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {orderedConfigs.map((cfg, index) => (
-              <tr
-                key={cfg.id}
-                className={[
-                  getVal(cfg, 'active') ? '' : 'row-inactive',
-                  isDirty(cfg.id) ? 'row-dirty' : '',
-                  pendingDeletes.has(cfg.id) ? 'row-pending-delete' : '',
-                ]
-                  .join(' ')
-                  .trim()}
-              >
-                <td className="reorder-cell">
+      <div className="agents-cards">
+        {orderedConfigs.map((cfg, index) => {
+          const provider = getVal(cfg, 'provider')
+          const deleted = pendingDeletes.has(cfg.id)
+          return (
+            <div
+              key={cfg.id}
+              className={[
+                'agent-card',
+                getVal(cfg, 'active') ? '' : 'card-inactive',
+                isDirty(cfg.id) ? 'card-dirty' : '',
+                deleted ? 'card-pending-delete' : '',
+              ]
+                .join(' ')
+                .trim()}
+            >
+              <div className="agent-card-header">
+                <div className="agent-card-reorder">
                   <button
                     type="button"
                     onClick={() => move(index, -1)}
@@ -291,186 +250,26 @@ export default function AgentsView() {
                   >
                     ▼
                   </button>
-                </td>
-                <td>
-                  <select
-                    value={getVal(cfg, 'provider')}
-                    onChange={(e) =>
-                      setDraft(cfg.id, { provider: e.target.value as ModelConfig['provider'] })
-                    }
-                  >
-                    <option value="featherless">Featherless</option>
-                    <option value="horde">Horde</option>
-                  </select>
-                </td>
-                <td>
-                  <input
-                    className="model-input"
-                    list={
-                      getVal(cfg, 'provider') === 'horde'
-                        ? 'horde-model-catalog'
-                        : 'featherless-model-catalog'
-                    }
-                    value={getVal(cfg, 'model')}
-                    placeholder="provider/Model-Name"
-                    onChange={(e) => applyModel(cfg.id, getVal(cfg, 'provider'), e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="num-input"
-                    value={getVal(cfg, 'temperature')}
-                    onChange={(e) => setDraft(cfg.id, { temperature: Number(e.target.value) })}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    className="num-input"
-                    value={getVal(cfg, 'responseLimit')}
-                    onChange={(e) => setDraft(cfg.id, { responseLimit: Number(e.target.value) })}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    className="num-input"
-                    value={getVal(cfg, 'contextLimit')}
-                    onChange={(e) => setDraft(cfg.id, { contextLimit: Number(e.target.value) })}
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="num-input narrow"
-                    value={getVal(cfg, 'presencePenalty') ?? ''}
-                    onChange={(e) =>
-                      setDraft(cfg.id, { presencePenalty: numOrUndefined(e.target.value) ?? null })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="num-input narrow"
-                    value={getVal(cfg, 'frequencyPenalty') ?? ''}
-                    onChange={(e) =>
-                      setDraft(cfg.id, { frequencyPenalty: numOrUndefined(e.target.value) ?? null })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="num-input narrow"
-                    value={getVal(cfg, 'repetitionPenalty') ?? ''}
-                    onChange={(e) =>
-                      setDraft(cfg.id, {
-                        repetitionPenalty: numOrUndefined(e.target.value) ?? null,
-                      })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    step="0.05"
-                    className="num-input narrow"
-                    value={getVal(cfg, 'topP') ?? ''}
-                    onChange={(e) =>
-                      setDraft(cfg.id, { topP: numOrUndefined(e.target.value) ?? null })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    className="num-input narrow"
-                    value={getVal(cfg, 'topK') ?? ''}
-                    onChange={(e) =>
-                      setDraft(cfg.id, { topK: numOrUndefined(e.target.value) ?? null })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="num-input narrow"
-                    value={getVal(cfg, 'minP') ?? ''}
-                    onChange={(e) =>
-                      setDraft(cfg.id, { minP: numOrUndefined(e.target.value) ?? null })
-                    }
-                  />
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    step="1"
-                    className="num-input narrow"
-                    value={getVal(cfg, 'concurrencyCost') ?? ''}
-                    placeholder="auto"
-                    onChange={(e) =>
-                      setDraft(cfg.id, { concurrencyCost: numOrUndefined(e.target.value) ?? null })
-                    }
-                  />
-                </td>
-                <td className="checkbox-cell">
-                  <input
-                    type="checkbox"
-                    checked={getVal(cfg, 'useAuthor')}
-                    onChange={(e) => setDraft(cfg.id, { useAuthor: e.target.checked })}
-                  />
-                </td>
-                <td className="checkbox-cell">
-                  <input
-                    type="checkbox"
-                    checked={getVal(cfg, 'useEditor')}
-                    onChange={(e) => setDraft(cfg.id, { useEditor: e.target.checked })}
-                  />
-                </td>
-                <td className="checkbox-cell">
-                  <input
-                    type="checkbox"
-                    checked={getVal(cfg, 'useWorker')}
-                    onChange={(e) => setDraft(cfg.id, { useWorker: e.target.checked })}
-                  />
-                </td>
-                <td className="checkbox-cell">
-                  <input
-                    type="checkbox"
-                    checked={getVal(cfg, 'active')}
-                    onChange={(e) => setDraft(cfg.id, { active: e.target.checked })}
-                  />
-                </td>
-                <td className="stats-cell">
-                  {cfg.successCount}✓ / {cfg.failCount}✗
-                  <br />
-                  {cfg.inputTokens}in / {cfg.outputTokens}out
-                </td>
-                <td>
-                  {pendingDeletes.has(cfg.id) ? (
-                    <div className="delete-confirm-inline">
-                      <span>Marked for deletion.</span>
+                </div>
+                <span className="agent-card-title">{getVal(cfg, 'model') || 'Untitled model'}</span>
+                <div className="agent-card-actions">
+                  {deleted ? (
+                    <>
+                      <span className="agent-card-deleted">Marked for deletion</span>
                       <button type="button" onClick={() => unstageDelete(cfg.id)}>
                         Undo
                       </button>
-                    </div>
+                    </>
                   ) : confirmingDeleteId === cfg.id ? (
-                    <div className="delete-confirm-inline">
-                      <span>Delete this row?</span>
+                    <>
+                      <span>Delete?</span>
                       <button type="button" className="danger" onClick={() => stageDelete(cfg.id)}>
                         Yes
                       </button>
                       <button type="button" onClick={() => setConfirmingDeleteId(null)}>
                         Cancel
                       </button>
-                    </div>
+                    </>
                   ) : (
                     <button
                       type="button"
@@ -480,11 +279,135 @@ export default function AgentsView() {
                       Delete
                     </button>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+              </div>
+
+              <div className="agent-card-body">
+                <SelectField
+                  label="Provider"
+                  value={provider}
+                  options={[
+                    { value: 'featherless', label: 'Featherless' },
+                    { value: 'horde', label: 'Horde' },
+                  ]}
+                  onChange={(v) => setDraft(cfg.id, { provider: v })}
+                />
+
+                <div className="agent-card-model-field">
+                  <label className="field">
+                    <span className="field-label">Model</span>
+                    <input
+                      type="text"
+                      className="field-input field-input-text"
+                      list={
+                        provider === 'horde' ? 'horde-model-catalog' : 'featherless-model-catalog'
+                      }
+                      value={getVal(cfg, 'model')}
+                      placeholder="provider/Model-Name"
+                      onChange={(e) => applyModel(cfg.id, provider, e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="form-row">
+                  <NumberField
+                    label="Temperature"
+                    value={getVal(cfg, 'temperature')}
+                    onChange={(v) => setDraft(cfg.id, { temperature: v ?? 0 })}
+                    step={0.1}
+                  />
+                  <NumberField
+                    label="Response limit"
+                    value={getVal(cfg, 'responseLimit')}
+                    onChange={(v) => setDraft(cfg.id, { responseLimit: v ?? 0 })}
+                  />
+                  <NumberField
+                    label="Context limit"
+                    value={getVal(cfg, 'contextLimit')}
+                    onChange={(v) => setDraft(cfg.id, { contextLimit: v ?? 0 })}
+                  />
+                </div>
+
+                <div className="form-row">
+                  <NumberField
+                    label="Presence penalty"
+                    value={getVal(cfg, 'presencePenalty')}
+                    onChange={(v) => setDraft(cfg.id, { presencePenalty: v ?? null })}
+                    step={0.1}
+                  />
+                  <NumberField
+                    label="Frequency penalty"
+                    value={getVal(cfg, 'frequencyPenalty')}
+                    onChange={(v) => setDraft(cfg.id, { frequencyPenalty: v ?? null })}
+                    step={0.1}
+                  />
+                  <NumberField
+                    label="Repetition penalty"
+                    value={getVal(cfg, 'repetitionPenalty')}
+                    onChange={(v) => setDraft(cfg.id, { repetitionPenalty: v ?? null })}
+                    step={0.1}
+                  />
+                </div>
+
+                <div className="form-row">
+                  <NumberField
+                    label="Top P"
+                    value={getVal(cfg, 'topP')}
+                    onChange={(v) => setDraft(cfg.id, { topP: v ?? null })}
+                    step={0.05}
+                  />
+                  <NumberField
+                    label="Top K"
+                    value={getVal(cfg, 'topK')}
+                    onChange={(v) => setDraft(cfg.id, { topK: v ?? null })}
+                  />
+                  <NumberField
+                    label="Min P"
+                    value={getVal(cfg, 'minP')}
+                    onChange={(v) => setDraft(cfg.id, { minP: v ?? null })}
+                    step={0.01}
+                  />
+                  <NumberField
+                    label="Concurrency cost"
+                    value={getVal(cfg, 'concurrencyCost')}
+                    onChange={(v) => setDraft(cfg.id, { concurrencyCost: v ?? null })}
+                    step={1}
+                    placeholder="auto"
+                  />
+                </div>
+
+                <fieldset className="form-palette">
+                  <legend>Roles</legend>
+                  <CheckboxField
+                    label="Author"
+                    checked={getVal(cfg, 'useAuthor')}
+                    onChange={(v) => setDraft(cfg.id, { useAuthor: v })}
+                  />
+                  <CheckboxField
+                    label="Editor"
+                    checked={getVal(cfg, 'useEditor')}
+                    onChange={(v) => setDraft(cfg.id, { useEditor: v })}
+                  />
+                  <CheckboxField
+                    label="Worker"
+                    checked={getVal(cfg, 'useWorker')}
+                    onChange={(v) => setDraft(cfg.id, { useWorker: v })}
+                  />
+                  <CheckboxField
+                    label="Active"
+                    checked={getVal(cfg, 'active')}
+                    onChange={(v) => setDraft(cfg.id, { active: v })}
+                  />
+                </fieldset>
+
+                <div className="agent-card-stats">
+                  {cfg.successCount}✓ / {cfg.failCount}✗ · {cfg.inputTokens}in / {cfg.outputTokens}
+                  out
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {dirty && (
