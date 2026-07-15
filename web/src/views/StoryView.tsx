@@ -438,7 +438,7 @@ export default function StoryView({
         if (cancelled) return
         dispatch({
           type: 'PENDING_SYNC',
-          pendingReplies: syncPendingWaitPhases(state.pendingReplies, jobs),
+          pendingReplies: syncPendingWaitPhases(pendingRepliesRef.current, jobs),
         })
       } catch (err) {
         console.error('failed to poll queue phase', err)
@@ -466,7 +466,7 @@ export default function StoryView({
   function watchJob(jobId: string, pageId: string, onDone?: () => void, startedAt?: number) {
     dispatch({ type: 'PENDING_WATCH', pageId, jobId, startedAt: startedAt ?? Date.now() })
     streamJob(storyId, jobId, (event) => {
-      if (window.DEBUG_STORY) {
+      if (window.DEBUG_STORY && event.type !== 'token') {
         console.log('[sse]', event.type, event)
       }
       if (event.type === 'token') {
