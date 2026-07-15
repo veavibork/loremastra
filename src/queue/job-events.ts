@@ -56,6 +56,16 @@ export function publishStreamReset(
   })
 }
 
+/** Emitted when a job is created and enters the pending state — the client shows a "Queued…" label. */
+export function publishQueued(jobId: string): void {
+  emitter.emit(jobId, { type: 'queued' })
+}
+
+/** Emitted when a job starts running (prefill begins) — carries the token estimate if known. */
+export function publishPrefill(jobId: string, inputTokenEstimate?: number): void {
+  emitter.emit(jobId, { type: 'prefill', inputTokenEstimate })
+}
+
 /** For non-streaming jobs (e.g. the Editor's tool-calling setup turn) that have no tokens to emit but do have real intermediate steps worth narrating instead of a dead "…". */
 export function publishProgress(jobId: string, label: string): void {
   const buf = buffers.get(jobId) ?? { text: '' }
@@ -102,8 +112,9 @@ export function publishJobClaimed(jobId: string): void {
   emitter.emit(jobId, { type: 'claimed', at: new Date().toISOString() })
 }
 
-export function publishJobStarted(jobId: string): void {
+export function publishJobStarted(jobId: string, inputTokenEstimate?: number): void {
   emitter.emit(jobId, { type: 'started', at: new Date().toISOString() })
+  emitter.emit(jobId, { type: 'prefill', inputTokenEstimate })
 }
 
 export type JobEvent =
@@ -122,6 +133,8 @@ export type JobEvent =
   | { type: 'done'; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: 'error'; message: string }
   | { type: 'cancelled' }
+  | { type: 'queued' }
+  | { type: 'prefill'; inputTokenEstimate?: number }
   | { type: 'created'; jobType: string; storyId: string; at: string }
   | { type: 'claimed'; at: string }
   | { type: 'started'; at: string }

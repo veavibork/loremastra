@@ -86,7 +86,6 @@ export type StoryViewAction =
   | { type: 'PENDING_REMOVE'; pageId: string }
   | { type: 'PENDING_FAIL'; pageId: string }
   | { type: 'PENDING_CANCELLED'; pageId: string }
-  | { type: 'PENDING_SYNC'; pendingReplies: Record<string, PendingReply> }
   | { type: 'HIDE_PENDING'; pageId: string }
 
   // Trace cache
@@ -258,19 +257,6 @@ export function storyViewReducer(state: StoryViewState, action: StoryViewAction)
         hiddenPending: withoutHidden(state.hiddenPending, action.pageId),
         starting: false,
       }
-    }
-
-    case 'PENDING_SYNC': {
-      const merged = { ...state.pendingReplies }
-      for (const [pageId, synced] of Object.entries(action.pendingReplies)) {
-        const existing = state.pendingReplies[pageId]
-        // Entries with streamed content were already handled by the EventSource callback;
-        // a stale sync must not clobber them (same guard as syncPendingWaitPhases line 78,
-        // re-applied against current state instead of the stale snapshot).
-        if (existing?.text || existing?.progress) continue
-        merged[pageId] = { ...existing, ...synced }
-      }
-      return { ...state, pendingReplies: merged }
     }
 
     case 'HIDE_PENDING':

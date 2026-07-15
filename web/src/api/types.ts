@@ -107,6 +107,8 @@ export type JobStreamEvent =
   | { type: 'done'; fullText: string; followUp?: { jobId: string; pageId: string } }
   | { type: 'error'; message: string }
   | { type: 'cancelled' }
+  | { type: 'queued' }
+  | { type: 'prefill'; inputTokenEstimate?: number }
 
 export interface ModelConfig {
   id: string

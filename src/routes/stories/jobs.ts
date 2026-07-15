@@ -102,7 +102,9 @@ jobsRoute.get('/:id/jobs/:jobId/stream', (c) => {
           event.type === 'thinking' ||
           event.type === 'progress' ||
           event.type === 'meta' ||
-          event.type === 'reset'
+          event.type === 'reset' ||
+          event.type === 'queued' ||
+          event.type === 'prefill'
         ) {
           void sse.writeSSE({ data: JSON.stringify(event) })
           return
@@ -133,12 +135,10 @@ jobsRoute.get('/:id/jobs/:jobId/stream', (c) => {
           data: JSON.stringify({ type: 'meta', inputTokenEstimate: job.inputTokenEstimate }),
         })
       }
-      // Still pending/running: replay whatever's accumulated so far (a reconnecting client —
-      // e.g. the story tab was closed and reopened mid-generation — sees the post at its
-      // current stage instead of nothing until it lands). Safe against the subscribe-then-read
-      // race above: no await happened between subscribeJob and this read, so nothing else could
-      // have run on Node's single thread to add tokens the buffer read would miss.
       const buffered = getJobBuffer(jobId)
+      if (job.status === 'pending' && !buffered) {
+        void sse.writeSSE({ data: JSON.stringify({ type: 'queued' }) })
+      }
       if (buffered && (buffered.text || buffered.thinking || buffered.progress)) {
         void sse.writeSSE({
           data: JSON.stringify({

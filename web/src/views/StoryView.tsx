@@ -14,7 +14,6 @@ import {
   startOocSession,
   streamJob,
   undoPosition,
-  type ActiveJob,
   type LogEntry,
   type LogPage,
   type Position,
@@ -32,154 +31,15 @@ import './StoryView.css'
 import StoryLog from '../components/StoryLog'
 import StoryFooter from '../components/StoryFooter'
 import { useStoryMode } from '../store'
-import { jobElapsedAnchor, stableElapsedAnchor } from './StoryViewHelpers'
-import type { PendingReply, StoryViewAction } from './StoryViewReducer'
+import { jobElapsedAnchor } from './StoryViewHelpers'
+import { STREAM_HANDLERS, type StreamHandlerCtx } from './streamHandlers'
+import type { StoryViewAction } from './StoryViewReducer'
 import { initialStoryViewState, storyViewReducer } from './StoryViewReducer'
 
-const MEMORY_JOB_TYPES = new Set(['story-to-date', 'story-to-date-fold'])
+import { estimatePrefillSeconds } from './syncPendingWaitPhases'
 
 /** Raw entries (both IC and hidden OOC pages) kept loaded at once before "load earlier" is needed. */
 const LOG_PAGE_SIZE = 80
-
-/** Conservative TTFT guess — intentionally high so early tokens feel like a win. */
-function estimatePrefillSeconds(inputTokens: number | null | undefined): number {
-  if (!inputTokens || inputTokens <= 0) return 30
-  return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)))
-}
-
-function mergeJobMeta(
-  pending: PendingReply,
-  job: ActiveJob,
-): Pick<PendingReply, 'inputTokenEstimate' | 'prefillEstimateSec' | 'runningStartedAt'> {
-  const inputTokenEstimate = job.inputTokenEstimate ?? pending.inputTokenEstimate
-  const runningStartedAt = job.startedAt
-    ? new Date(job.startedAt).getTime()
-    : pending.runningStartedAt
-  const prefillEstimateSec =
-    inputTokenEstimate != null
-      ? estimatePrefillSeconds(inputTokenEstimate)
-      : pending.prefillEstimateSec
-  return { inputTokenEstimate, prefillEstimateSec, runningStartedAt }
-}
-
-function isMemoryJobRunning(jobs: ActiveJob[]): boolean {
-  return jobs.some((j) => MEMORY_JOB_TYPES.has(j.jobType) && j.status === 'running')
-}
-
-function syncPendingWaitPhases(
-  prev: Record<string, PendingReply>,
-  jobs: ActiveJob[],
-): Record<string, PendingReply> {
-  const memoryBlocking = isMemoryJobRunning(jobs)
-  let changed = false
-  const next = { ...prev }
-
-  for (const [pageId, pending] of Object.entries(prev)) {
-    if (pending.text || pending.progress) continue
-    const proseJob = jobs.find((j) => j.id === pending.jobId)
-    if (!proseJob) continue
-
-    const startedAt = stableElapsedAnchor(pending, proseJob)
-    const meta = mergeJobMeta(pending, proseJob)
-
-    if (proseJob.status === 'pending' && memoryBlocking) {
-      if (pending.waitPhase !== 'memory') {
-        next[pageId] = {
-          ...pending,
-          ...meta,
-          waitPhase: 'memory',
-          startedAt,
-          lastProseStatus: proseJob.status,
-        }
-        changed = true
-      }
-      continue
-    }
-
-    if (pending.waitPhase === 'memory') {
-      const waitPhase = pending.thinking?.trim() ? 'reasoning' : 'prefill'
-      next[pageId] = { ...pending, ...meta, waitPhase, startedAt, lastProseStatus: proseJob.status }
-      changed = true
-      continue
-    }
-
-    if (proseJob.status === 'running' && !pending.thinking?.trim() && !pending.text.trim()) {
-      const waitPhase = 'prefill'
-      if (
-        pending.waitPhase !== waitPhase ||
-        pending.lastProseStatus !== proseJob.status ||
-        pending.startedAt !== startedAt ||
-        pending.prefillEstimateSec !== meta.prefillEstimateSec
-      ) {
-        next[pageId] = {
-          ...pending,
-          ...meta,
-          waitPhase,
-          startedAt,
-          lastProseStatus: proseJob.status,
-        }
-        changed = true
-      }
-      continue
-    }
-
-    if (
-      proseJob.status === 'running' &&
-      pending.text.trim() &&
-      pending.waitPhase !== 'generating'
-    ) {
-      next[pageId] = {
-        ...pending,
-        ...meta,
-        waitPhase: 'generating',
-        startedAt,
-        lastProseStatus: proseJob.status,
-      }
-      changed = true
-      continue
-    }
-
-    if (pending.thinking?.trim() && !pending.text.trim()) {
-      if (pending.waitPhase !== 'reasoning' || pending.lastProseStatus !== proseJob.status) {
-        next[pageId] = {
-          ...pending,
-          ...meta,
-          waitPhase: 'reasoning',
-          startedAt,
-          lastProseStatus: proseJob.status,
-        }
-        changed = true
-      }
-      continue
-    }
-
-    if (!pending.waitPhase) {
-      const waitPhase =
-        proseJob.status === 'running'
-          ? 'prefill'
-          : proseJob.status === 'pending'
-            ? undefined
-            : 'prefill'
-      next[pageId] = {
-        ...pending,
-        ...meta,
-        waitPhase: waitPhase ?? pending.waitPhase,
-        startedAt,
-        lastProseStatus: proseJob.status,
-      }
-      changed = true
-    } else if (
-      pending.lastProseStatus !== proseJob.status ||
-      pending.startedAt !== startedAt ||
-      pending.inputTokenEstimate !== meta.inputTokenEstimate
-    ) {
-      next[pageId] = { ...pending, ...meta, startedAt, lastProseStatus: proseJob.status }
-      changed = true
-    }
-  }
-
-  return changed ? next : prev
-}
 
 /** Nav's tab-based layout unmounts a panel entirely when its column is closed, so plain
  * useState loses which mode (IC/OOC) a story was in the moment the Story tab is reopened —
@@ -296,6 +156,25 @@ export default function StoryView({
   // reasoning trace. The ref is kept in sync on every render so the callback always sees latest.
   const pendingRepliesRef = useRef(pendingReplies)
   pendingRepliesRef.current = pendingReplies
+
+  /** Accumulates thinking text independently of reducer state — PENDING_RESET clears the
+   *  reducer's thinking field but not this ref, so the done handler can save the full
+   *  reasoning trace even if a reset event arrived between the last token and done. */
+  const accumulatedThinkingRef = useRef<Record<string, string>>({})
+
+  /** EventSource cleanup functions keyed by pageId — closed on terminal events (done/error/cancelled)
+   *  and on component unmount. Before storing a new cleanup, the prior one is called first, so the
+   *  done handler's followUp chain (which calls watchJob for the same pageId) doesn't leak the old
+   *  EventSource. */
+  const activeConnections = useRef<Map<string, () => void>>(new Map())
+
+  // Close all EventSources on unmount
+  useEffect(() => {
+    return () => {
+      activeConnections.current.forEach((fn) => fn())
+      activeConnections.current.clear()
+    }
+  }, [])
   const reasoningTraces = useMemo(
     () => (showReasoning ? loadAllReasoningTraces(storyId) : {}),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- traceCacheVersion is a cache-bust sentinel
@@ -428,40 +307,6 @@ export default function StoryView({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resumeActiveJobs changes per render; stable when storyId changes
   }, [storyId])
 
-  // Featherless gives no signal between "request sent" and "first token" — elapsed time fills
-  // that gap. While a prose job is queued behind an archive, poll active jobs and show a
-  // distinct label; reset the timer when prose actually starts (running or archive clears).
-  const [, forceTick] = useState(0)
-  useEffect(() => {
-    const waiting = Object.values(pendingReplies).some((p) => !p.text && !p.progress)
-    if (!waiting) return
-
-    let cancelled = false
-
-    async function pollQueuePhase() {
-      try {
-        const jobs = await fetchActiveJobs(storyId)
-        if (cancelled) return
-        dispatch({
-          type: 'PENDING_SYNC',
-          pendingReplies: syncPendingWaitPhases(pendingRepliesRef.current, jobs),
-        })
-      } catch (err) {
-        console.error('failed to poll queue phase', err)
-      }
-    }
-
-    void pollQueuePhase()
-    const id = setInterval(() => {
-      void pollQueuePhase()
-      forceTick((n) => n + 1)
-    }, 1000)
-    return () => {
-      cancelled = true
-      clearInterval(id)
-    }
-  }, [storyId, pendingReplies])
-
   // True while anything is generating, from any source (a queued send, kickoff, continue, or
   // retry) — gates the actions that need a stable, fully-resolved history to act on unambiguously
   // (Undo/Redo/Retry/Continue/Fork/Kickoff/Edit). The composer is deliberately NOT gated by this —
@@ -471,152 +316,92 @@ export default function StoryView({
 
   function watchJob(jobId: string, pageId: string, onDone?: () => void, startedAt?: number) {
     dispatch({ type: 'PENDING_WATCH', pageId, jobId, startedAt: startedAt ?? Date.now() })
-    streamJob(storyId, jobId, (event) => {
+    // Close prior connection for this pageId — followUp chains a new watchJob
+    // for the same pageId, and the old EventSource must close before the new one opens.
+    activeConnections.current.get(pageId)?.()
+    const ctx: StreamHandlerCtx = {
+      dispatch,
+      pendingRef: pendingRepliesRef,
+      accumulatedThinkingRef,
+      storyId,
+      pageId,
+      jobId,
+      fetchActiveJobs,
+      refresh,
+      watchJob,
+      onDone,
+      setError,
+      estimatePrefill: estimatePrefillSeconds,
+      saveReasoningTrace,
+      closeConnection: (pid: string) => {
+        activeConnections.current.get(pid)?.()
+        activeConnections.current.delete(pid)
+      },
+    }
+    const cleanup = streamJob(storyId, jobId, (event) => {
       if (window.DEBUG_STORY && event.type !== 'token') {
         console.log('[sse]', event.type, event)
       }
-      if (event.type === 'token') {
-        dispatch({ type: 'PENDING_TOKEN', pageId, text: event.text })
-      } else if (event.type === 'thinking') {
-        dispatch({ type: 'PENDING_THINKING', pageId, thinking: event.text })
-      } else if (event.type === 'meta') {
-        dispatch({ type: 'PENDING_META', pageId, inputTokenEstimate: event.inputTokenEstimate })
-      } else if (event.type === 'reset') {
-        dispatch({
-          type: 'PENDING_RESET',
-          pageId,
-          text: !!event.text,
-          thinking: !!event.thinking,
-          label: event.label,
-        })
-      } else if (event.type === 'progress') {
-        dispatch({ type: 'PENDING_PROGRESS', pageId, label: event.label })
-      } else if (event.type === 'sync') {
-        // Replay of whatever the job had already produced before this connection opened —
-        // sets rather than appends, since it's a full snapshot, not an incremental token.
-        const cur = pendingRepliesRef.current[pageId]
-        if (cur) {
-          const hasText = !!event.text.trim()
-          const hasThinking = !!event.thinking?.trim()
-          const waitPhase = hasText ? 'generating' : hasThinking ? 'reasoning' : cur.waitPhase
-          const prefillEstimateSec =
-            event.inputTokenEstimate != null
-              ? estimatePrefillSeconds(event.inputTokenEstimate)
-              : cur.prefillEstimateSec
-          dispatch({
-            type: 'PENDING_TEXT_SNAPSHOT',
-            pageId,
-            text: event.text,
-            thinking: event.thinking,
-            progress: event.progress,
-            inputTokenEstimate: event.inputTokenEstimate,
-            prefillEstimateSec,
-            waitPhase,
-          })
-        }
-      } else if (event.type === 'done') {
-        const cur = pendingRepliesRef.current[pageId]
-        if (cur?.thinking?.trim()) {
-          saveReasoningTrace(storyId, pageId, cur.thinking)
-        }
-        // Don't drop the pending entry yet — entries[] still has this page's content as null
-        // (refresh() below hasn't landed), so removing it here would flip shown.map's render to
-        // its "…" placeholder for one render, collapsing the last post's height and, while
-        // pinned to the bottom, getting .log's scrollTop clamped down by the browser — the same
-        // mechanism as AutoGrowTextarea's collapse-then-clamp bug, just via a content swap
-        // instead of a style change. Keeping the full streamed text on screen until refresh()
-        // actually has the real content means the pending→shown handoff never has a gap to fall
-        // into in the first place.
-        dispatch({ type: 'PENDING_DONE', pageId })
-        void refresh()
-          .then(() => {
-            dispatch({ type: 'PENDING_REMOVE', pageId })
-          })
-          .catch((err) => {
-            console.error('refresh after job done failed', err)
-            setError(err instanceof Error ? err.message : String(err))
-            dispatch({ type: 'PENDING_REMOVE', pageId })
-          })
-        // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring
-        // message may have been queued as a direct consequence of this one finishing. Chain a
-        // watch onto it so it streams in and gets highlighted live, instead of a generic poll.
-        if (event.followUp) watchJob(event.followUp.jobId, event.followUp.pageId)
-        onDone?.()
-      } else if (event.type === 'error') {
-        dispatch({ type: 'PENDING_FAIL', pageId })
-        setError(event.message)
-      } else if (event.type === 'cancelled') {
-        dispatch({ type: 'PENDING_CANCELLED', pageId })
-      }
+      const handler = STREAM_HANDLERS[event.type]
+      if (handler) handler(event, ctx)
     })
+    activeConnections.current.set(pageId, cleanup)
+  }
+
+  /** Shared send-then-stream path used by all four send handlers. */
+  async function sendAndWatch(
+    apiCall: () => Promise<{ jobId: string; agentPageId?: string }>,
+    opts: { starting?: boolean; skipRefresh?: boolean; onDone?: () => void; pageId?: string } = {},
+  ) {
+    if (opts.starting) dispatch({ type: 'SET_STARTING', value: true })
+    setError(null)
+    try {
+      const { jobId, agentPageId } = await apiCall()
+      const targetPageId = opts.pageId ?? agentPageId!
+      if (!opts.skipRefresh) await refresh()
+      watchJob(jobId, targetPageId, opts.onDone)
+    } catch (err) {
+      console.error(err)
+      setError(err instanceof Error ? err.message : String(err))
+      if (opts.starting) dispatch({ type: 'SET_STARTING', value: false })
+    }
   }
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault()
     if (!draft.trim() || editingPageId) return
-
     const content = draft.trim()
     setDraft('')
-    setError(null)
-
-    try {
-      const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
-      const { jobId, agentPageId } =
-        mode === 'guide'
-          ? await postSetupMessage(storyId, content)
-          : await postMessage(storyId, content, genOpts)
-      await refresh()
-      watchJob(jobId, agentPageId)
-    } catch (err) {
-      console.error(err)
-      setError(err instanceof Error ? err.message : String(err))
-    }
+    const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
+    await sendAndWatch(() =>
+      mode === 'guide'
+        ? postSetupMessage(storyId, content)
+        : postMessage(storyId, content, genOpts),
+    )
   }
 
   async function handleKickoff() {
-    dispatch({ type: 'SET_STARTING', value: true })
-    setError(null)
-    try {
-      const { jobId, agentPageId } = await kickoff(storyId)
-      await refresh()
-      watchJob(jobId, agentPageId, () => {
+    await sendAndWatch(() => kickoff(storyId), {
+      starting: true,
+      onDone: () => {
         setMode('play')
         onKickedOff?.()
-      })
-    } catch (err) {
-      console.error(err)
-      setError(err instanceof Error ? err.message : String(err))
-      dispatch({ type: 'SET_STARTING', value: false })
-    }
+      },
+    })
   }
 
   async function handleContinue(guidance?: string) {
-    dispatch({ type: 'SET_STARTING', value: true })
-    setError(null)
-    try {
-      const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
-      const { jobId, agentPageId } = await continuePost(storyId, guidance, genOpts)
-      await refresh()
-      watchJob(jobId, agentPageId)
-    } catch (err) {
-      console.error(err)
-      setError(err instanceof Error ? err.message : String(err))
-      dispatch({ type: 'SET_STARTING', value: false })
-    }
+    const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
+    await sendAndWatch(() => continuePost(storyId, guidance, genOpts), { starting: true })
   }
 
   async function handleRetry(pageId: string, guidance?: string) {
-    dispatch({ type: 'SET_STARTING', value: true })
-    setError(null)
-    try {
-      const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
-      const { jobId } = await retryPost(storyId, pageId, guidance, genOpts)
-      watchJob(jobId, pageId)
-    } catch (err) {
-      console.error(err)
-      setError(err instanceof Error ? err.message : String(err))
-      dispatch({ type: 'SET_STARTING', value: false })
-    }
+    const genOpts = mode === 'play' ? toggles.generationOptions() : undefined
+    await sendAndWatch(() => retryPost(storyId, pageId, guidance, genOpts), {
+      starting: true,
+      skipRefresh: true,
+      pageId,
+    })
   }
 
   function handleContinueClick() {
