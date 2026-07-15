@@ -15,6 +15,8 @@ import { WORLDBOOK_COMPACT_SYSTEM_PROMPT } from '../../prompts.js'
 import { getAgentProfile } from '../agent-config.js'
 import { estimateTokens } from '../story-to-date/engine.js'
 import { publishJobCreated } from '../../queue/job-events.js'
+/** Large worldbook entries can legitimately take several minutes to compact — still bounded. */
+export const WORLDBOOK_COMPACT_TIMEOUT_MS = 10 * 60_000
 
 export interface WorldbookCompactOpts {
   entryType?: WorldbookEntryType
@@ -117,7 +119,12 @@ async function compactEntryContent(
     { role: 'user', content: source },
   ]
   return normalizeWorldbookStoredContent(
-    (await completeChat(editor, apiKey, messages, { maxTokens: editor.responseLimit })).trim(),
+    (
+      await completeChat(editor, apiKey, messages, {
+        maxTokens: editor.responseLimit,
+        timeoutMs: WORLDBOOK_COMPACT_TIMEOUT_MS,
+      })
+    ).trim(),
     entry.entryType,
   )
 }
