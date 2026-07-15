@@ -20,7 +20,6 @@ export interface ButtonContainerRowProps {
   containers: LayoutContainer[]
   resolveLabel: (id: string, fallback?: string) => string
   getButtonProps: (id: string) => InputBarButtonProps | null
-  trailing?: React.ReactNode
 }
 
 function ContainerGroup({
@@ -28,17 +27,15 @@ function ContainerGroup({
   container,
   resolveLabel,
   getButtonProps,
-  trailing,
 }: {
   storageScope: string
   container: LayoutContainer
   resolveLabel: (id: string, fallback?: string) => string
   getButtonProps: (id: string) => InputBarButtonProps | null
-  trailing?: React.ReactNode
 }) {
   const [collapsed, toggle] = useContainerCollapsed(storageScope, container.id)
   const buttons = container.buttons ?? []
-  if (buttons.length === 0 && !trailing) return null
+  if (buttons.length === 0) return null
 
   return (
     <div
@@ -72,7 +69,6 @@ function ContainerGroup({
               </button>
             )
           })}
-          {trailing}
         </div>
       )}
     </div>
@@ -84,7 +80,6 @@ export default function ButtonContainerRow({
   containers,
   resolveLabel,
   getButtonProps,
-  trailing,
 }: ButtonContainerRowProps) {
   return (
     <div className="button-container-row">
@@ -97,7 +92,6 @@ export default function ButtonContainerRow({
             container={container}
             resolveLabel={resolveLabel}
             getButtonProps={getButtonProps}
-            trailing={trailing}
           />
         )
       })}

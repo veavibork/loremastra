@@ -38,6 +38,7 @@ export const DEFAULT_INPUT_BAR: LayoutRegion = {
       buttons: [
         { id: 'action.retry', label: 'Retry', visible: true },
         { id: 'action.continue', label: 'Continue', visible: true },
+        { id: 'action.kickoff', label: 'Kickoff →', visible: true },
       ],
     },
   ],

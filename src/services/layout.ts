@@ -155,6 +155,7 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         buttons: [
           { id: 'action.retry', label: 'Retry', visible: true },
           { id: 'action.continue', label: 'Continue', visible: true },
+          { id: 'action.kickoff', label: 'Kickoff →', visible: true },
         ],
       },
     ],

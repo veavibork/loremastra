@@ -121,6 +121,7 @@ export default function StoryFooter({
               if (id === 'toggle.reasoning.show') return showReasoning ? 'Trace: On' : 'Trace: Off'
               if (id === 'toggle.reasoning.expand')
                 return reasoningExpanded ? 'Trace: Open' : 'Trace: Closed'
+              if (id === 'action.kickoff') return 'Kickoff →'
               return fallback ?? id
             }}
             getButtonProps={(id) => {
@@ -158,6 +159,10 @@ export default function StoryFooter({
               if (id === 'action.continue') {
                 return { onClick: onContinue, disabled: busy }
               }
+              if (id === 'action.kickoff') {
+                if (mode !== 'guide' || phase !== 'setup') return null
+                return { onClick: () => void onKickoff(), disabled: busy || !!editingPageId }
+              }
               if (id === 'toggle.length') {
                 return { onClick: onCycleLength, disabled: busy || mode !== 'play' }
               }
@@ -192,19 +197,6 @@ export default function StoryFooter({
               }
               return null
             }}
-            trailing={
-              <>
-                {mode === 'guide' && phase === 'setup' && (
-                  <button
-                    type="button"
-                    onClick={() => void onKickoff()}
-                    disabled={busy || !!editingPageId}
-                  >
-                    Kickoff →
-                  </button>
-                )}
-              </>
-            }
           />
         )}
       </div>
