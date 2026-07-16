@@ -1,4 +1,5 @@
 import { useJobs, useSlots } from '../hooks/use-jobs'
+import { useNowTick } from '../hooks/use-now-tick'
 import type { Job } from '../api'
 import type { PanelProps } from '../lib/panel-types'
 import './LogsView.css'
@@ -22,6 +23,11 @@ function jobResponse(job: Job): string {
 export default function QueueView({ story }: PanelProps) {
   const { data: jobs } = useJobs(story?.id ?? null, { background: true, refetchInterval: 2000 })
   const { data: slots } = useSlots({ background: true, refetchInterval: 2000 })
+
+  // The 2s refetch keeps the data fresh, but for a still-running job it returns deep-equal rows
+  // that structural sharing collapses to the same reference — so the turnaround clock (a
+  // render-time new Date()) never advances without this tick while a job is in flight.
+  useNowTick((jobs ?? []).some((j) => j.status === 'running' || j.status === 'pending'))
 
   if (!story) return <div className="logs-view">No active story.</div>
 

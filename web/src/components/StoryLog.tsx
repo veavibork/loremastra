@@ -8,6 +8,7 @@ import { cancelJob, type LogEntry } from '../api'
 import { toast } from '../lib/toast'
 import type { PendingReply } from '../views/StoryViewReducer'
 import { pendingStatusLabel } from '../views/StoryViewHelpers'
+import { useNowTick } from '../hooks/use-now-tick'
 
 interface StoryLogProps {
   onLogClick: (e: React.MouseEvent<HTMLDivElement>) => void
@@ -85,6 +86,10 @@ export default function StoryLog({
     ...shown.map((entry) => ({ kind: 'entry' as const, entry })),
     ...pendingEntries.map((entry) => ({ kind: 'pending' as const, entry })),
   ]
+
+  // Keep the pending entries' live elapsed labels ("Thinking… (Ns)") advancing between SSE events —
+  // otherwise the clock only moves when a token/render happens to fire. Purely a re-render tick.
+  useNowTick(pendingEntries.length > 0)
 
   return (
     <div className="log" onClick={onLogClick} style={{ height: '100%' }}>

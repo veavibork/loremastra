@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { type ActiveMemoryJob, type StoryToDatePage, type StoryToDateSegment } from '../api'
 import { useCancelJob } from '../hooks/use-jobs'
+import { useNowTick } from '../hooks/use-now-tick'
 import { useStoryToDate } from '../hooks/use-story-to-date'
 import {
   useBackfillStoryToDateNames,
@@ -73,6 +74,9 @@ export default function ArchivesView({ story }: PanelProps) {
 
   const segments = page?.segments ?? []
   const activeMemoryJobs = page?.activeMemoryJobs ?? []
+  // Keep the in-progress memory jobs' elapsed labels advancing between refetches (render-time
+  // Date.now()); without this the counter only moves when the query data actually changes.
+  useNowTick(activeMemoryJobs.length > 0)
   const stats = {
     mergedCoverageThroughPost: page?.mergedCoverageThroughPost ?? null,
     icPostCount: page?.icPostCount ?? 0,
