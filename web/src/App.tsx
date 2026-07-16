@@ -19,6 +19,7 @@ import {
 import ClaimGate, { type GateReason } from './components/ClaimGate'
 import Nav from './components/Nav'
 import { useGlobalCssSettings } from './lib/global-css-settings'
+import { toast } from './lib/toast'
 import { PlayTabProvider } from './components/PlayTabSettings'
 import { useVisualViewport } from './hooks/useVisualViewport'
 import { useClientStore, setSelectedStoryId } from './store'
@@ -52,7 +53,10 @@ export default function App() {
       },
     }
     setLayout(next)
-    void updateLayout(next)
+    updateLayout(next).catch((err) => {
+      console.error('handleReorder: updateLayout failed', err)
+      toast.error('Button order did not save — try again.')
+    })
   }
 
   useGlobalCssSettings(!gate)

@@ -162,10 +162,9 @@ export default function AgentsView() {
   }
 
   function move(index: number, direction: -1 | 1) {
-    if (!configs) return
     const target = index + direction
-    if (target < 0 || target >= configs.length) return
-    const next = [...configs]
+    if (target < 0 || target >= orderedConfigs.length) return
+    const next = orderedConfigs.slice()
     ;[next[index], next[target]] = [next[target], next[index]]
     setPendingOrder(next.map((c) => c.id))
   }

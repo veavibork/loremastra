@@ -14,6 +14,21 @@ export async function fetchSlots(opts?: {
   return res.json()
 }
 
+/**
+ * Single job by id — for polling a specific long-running background job. Unlike fetchJobs
+ * (capped to the 30 most recent), this can't lose track of the job if other jobs pile up
+ * elsewhere in the story while it's still running.
+ */
+export async function fetchJob(
+  storyId: string,
+  jobId: string,
+  opts?: { background?: boolean },
+): Promise<Job | null> {
+  const res = await apiFetch(`/api/stories/${storyId}/jobs/${jobId}`, {}, opts)
+  const data = (await res.json()) as { job?: Job; error?: string }
+  return data.job ?? null
+}
+
 export async function cancelJob(storyId: string, jobId: string): Promise<void> {
   const res = await apiFetch(`/api/stories/${storyId}/jobs/${jobId}/cancel`, { method: 'POST' })
   const data = await res.json()

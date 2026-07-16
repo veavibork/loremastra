@@ -42,7 +42,7 @@ export default function Nav({
     setOpenIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
-  function startResize(e: React.MouseEvent, leftId: string, rightId: string) {
+  function startResize(e: React.PointerEvent, leftId: string, rightId: string) {
     e.preventDefault()
     const row = rowRef.current
     if (!row) return
@@ -51,8 +51,11 @@ export default function Nav({
     const startLeft = widths[leftId] ?? 100 / openIds.length
     const startRight = widths[rightId] ?? 100 / openIds.length
     const pairTotal = startLeft + startRight
+    // Not enough combined width for both sides to keep the minimum — no-op rather than
+    // clamping into a negative/inverted split.
+    if (pairTotal < 2 * MIN_COLUMN_PERCENT) return
 
-    function onMove(moveEvent: MouseEvent) {
+    function onMove(moveEvent: PointerEvent) {
       const deltaPct = ((moveEvent.clientX - startX) / totalWidth) * 100
       const newLeft = Math.min(
         pairTotal - MIN_COLUMN_PERCENT,
@@ -61,11 +64,11 @@ export default function Nav({
       setWidths((w) => ({ ...w, [leftId]: newLeft, [rightId]: pairTotal - newLeft }))
     }
     function onUp() {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
   }
 
   return (
@@ -121,7 +124,7 @@ export default function Nav({
               {i < openIds.length - 1 && (
                 <div
                   className="nav-resize-handle"
-                  onMouseDown={(e) => startResize(e, id, openIds[i + 1])}
+                  onPointerDown={(e) => startResize(e, id, openIds[i + 1])}
                 />
               )}
             </div>

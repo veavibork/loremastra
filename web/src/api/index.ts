@@ -69,7 +69,7 @@ export { fetchLayout, updateLayout } from './layout.js'
 
 export { fetchSettingsSpace, saveSettingsSpace, revertSettingsSpace } from './settings.js'
 
-export { fetchJobs, fetchSlots, cancelJob, fetchActiveJobs, streamJob } from './jobs.js'
+export { fetchJobs, fetchJob, fetchSlots, cancelJob, fetchActiveJobs, streamJob } from './jobs.js'
 
 export { fetchPosition, undoPosition, redoPosition, jumpToPosition } from './position.js'
 

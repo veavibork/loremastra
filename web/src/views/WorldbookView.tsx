@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fetchJobs, type WorldbookEntry, type WorldbookEntryType } from '../api'
+import { fetchJob, type WorldbookEntry, type WorldbookEntryType } from '../api'
 import { useWorldbook } from '../hooks/use-worldbook'
 import {
   useCreateWorldbookEntry,
@@ -105,8 +105,7 @@ export default function WorldbookView({ story }: PanelProps) {
       const { jobId } = await compactMutation.mutateAsync(storyId)
       while (true) {
         await sleep(JOB_POLL_MS)
-        const jobs = await fetchJobs(storyId, { background: true })
-        const job = jobs.find((j) => j.id === jobId)
+        const job = await fetchJob(storyId, jobId, { background: true })
         if (!job || job.status === 'pending' || job.status === 'running') continue
         if (job.status === 'done') {
           await refetchWorldbook()

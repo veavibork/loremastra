@@ -39,15 +39,18 @@ export async function apiFetch(
   init: RequestInit = {},
   opts?: { background?: boolean },
 ): Promise<Response> {
-  const sessionId = getSessionId()
-  const headers = new Headers(init.headers)
-  if (sessionId) headers.set('X-Loremaster-Session', sessionId)
-  if (opts?.background) headers.set('X-Loremaster-Interaction', 'background')
-
   return coordinatedFetch(
     path,
     init,
     async () => {
+      // Resolved here, not before queuing — coordinatedFetch may defer this call, and baking
+      // the session id in earlier risks firing a stale header if the session changed (re-claim)
+      // while the request sat in the queue.
+      const sessionId = getSessionId()
+      const headers = new Headers(init.headers)
+      if (sessionId) headers.set('X-Loremaster-Session', sessionId)
+      if (opts?.background) headers.set('X-Loremaster-Interaction', 'background')
+
       let res: Response
       try {
         res = await fetch(`${API_BASE}${path}`, { ...init, headers })

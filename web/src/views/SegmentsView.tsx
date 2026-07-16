@@ -57,7 +57,13 @@ export default function ArchivesView({ story }: PanelProps) {
   const [error, setError] = useState<string | null>(null)
   const backfillTried = useRef(false)
 
-  // Backfill names once on mount — if it fails, the regular polling will still populate data.
+  // This panel isn't remounted on story switch, so reset the once-per-mount gate below
+  // whenever the story changes — otherwise the backfill only ever fires for the first story seen.
+  useEffect(() => {
+    backfillTried.current = false
+  }, [storyId])
+
+  // Backfill names once per story — if it fails, the regular polling will still populate data.
   useEffect(() => {
     if (storyId && !backfillTried.current && !page) {
       backfillTried.current = true
@@ -290,7 +296,7 @@ export default function ArchivesView({ story }: PanelProps) {
                   <button
                     type="button"
                     className="danger"
-                    disabled={busyKey === seg.id}
+                    disabled={busyKey === `del-${seg.id}`}
                     onClick={() =>
                       void runAction(`del-${seg.id}`, () =>
                         deleteMutation.mutateAsync({ storyId: story.id, segmentId: seg.id }),
@@ -301,7 +307,7 @@ export default function ArchivesView({ story }: PanelProps) {
                   </button>
                   <button
                     type="button"
-                    disabled={busyKey === seg.id}
+                    disabled={busyKey === `del-${seg.id}`}
                     onClick={() =>
                       void runAction(`del-${seg.id}`, () =>
                         deleteMutation.mutateAsync({
