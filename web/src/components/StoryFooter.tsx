@@ -1,4 +1,4 @@
-import type { FormEvent, KeyboardEvent } from 'react'
+import type { FormEvent, KeyboardEvent, RefObject } from 'react'
 import ButtonContainerRow from './ButtonContainerRow'
 import AutoGrowTextarea from './AutoGrowTextarea'
 import type { LayoutButton, LayoutContainer, Position, StoryPhase } from '../api'
@@ -6,6 +6,9 @@ import type { LayoutButton, LayoutContainer, Position, StoryPhase } from '../api
 interface StoryFooterProps {
   error: string | null
   onDismissError: () => void
+  /** Virtuoso's scroll container, forwarded to the composer's AutoGrowTextarea so its
+   *  per-keystroke resize can protect the log's scroll position — see AutoGrowTextarea. */
+  scrollerRef: RefObject<HTMLElement | null>
   editingPageId: string | null
   onSaveEdit: () => void
   onCancelEdit: () => void
@@ -48,6 +51,7 @@ interface StoryFooterProps {
 export default function StoryFooter({
   error,
   onDismissError,
+  scrollerRef,
   editingPageId,
   onSaveEdit,
   onCancelEdit,
@@ -217,6 +221,7 @@ export default function StoryFooter({
         <AutoGrowTextarea
           value={draft}
           onChange={onDraftChange}
+          protectScrollRef={scrollerRef}
           onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()

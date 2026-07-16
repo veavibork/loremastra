@@ -73,13 +73,15 @@ export function useStoryToggles(storyId: string) {
       fetchSettingsSpace<ParamPreset[]>(TOGGLE_PARAM_SPACE),
       fetchSettingsSpace<EffortPreset[]>(TOGGLE_EFFORT_SPACE),
       fetchModelConfigs(),
-    ]).then(([len, mood, param, effort, configs]) => {
-      if (len?.length) setLengthSteps(len)
-      if (mood?.length) setMoods(mood)
-      if (param?.length) setParams(param)
-      if (effort?.length) setEfforts(effort)
-      setAuthorModels(configs.filter((c) => c.active && c.useAuthor))
-    })
+    ])
+      .then(([len, mood, param, effort, configs]) => {
+        if (len?.length) setLengthSteps(len)
+        if (mood?.length) setMoods(mood)
+        if (param?.length) setParams(param)
+        if (effort?.length) setEfforts(effort)
+        setAuthorModels(configs.filter((c) => c.active && c.useAuthor))
+      })
+      .catch(() => {})
   }, [])
 
   const persist = useCallback(

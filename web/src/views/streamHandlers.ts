@@ -13,7 +13,12 @@ export interface StreamHandlerCtx {
   pendingRef: { current: Record<string, PendingReply> }
   /** Accumulates thinking text independently of reducer state — PENDING_RESET clears
    *  the reducer's thinking field but not this ref, so the done handler can save the
-   *  full reasoning trace even if a reset event arrived between the last token and done. */
+   *  full reasoning trace even if a display-only reset event arrived between the last
+   *  token and done. Cleared when an attempt is genuinely discarded (a reset with
+   *  thinking:true, e.g. a provider-dispatch empty-completion retry) so a fresh attempt's
+   *  trace doesn't get prepended with the discarded one's, and cleared again once the job
+   *  completes (handleDone) so a later Retry on the same pageId starts from empty instead
+   *  of concatenating onto the previous job's trace. */
   accumulatedThinkingRef: { current: Record<string, string> }
   /** Called by terminal handlers (done/error/cancelled) to close the EventSource. */
   closeConnection: (pageId: string) => void
@@ -62,7 +67,7 @@ function handleMeta(
 
 function handleReset(
   event: { type: 'reset'; thinking: boolean; text: boolean; label?: string },
-  { dispatch, pageId }: StreamHandlerCtx,
+  { dispatch, pageId, accumulatedThinkingRef }: StreamHandlerCtx,
 ): void {
   dispatch({
     type: 'PENDING_RESET',
@@ -71,6 +76,10 @@ function handleReset(
     thinking: event.thinking,
     label: event.label,
   })
+  // A thinking reset means the attempt so far is being discarded (e.g. a provider-dispatch
+  // empty-completion retry), not just a display clear — drop the accumulator too, or the
+  // discarded attempt's thinking would end up prepended onto the next attempt's saved trace.
+  if (event.thinking) delete accumulatedThinkingRef.current[pageId]
 }
 
 function handleProgress(
@@ -129,6 +138,9 @@ function handleDone(
   const cur = pendingRef.current[pageId]
   const thinking = accumulatedThinkingRef.current[pageId] ?? cur?.thinking
   if (thinking?.trim()) saveReasoningTrace(storyId, pageId, thinking)
+  // Job is finished — drop the accumulator so a later Retry on this same pageId starts from
+  // empty instead of concatenating this job's thinking onto the next one's.
+  delete accumulatedThinkingRef.current[pageId]
   // Don't drop the pending entry yet — entries[] still has this page's content as null
   // (refresh() below hasn't landed), so removing it here would flip shown.map's render to
   // its "…" placeholder for one render, collapsing the last post's height and, while

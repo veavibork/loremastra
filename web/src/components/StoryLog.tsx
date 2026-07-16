@@ -58,9 +58,12 @@ export default function StoryLog({
   onHiddenPendingAdd,
 }: StoryLogProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null)
-  // Tracks how many items have been prepended (loaded earlier) so Virtuoso can maintain
-  // scroll position when older entries are inserted at the front of the data array.
-  const firstItemIndexRef = useRef(0)
+  // firstItemIndex tells Virtuoso the global index of data[0] so it can keep already-rendered
+  // items at a stable position when older entries are inserted at the front of the array —
+  // react-virtuoso's prepend pattern requires DECREASING it by the number of newly prepended
+  // items, and starting from a large base so it never goes negative as more pages load.
+  const START_INDEX = 1_000_000
+  const firstItemIndexRef = useRef(START_INDEX)
   const prevFirstPageIdRef = useRef<string | null>(null)
 
   // Detect prepends: if the first entry's pageId changed, older entries were inserted.
@@ -73,7 +76,7 @@ export default function StoryLog({
     // Find how many new items were prepended by locating the old first item in the new array.
     const oldFirstIdx = shown.findIndex((e) => e.pageId === prevFirstPageIdRef.current)
     if (oldFirstIdx > 0) {
-      firstItemIndexRef.current += oldFirstIdx
+      firstItemIndexRef.current -= oldFirstIdx
     }
   }
   prevFirstPageIdRef.current = currentFirstPageId
@@ -166,6 +169,7 @@ export default function StoryLog({
                   pendingCaretRef={pendingCaretRef}
                   editInitialHeight={editInitialHeight}
                   editingPageId={editingPageId}
+                  scrollerRef={scrollerRef}
                 />
               ) : (
                 <>
@@ -191,6 +195,7 @@ function EditEntry({
   pendingCaretRef,
   editInitialHeight,
   editingPageId,
+  scrollerRef,
 }: {
   editDraft: string
   onEditDraftChange: (value: string) => void
@@ -198,6 +203,7 @@ function EditEntry({
   pendingCaretRef: RefObject<number | null>
   editInitialHeight: number | undefined
   editingPageId: string | null
+  scrollerRef: RefObject<HTMLElement | null>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -217,6 +223,7 @@ function EditEntry({
         className="edit-box-textarea"
         value={editDraft}
         onChange={onEditDraftChange}
+        protectScrollRef={scrollerRef}
         onFocus={(e) => {
           const el = e.currentTarget
           editTextareaRef.current = el

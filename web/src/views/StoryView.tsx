@@ -159,7 +159,9 @@ export default function StoryView({
 
   /** Accumulates thinking text independently of reducer state — PENDING_RESET clears the
    *  reducer's thinking field but not this ref, so the done handler can save the full
-   *  reasoning trace even if a reset event arrived between the last token and done. */
+   *  reasoning trace even if a display-only reset event arrived between the last token and
+   *  done. Cleared when an attempt is genuinely discarded (a reset with thinking:true) or
+   *  once the job completes — see streamHandlers.ts's StreamHandlerCtx doc comment. */
   const accumulatedThinkingRef = useRef<Record<string, string>>({})
 
   /** EventSource cleanup functions keyed by pageId — closed on terminal events (done/error/cancelled)
@@ -495,10 +497,14 @@ export default function StoryView({
     }
   }
 
+  /** Fork acts on the edited text, not the pre-edit persisted content — persist the edit first
+   *  (mirroring saveEdit, including its no-op-if-unchanged check) so the fork point actually
+   *  reflects what's on screen instead of silently dropping the in-progress edit. Note this
+   *  also mutates the original post via editPost before branching, same as clicking Save would. */
   async function forkFromEdit() {
     const pageId = editingPageId
     if (!pageId) return
-    cancelEdit()
+    await saveEdit()
     await handleFork(pageId)
   }
 
@@ -640,6 +646,7 @@ export default function StoryView({
       <StoryFooter
         error={error}
         onDismissError={() => setError(null)}
+        scrollerRef={scrollerRef}
         editingPageId={editingPageId}
         onSaveEdit={saveEdit}
         onCancelEdit={cancelEdit}

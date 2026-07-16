@@ -130,9 +130,14 @@ export function storyViewReducer(state: StoryViewState, action: StoryViewAction)
       // in the (re)watched jobId. Blanking it here would flash the post empty and reset the elapsed
       // counter to zero mid-generation; the reopened stream reconciles the real content via `sync`.
       // Only a genuinely new page (no existing reply) starts from a blank reply.
+      // A newly watched/created pending reply means the starting action (if any) is now tracked
+      // by pendingReplies, so the `starting` bridge flag is no longer needed — clear it here
+      // rather than on PENDING_REMOVE/FAIL/CANCELLED, which can fire for an unrelated reply while
+      // this one is still mid-flight.
       const existing = state.pendingReplies[action.pageId]
       return {
         ...state,
+        starting: false,
         pendingReplies: {
           ...state.pendingReplies,
           [action.pageId]: existing
@@ -254,7 +259,7 @@ export function storyViewReducer(state: StoryViewState, action: StoryViewAction)
 
     case 'PENDING_REMOVE': {
       const { [action.pageId]: _done, ...rest } = state.pendingReplies
-      return { ...state, pendingReplies: rest, starting: false }
+      return { ...state, pendingReplies: rest }
     }
 
     case 'PENDING_FAIL':
@@ -264,7 +269,6 @@ export function storyViewReducer(state: StoryViewState, action: StoryViewAction)
         ...state,
         pendingReplies: rest,
         hiddenPending: withoutHidden(state.hiddenPending, action.pageId),
-        starting: false,
       }
     }
 

@@ -12,14 +12,14 @@ import type { FocusEvent, KeyboardEvent, RefObject } from 'react'
  * `protectScrollRef`: scroll container that has pin-to-bottom semantics — the component
  * saves/restores its scrollTop around the temporary `height: auto` collapse (which shrinks
  * the container's clientHeight and can cause the browser to clamp scrollTop upward) so the
- * pinned position is preserved. The composer's protector is `.log`; tap-to-edit's protector
- * is the entry wrapper that has the same scroll-restore semantics because it sits below the
- * edit box in the visible item. The protector can't be discovered automatically because
- * tap-to-edit's edit box is in a self-contained entry wrapper where `.log` is not the
- * closest scroll parent — it's only an *ancestor* of the edit box, not of the composer (a
- * flex sibling whose height changes shift .log's clientHeight through their shared parent
- * either way). An ancestor-walk from this element wouldn't find a sibling, so the caller
- * passes the ref explicitly instead of this component guessing.
+ * pinned position is preserved. Both the composer and tap-to-edit's edit box pass the same
+ * protector: Virtuoso's scroll container (StoryView's `scrollerRef`, threaded down through
+ * StoryFooter and StoryLog/EditEntry respectively) — the log is virtualized now, so `.log`
+ * itself no longer scrolls. The protector can't be discovered automatically because neither
+ * box's DOM ancestry reaches Virtuoso's internal scroller (the composer is a flex sibling of
+ * `.log`, and tap-to-edit's edit box lives inside a Virtuoso item, several layers below the
+ * scroller it needs to protect), so the caller passes the ref explicitly instead of this
+ * component guessing.
  */
 export default function AutoGrowTextarea({
   value,
