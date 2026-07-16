@@ -88,13 +88,16 @@ export default function StoryLog({
   ]
 
   // Keep the pending entries' live elapsed labels ("Thinking… (Ns)") advancing between SSE events —
-  // otherwise the clock only moves when a token/render happens to fire. Purely a re-render tick.
-  useNowTick(pendingEntries.length > 0)
+  // otherwise the clock only moves when a token/render happens to fire. Passed to Virtuoso as
+  // `context` (below): a parent re-render alone won't re-run memoized item content, but a changing
+  // context does — that's how the per-second clock reaches the virtualized pending rows.
+  const nowTick = useNowTick(pendingEntries.length > 0)
 
   return (
     <div className="log" onClick={onLogClick} style={{ height: '100%' }}>
       <Virtuoso
         ref={virtuosoRef}
+        context={nowTick}
         scrollerRef={(el) => {
           scrollerRef.current = el instanceof HTMLElement ? el : null
         }}

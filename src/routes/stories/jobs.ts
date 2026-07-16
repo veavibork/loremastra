@@ -61,10 +61,17 @@ jobsRoute.post('/:id/jobs/:jobId/cancel', (c) => {
   }
   const aborted = requestJobCancel(jobId)
   if (!aborted) {
-    // Running but has no controller — a job type that doesn't support mid-flight cancel yet
-    // (compress/archive, and now Horde too — see requestJobCancel's comment). Nothing to do
-    // but say so; it'll resolve on its own soon either way.
-    return c.json({ error: "this job type can't be cancelled mid-generation" }, 409)
+    // Running but has no in-memory controller to abort. A Horde job genuinely runs to completion
+    // server-side (no mid-flight cancel by design) — say so. But a non-Horde job with no
+    // controller is a zombie: its executor already exited without finalizing (or was lost), so
+    // there's nothing live to abort — mark it cancelled directly instead of dead-ending the user
+    // on a 409 with no way out of a stuck "running" post.
+    if (job.hordeRequestId) {
+      return c.json({ error: "this job type can't be cancelled mid-generation" }, 409)
+    }
+    cancelJob(storyDb, jobId)
+    publishCancelled(jobId)
+    return c.json({ ok: true, reaped: true })
   }
   return c.json({ ok: true })
 })
