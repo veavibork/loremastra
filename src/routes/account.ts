@@ -13,6 +13,7 @@ import {
   updateDisplayName,
   updatePassword,
 } from '../db/user-store.js'
+import { invalidateActiveSession } from '../db/session-store.js'
 import type { AppVariables } from '../middleware/session-guard.js'
 
 export const accountRoute = new Hono<{ Variables: AppVariables }>()
@@ -33,6 +34,15 @@ accountRoute.get('/', (c) => {
   const user = getUserById(db, c.get('userId'))
   if (!user) return c.json({ error: 'user not found' }, 404)
   return c.json({ id: user.id, displayName: user.displayName, ...getMaskedKeys(db, user.id) })
+})
+
+// Release the caller's own claim (single-active-session eviction runs off this — see
+// session-store). The guard has already resolved userId from the presented session, so this
+// invalidates that user's active session; the client then clears its stored session id and
+// falls back to the claim screen.
+accountRoute.post('/logout', (c) => {
+  invalidateActiveSession(getGlobalDb(), c.get('userId'))
+  return c.json({ ok: true })
 })
 
 accountRoute.patch(

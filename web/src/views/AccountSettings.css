@@ -62,3 +62,15 @@
 .account-settings-status-error {
   color: var(--danger);
 }
+
+.account-settings-hint {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin: 0 0 0.5rem;
+  max-width: 420px;
+}
+
+.account-settings-logout {
+  border-color: var(--danger);
+  color: var(--danger);
+}

@@ -122,14 +122,28 @@ function getEncryptedKeys(
   }
 }
 
+/**
+ * Decrypt a stored secret, returning null if it can't be decrypted (e.g. the APP_MASTER_KEY in
+ * use no longer matches the one that encrypted it — a rotated/mismatched key). A stored-but-
+ * unreadable key is treated the same as "no key set" so the caller degrades gracefully (re-enter
+ * the key) instead of throwing: a mismatched master key shouldn't 500 the account page or crash a
+ * generation job — it should surface as "no API key configured".
+ */
+function safeDecrypt(payload: string | null): string | null {
+  if (!payload) return null
+  try {
+    return decryptSecret(payload)
+  } catch {
+    return null
+  }
+}
+
 export function getDecryptedFeatherlessKey(db: Database.Database, id: string): string | null {
-  const { featherless } = getEncryptedKeys(db, id)
-  return featherless ? decryptSecret(featherless) : null
+  return safeDecrypt(getEncryptedKeys(db, id).featherless)
 }
 
 export function getDecryptedHordeKey(db: Database.Database, id: string): string | null {
-  const { horde } = getEncryptedKeys(db, id)
-  return horde ? decryptSecret(horde) : null
+  return safeDecrypt(getEncryptedKeys(db, id).horde)
 }
 
 /** Decrypts only far enough to mask — never returns the raw key. */
@@ -138,8 +152,10 @@ export function getMaskedKeys(
   id: string,
 ): { featherlessKeyMasked: string | null; hordeKeyMasked: string | null } {
   const { featherless, horde } = getEncryptedKeys(db, id)
+  const f = safeDecrypt(featherless)
+  const h = safeDecrypt(horde)
   return {
-    featherlessKeyMasked: featherless ? maskKey(decryptSecret(featherless)) : null,
-    hordeKeyMasked: horde ? maskKey(decryptSecret(horde)) : null,
+    featherlessKeyMasked: f ? maskKey(f) : null,
+    hordeKeyMasked: h ? maskKey(h) : null,
   }
 }

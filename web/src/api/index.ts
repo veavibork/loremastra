@@ -14,6 +14,7 @@ export {
   fetchAccount,
   updateDisplayName,
   changePassword,
+  logout,
   setFeatherlessKey,
   clearFeatherlessKey,
   setHordeKey,

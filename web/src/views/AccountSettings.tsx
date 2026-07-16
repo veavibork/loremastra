@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { changePassword, updateDisplayName } from '../api'
+import { changePassword, logout, updateDisplayName } from '../api'
 import { useAccount } from '../hooks/use-account'
 import './AccountSettings.css'
 
@@ -17,6 +17,8 @@ export default function AccountSettings() {
     text: string
   } | null>(null)
   const [savingPassword, setSavingPassword] = useState(false)
+
+  const [loggingOut, setLoggingOut] = useState(false)
 
   const { data: account } = useAccount()
   // Only pick up the fetched name when there's no in-progress unsaved edit — otherwise a
@@ -139,6 +141,25 @@ export default function AccountSettings() {
             {passwordStatus.text}
           </p>
         )}
+      </div>
+
+      <div className="account-settings-field">
+        <label>Session</label>
+        <p className="account-settings-hint">
+          Releases this device's claim and returns to the login screen. The single active session
+          frees up immediately, so you (or another device) can claim it.
+        </p>
+        <button
+          type="button"
+          className="account-settings-logout"
+          onClick={() => {
+            setLoggingOut(true)
+            void logout()
+          }}
+          disabled={loggingOut}
+        >
+          {loggingOut ? 'Logging out…' : 'Log out'}
+        </button>
       </div>
     </section>
   )
