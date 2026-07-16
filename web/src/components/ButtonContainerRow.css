@@ -6,7 +6,10 @@
   width: 100%;
 }
 
-.button-container {
+/* Each section is a direct flex child of .button-container-row; the justify classes below carry
+   auto-margins to distribute the sections left / center / right across the row, so they must sit
+   here (on the section wrapper), not on the inner .button-container-buttons. */
+.button-container-group {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;

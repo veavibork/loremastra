@@ -124,14 +124,23 @@ export function storyViewReducer(state: StoryViewState, action: StoryViewAction)
       return { ...state, loadingEarlier: false }
 
     // ---- Streaming — pending reply lifecycle ----
-    case 'PENDING_WATCH':
+    case 'PENDING_WATCH': {
+      // Reconnecting to a page that already has an in-flight reply (error-reattach, or a resumed
+      // job): keep the accumulated text/thinking/progress and the original startedAt, only swapping
+      // in the (re)watched jobId. Blanking it here would flash the post empty and reset the elapsed
+      // counter to zero mid-generation; the reopened stream reconciles the real content via `sync`.
+      // Only a genuinely new page (no existing reply) starts from a blank reply.
+      const existing = state.pendingReplies[action.pageId]
       return {
         ...state,
         pendingReplies: {
           ...state.pendingReplies,
-          [action.pageId]: { text: '', startedAt: action.startedAt, jobId: action.jobId },
+          [action.pageId]: existing
+            ? { ...existing, jobId: action.jobId }
+            : { text: '', startedAt: action.startedAt, jobId: action.jobId },
         },
       }
+    }
 
     case 'PENDING_TOKEN': {
       const cur = state.pendingReplies[action.pageId]

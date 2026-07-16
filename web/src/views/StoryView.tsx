@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
   continuePost,
   editPost,
@@ -203,6 +203,33 @@ export default function StoryView({
   // its onFocus consumer below) — a ref rather than state since it's a one-shot instruction, not
   // something that should trigger its own re-render.
   const pendingCaretRef = useRef<number | null>(null)
+  // The Virtuoso scroll container (wired via StoryLog's scrollerRef). Used to hold the log's
+  // scroll position steady across the tap-to-edit transition — see the useLayoutEffect below.
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  // Scroll position captured at click time so the edit transition can restore it.
+  const preEditScrollTopRef = useRef<number | null>(null)
+
+  // Hold the log's scroll position steady across the tap-to-edit transition. Entering edit swaps
+  // an entry's read-only content for a textarea; that re-measures the item and makes Virtuoso's
+  // ResizeObserver re-anchor the viewport (~300-450px) a frame or two after paint. AutoGrowTextarea
+  // resizes twice — a synchronous pass then a requestAnimationFrame pass — so the observer fires
+  // twice; restore synchronously (keeps the first paint correct) then once per following frame to
+  // counter each re-anchor.
+  useLayoutEffect(() => {
+    if (!editingPageId) return
+    const target = preEditScrollTopRef.current
+    const sc = scrollerRef.current
+    if (target == null || !sc) return
+    sc.scrollTop = target
+    const raf1 = requestAnimationFrame(() => {
+      sc.scrollTop = target
+      requestAnimationFrame(() => {
+        sc.scrollTop = target
+      })
+    })
+    return () => cancelAnimationFrame(raf1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingPageId])
 
   /**
    * Only the most recent LOG_PAGE_SIZE raw entries are kept loaded (see loadEarlier) — once
@@ -433,6 +460,11 @@ export default function StoryView({
     const clicked = resolveClickOffset(e.clientX, e.clientY, contentEl)
     pendingCaretRef.current =
       clicked !== null ? Math.max(0, Math.min(clicked, content.length)) : content.length
+
+    // Capture the pre-edit scroll position so the restore layout-effect can hold it steady
+    // through Virtuoso's re-anchor (see the useLayoutEffect keyed on editingPageId).
+    preEditScrollTopRef.current = scrollerRef.current?.scrollTop ?? null
+
     setEditingPageId(pageId)
     setEditDraft(content)
     setEditInitialHeight(contentEl.offsetHeight)
@@ -587,6 +619,7 @@ export default function StoryView({
         hasMoreEntries={hasMoreEntries}
         loadingEarlier={loadingEarlier}
         onLoadEarlier={() => void loadEarlier()}
+        scrollerRef={scrollerRef}
         shown={shown}
         editingPageId={editingPageId}
         editDraft={editDraft}

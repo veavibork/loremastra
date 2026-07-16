@@ -14,6 +14,8 @@ interface StoryLogProps {
   hasMoreEntries: boolean
   loadingEarlier: boolean
   onLoadEarlier: () => void
+  /** Receives Virtuoso's scroll container so StoryView can preserve scroll across tap-to-edit. */
+  scrollerRef: RefObject<HTMLElement | null>
   shown: LogEntry[]
   editingPageId: string | null
   editDraft: string
@@ -38,6 +40,7 @@ export default function StoryLog({
   hasMoreEntries,
   loadingEarlier,
   onLoadEarlier,
+  scrollerRef,
   shown,
   editingPageId,
   editDraft,
@@ -84,6 +87,9 @@ export default function StoryLog({
     <div className="log" onClick={onLogClick} style={{ height: '100%' }}>
       <Virtuoso
         ref={virtuosoRef}
+        scrollerRef={(el) => {
+          scrollerRef.current = el instanceof HTMLElement ? el : null
+        }}
         data={items}
         firstItemIndex={firstItemIndexRef.current}
         followOutput={(isAtBottom) => (isAtBottom ? 'auto' : false)}

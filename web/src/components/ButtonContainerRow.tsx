@@ -80,6 +80,10 @@ function ContainerGroup({
   onReorder?: (containerId: string, reorderedButtons: LayoutButton[]) => void
 }) {
   const [collapsed, toggle] = useContainerCollapsed(storageScope, container.id)
+  // Hooks must run unconditionally and in a stable order, so this sits above the early return
+  // below — a container whose button count drops to zero would otherwise change the hook count
+  // between renders and crash React.
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const allButtons = container.buttons ?? []
 
   // Only include buttons that actually render (getButtonProps returns non-null).
@@ -87,8 +91,6 @@ function ContainerGroup({
   const visibleButtons = allButtons.filter((b) => getButtonProps(b.id) !== null)
 
   if (allButtons.length === 0) return null
-
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -102,7 +104,7 @@ function ContainerGroup({
   return (
     <div
       key={container.id}
-      className={`button-container-group ${collapsed ? 'button-container-collapsed' : ''}`}
+      className={`button-container-group ${justifyClass(container.justify)} ${collapsed ? 'button-container-collapsed' : ''}`}
     >
       {container.label && (
         <button
@@ -120,7 +122,7 @@ function ContainerGroup({
             items={visibleButtons.map((b) => b.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className={`button-container-buttons ${justifyClass(container.justify)}`}>
+            <div className="button-container-buttons">
               {visibleButtons.map((btn) => {
                 const props = getButtonProps(btn.id)
                 if (!props) return null

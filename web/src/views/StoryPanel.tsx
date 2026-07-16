@@ -11,6 +11,7 @@ export default function StoryPanel({
   if (!story || !phase) return null
   return (
     <StoryView
+      key={story.id}
       storyId={story.id}
       phase={phase}
       onKickedOff={() => onPhaseChange('story')}

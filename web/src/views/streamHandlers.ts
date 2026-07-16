@@ -145,11 +145,13 @@ function handleDone(
       setError(err instanceof Error ? err.message : String(err))
       dispatch({ type: 'PENDING_REMOVE', pageId })
     })
-  // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring
-  // message may have been queued as a direct consequence of this one finishing. Chain a
-  // watch onto it so it streams in and gets highlighted live.
+  // This job is finished, so close its own connection unconditionally (streamJob self-closes on
+  // the [DONE] sentinel, but the activeConnections entry must be dropped too or it lingers dead).
+  closeConnection(pageId)
+  // Pre-kickoff setup turns are dual-pass — a second, separate worldbook-authoring message may
+  // have been queued as a direct consequence of this one finishing. It streams on its OWN pageId,
+  // so chain a watch onto it (a distinct connection) to show it live and highlighted.
   if (event.followUp) watchJob(event.followUp.jobId, event.followUp.pageId)
-  else closeConnection(pageId)
   onDone?.()
 }
 
