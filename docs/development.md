@@ -684,5 +684,22 @@ Full frontend overhaul per `docs/refactor/frontend-roadmap.md`. 7 phases, all co
   9 semantic color custom properties added to `:root` + dark theme. 28 hardcoded hex colors
   replaced across 10 CSS files. Remaining px values audited — all functional constraints.
 
+### StoryView polling elimination — ✅ done, 2026-07-15
+
+Eliminated the dual-update architecture (SSE streaming + 1s polling) in `web/src/views/StoryView.tsx`
+in favor of a single SSE-only update path. Three-phase refactor per `storyview-roadmap.md`:
+
+- **Phase 1 (Extract & Clarify):** Extracted 70-line `watchJob` callback into switch-table
+  (`streamHandlers.ts`, 207 lines). Moved `syncPendingWaitPhases` + helpers into
+  `syncPendingWaitPhases.ts` (166 lines). Deduplicated send paths into `sendAndWatch()` helper.
+  StoryView.tsx: 862 → 655 lines.
+- **Phase 2 (Harden the Guards):** Merged dual guard (reducer's `PENDING_SYNC` is sole guard,
+  dropped polling-side guard). Fixed reasoning trace loss via `accumulatedThinkingRef`.
+  Plugged EventSource resource leak (cleanup Map). Permanent stream failure reattach logic.
+- **Phase 3 (Eliminate Polling):** Deleted frontend polling effect, `PENDING_SYNC` reducer case,
+  `forceTick` state (~40 lines). Extended SSE endpoint to emit `queued`/`prefill` events for
+  pending jobs (was: only `running` jobs). Server-side publish points added to `job-events.ts`.
+
+Architecture doc: `docs/refactor/storyview-architecture.md`. 9 commits, deployed to VM.
 Bundle: 143KB gzipped JS (was 115KB pre-Phase 6). 0 typecheck errors, 0 lint errors, 1 pre-existing
 warning (forceTick exhaustive-deps, intentionally kept). 142 tests (126 Vitest + 16 Playwright).
