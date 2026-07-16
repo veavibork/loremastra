@@ -95,7 +95,7 @@ export default function GlobalCssForm({ value, onChange }: GlobalCssFormProps) {
         <NumberField
           label="Root font size (px)"
           value={settings.rootFontSize}
-          onChange={(v) => update({ rootFontSize: v ?? 16 })}
+          onChange={(v) => v !== null && update({ rootFontSize: v })}
           step={1}
           min={8}
           max={32}
@@ -103,7 +103,7 @@ export default function GlobalCssForm({ value, onChange }: GlobalCssFormProps) {
         <NumberField
           label="Narrow font size (px)"
           value={settings.rootFontSizeNarrow}
-          onChange={(v) => update({ rootFontSizeNarrow: v ?? 14 })}
+          onChange={(v) => v !== null && update({ rootFontSizeNarrow: v })}
           step={1}
           min={8}
           max={32}
@@ -111,7 +111,7 @@ export default function GlobalCssForm({ value, onChange }: GlobalCssFormProps) {
         <NumberField
           label="Narrow breakpoint (px)"
           value={settings.narrowBreakpoint}
-          onChange={(v) => update({ narrowBreakpoint: v ?? 768 })}
+          onChange={(v) => v !== null && update({ narrowBreakpoint: v })}
           step={16}
           min={320}
           max={1920}

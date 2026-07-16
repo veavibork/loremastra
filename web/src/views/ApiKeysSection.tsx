@@ -81,12 +81,22 @@ function KeyRow({ label, masked, onSave, onClear }: KeyRowProps) {
  */
 export default function ApiKeysSection() {
   const [account, setAccount] = useState<AccountProfile | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
-    void fetchAccount().then(setAccount)
+    void fetchAccount()
+      .then(setAccount)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : String(err)))
   }, [])
 
-  if (!account) return null
+  if (!account) {
+    return (
+      <section className="api-keys-section">
+        <h3>API Keys</h3>
+        {loadError && <div className="error-banner">{loadError}</div>}
+      </section>
+    )
+  }
 
   return (
     <section className="api-keys-section">

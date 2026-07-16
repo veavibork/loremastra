@@ -54,19 +54,43 @@ export default function SettingsView() {
   const [toggleMood, setToggleMood] = useState<unknown[] | null>(null)
   const [toggleParam, setToggleParam] = useState<unknown[] | null>(null)
   const [toggleEffort, setToggleEffort] = useState<unknown[] | null>(null)
+  const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({})
   const setLivePlayTabSettings = useSetPlayTabSettings()
 
   useEffect(() => {
-    void fetchLayout().then((res) => setLayout(res.config))
-    void fetchSettingsSpace<string[]>(BANNED_PHRASES_SPACE).then(setBannedPhrases)
-    void fetchSettingsSpace<GlobalCssSettings>(GLOBAL_CSS_SPACE).then(setGlobalCss)
-    void fetchSettingsSpace<Partial<PlayTabSettings>>(PLAY_TAB_SPACE).then((saved) =>
-      setPlayTab({ ...DEFAULT_PLAY_TAB_SETTINGS, ...saved }),
-    )
-    void fetchSettingsSpace<number[]>(TOGGLE_LENGTH_SPACE).then(setToggleLength)
-    void fetchSettingsSpace<unknown[]>(TOGGLE_MOOD_SPACE).then(setToggleMood)
-    void fetchSettingsSpace<unknown[]>(TOGGLE_PARAM_SPACE).then(setToggleParam)
-    void fetchSettingsSpace<unknown[]>(TOGGLE_EFFORT_SPACE).then(setToggleEffort)
+    // Each section is fetched independently; a failure is recorded per-space so it can't leave
+    // an unhandled rejection or hang the "Loading N sections…" counter forever.
+    const reportError = (space: string) => (err: unknown) => {
+      console.error(err)
+      setSectionErrors((prev) => ({
+        ...prev,
+        [space]: err instanceof Error ? err.message : String(err),
+      }))
+    }
+    void fetchLayout()
+      .then((res) => setLayout(res.config))
+      .catch(reportError('layout'))
+    void fetchSettingsSpace<string[]>(BANNED_PHRASES_SPACE)
+      .then(setBannedPhrases)
+      .catch(reportError(BANNED_PHRASES_SPACE))
+    void fetchSettingsSpace<GlobalCssSettings>(GLOBAL_CSS_SPACE)
+      .then(setGlobalCss)
+      .catch(reportError(GLOBAL_CSS_SPACE))
+    void fetchSettingsSpace<Partial<PlayTabSettings>>(PLAY_TAB_SPACE)
+      .then((saved) => setPlayTab({ ...DEFAULT_PLAY_TAB_SETTINGS, ...saved }))
+      .catch(reportError(PLAY_TAB_SPACE))
+    void fetchSettingsSpace<number[]>(TOGGLE_LENGTH_SPACE)
+      .then(setToggleLength)
+      .catch(reportError(TOGGLE_LENGTH_SPACE))
+    void fetchSettingsSpace<unknown[]>(TOGGLE_MOOD_SPACE)
+      .then(setToggleMood)
+      .catch(reportError(TOGGLE_MOOD_SPACE))
+    void fetchSettingsSpace<unknown[]>(TOGGLE_PARAM_SPACE)
+      .then(setToggleParam)
+      .catch(reportError(TOGGLE_PARAM_SPACE))
+    void fetchSettingsSpace<unknown[]>(TOGGLE_EFFORT_SPACE)
+      .then(setToggleEffort)
+      .catch(reportError(TOGGLE_EFFORT_SPACE))
   }, [])
 
   const persistedGlobalCss = useRef<GlobalCssSettings | null>(null)
@@ -275,7 +299,8 @@ export default function SettingsView() {
   ])
 
   const loadedCount = sections.length
-  const pendingCount = SETTINGS_SPACES.length - loadedCount
+  const erroredSpaces = Object.keys(sectionErrors)
+  const pendingCount = SETTINGS_SPACES.length - loadedCount - erroredSpaces.length
 
   return (
     <div className="settings-view">
@@ -284,6 +309,12 @@ export default function SettingsView() {
         <p className="settings-note">
           Loading {pendingCount} section{pendingCount === 1 ? '' : 's'}…
         </p>
+      )}
+      {erroredSpaces.length > 0 && (
+        <div className="error-banner">
+          Failed to load {erroredSpaces.length} section{erroredSpaces.length === 1 ? '' : 's'}:{' '}
+          {erroredSpaces.map((space) => sectionErrors[space]).join('; ')}
+        </div>
       )}
       <AccountSettings />
       {loadedCount > 0 && <SettingsTreeEditor sections={sections} />}

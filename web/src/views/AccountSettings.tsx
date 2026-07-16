@@ -19,7 +19,16 @@ export default function AccountSettings() {
   const [savingPassword, setSavingPassword] = useState(false)
 
   const { data: account } = useAccount()
-  if (account && account.displayName !== savedDisplayName && !savingName) {
+  // Only pick up the fetched name when there's no in-progress unsaved edit — otherwise a
+  // background refetch (e.g. on window refocus) would clobber what the user is typing.
+  // `savedDisplayName === null` means nothing has synced yet (first load), so that case
+  // always syncs; afterward we only sync while displayName still matches the last sync.
+  if (
+    account &&
+    account.displayName !== savedDisplayName &&
+    !savingName &&
+    (savedDisplayName === null || displayName === savedDisplayName)
+  ) {
     setDisplayName(account.displayName)
     setSavedDisplayName(account.displayName)
   }

@@ -201,8 +201,12 @@ export function setReasoningTrace(storyId: string, pageId: string, thinking: str
   if (!trimmed) return
   const state = useClientStore.getState()
   const map = { ...(state.reasoningTraces[storyId] ?? {}) }
+  // Delete-then-reinsert so a re-recorded pageId moves to the end of key order (most recent),
+  // not just wherever it originally landed — otherwise the eviction below evicts by original
+  // insertion order instead of recency.
+  delete map[pageId]
   map[pageId] = trimmed
-  // Cap at 80 entries per story
+  // Cap at 80 entries per story, evicting the least-recently-written first.
   const ids = Object.keys(map)
   if (ids.length > 80) {
     for (const id of ids.slice(0, ids.length - 80)) delete map[id]

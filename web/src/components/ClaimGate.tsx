@@ -32,8 +32,9 @@ export default function ClaimGate({ reason, info, onClaimed }: ClaimGateProps) {
   useEffect(() => {
     if (reclaimUserId) {
       setSelectedUserId(reclaimUserId)
-      return
     }
+    // Fetch users in both flows — the reclaim flow still needs it to resolve reclaimUser's
+    // displayName for the "Log back in as <name>" message.
     fetchUsers()
       .then(setUsers)
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
