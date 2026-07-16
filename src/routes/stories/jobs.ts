@@ -108,20 +108,18 @@ jobsRoute.get('/:id/jobs/:jobId/stream', (c) => {
 
     await new Promise<void>((resolve) => {
       const unsubscribe = subscribeJob(jobId, (event) => {
-        if (
-          event.type === 'token' ||
-          event.type === 'thinking' ||
-          event.type === 'progress' ||
-          event.type === 'meta' ||
-          event.type === 'reset' ||
-          event.type === 'queued' ||
-          event.type === 'prefill'
-        ) {
-          void sse.writeSSE({ data: JSON.stringify(event) })
+        // Only genuinely terminal events end the stream. Everything else — streaming tokens AND
+        // non-terminal lifecycle signals like 'claimed'/'started' — is forwarded and the
+        // connection stays open. (A prior whitelist here misclassified 'claimed'/'started' as
+        // terminal, so if the client happened to be subscribed when the job was claimed, the SSE
+        // closed immediately and no tokens/done ever arrived — the intermittent "stuck on
+        // Queued…" bug. Client ignores event types it has no handler for.)
+        if (event.type === 'done' || event.type === 'error' || event.type === 'cancelled') {
+          unsubscribe()
+          void finish(event).then(resolve)
           return
         }
-        unsubscribe()
-        void finish(event).then(resolve)
+        void sse.writeSSE({ data: JSON.stringify(event) })
       })
 
       const job = getJob(storyDb, jobId)
