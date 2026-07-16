@@ -224,6 +224,19 @@ server.registerTool(
       })
     }
 
+    if (filePattern) {
+      try {
+        // walk() uses this directly as `entry.match(filePattern)`, which compiles it as a RegExp
+        // under the hood — an invalid pattern (e.g. '(') throws a SyntaxError synchronously,
+        // outside the try/catch below. Validate it up front so bad input gets the same graceful
+        // { error } shape as this tool's other input-validation failures, not a raw internal error.
+        new RegExp(filePattern)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        return textResult({ error: `Invalid filePattern regex: ${message}` })
+      }
+    }
+
     const contextParts: string[] = []
     let truncated = false
 

@@ -36,6 +36,25 @@ function describeProcess(pid: number): string {
 }
 
 /**
+ * This process is always launched as `node .../src/mcp/dev-server.ts` (directly or via tsx) —
+ * confirm the PID's command line still looks like that before killing it, in case the OS
+ * reassigned the PID to an unrelated process between the previous instance exiting and now.
+ * Uses CommandLine via Win32_Process (Get-Process doesn't expose it) rather than ProcessName,
+ * since `node`/`tsx` alone is too generic to be an identity check.
+ */
+function isLoremasterDevServerProcess(pid: number): boolean {
+  try {
+    const commandLine = execSync(
+      `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' -ErrorAction Stop).CommandLine"`,
+      { encoding: 'utf8' },
+    ).trim()
+    return /mcp[\\/]dev-server\.(ts|m?js)/i.test(commandLine)
+  } catch {
+    return false
+  }
+}
+
+/**
  * Only one loremaster-dev MCP server should ever be alive at once. A prior instance left running
  * (host respawn without killing the old one, editor reload, a crash that skipped cleanup, etc.)
  * holds every story DB it ever touched open indefinitely via getStoryDb()'s process-local cache,
@@ -52,13 +71,22 @@ export function ensureSingleInstance(): void {
     const prevPid = Number(readFileSync(PID_FILE, 'utf8').trim())
     if (Number.isFinite(prevPid) && prevPid !== process.pid && isAlive(prevPid)) {
       const info = describeProcess(prevPid)
-      const entry = `[${new Date().toISOString()}] Killing stale loremaster-dev MCP server PID ${prevPid} before starting PID ${process.pid}\n${info}\n\n`
-      appendFileSync(STALE_LOG, entry)
-      console.error(entry.trim())
-      try {
-        execSync(`taskkill /PID ${prevPid} /F`, { stdio: 'ignore' })
-      } catch {
-        // already gone
+      if (isLoremasterDevServerProcess(prevPid)) {
+        const entry = `[${new Date().toISOString()}] Killing stale loremaster-dev MCP server PID ${prevPid} before starting PID ${process.pid}\n${info}\n\n`
+        appendFileSync(STALE_LOG, entry)
+        console.error(entry.trim())
+        try {
+          execSync(`taskkill /PID ${prevPid} /F`, { stdio: 'ignore' })
+        } catch {
+          // already gone
+        }
+      } else {
+        // The PID file's owner no longer looks like a loremaster-dev MCP server — the OS likely
+        // reassigned this PID to an unrelated process since the previous instance exited.
+        // Don't kill it; just log and fall through to claim the PID file below.
+        const entry = `[${new Date().toISOString()}] PID ${prevPid} from stale PID file is not a loremaster-dev MCP server — skipping kill, starting PID ${process.pid} anyway\n${info}\n\n`
+        appendFileSync(STALE_LOG, entry)
+        console.error(entry.trim())
       }
     }
   }

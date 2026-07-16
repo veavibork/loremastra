@@ -7,6 +7,7 @@ import type { AppVariables } from '../middleware/session-guard.js'
 import {
   listModelConfigs,
   createModelConfig,
+  getModelConfig,
   updateModelConfig,
   deleteModelConfig,
   reorderModelConfigs,
@@ -125,12 +126,21 @@ agentsRoute.post('/', (c) => {
 agentsRoute.patch('/:id', sValidator('json', patchSchema, validationHook), async (c) => {
   const body = c.req.valid('json')
   const { db, userId } = ensureSeeded(c)
+  const id = c.req.param('id')!
+  // Owner-scope the write: updateModelConfig's SQL isn't user-filtered, so verify the row
+  // belongs to the caller here (404 either way, not revealing another user's config exists).
+  const current = getModelConfig(db, id)
+  if (!current || current.userId !== userId) return c.json({ error: 'model config not found' }, 404)
+
   const patch: Partial<ModelConfigInput> = { ...body }
   if (typeof patch.model === 'string') patch.model = patch.model.trim()
 
   // When the model string changes, fetch its actual concurrency cost from Featherless
-  // so slot reservations match the real per-call cost — no hardcoded guessing.
-  if (patch.model && patch.provider !== 'horde') {
+  // so slot reservations match the real per-call cost — no hardcoded guessing. Gate on the
+  // *effective* provider (the patch's, or the existing row's when the patch doesn't set one),
+  // so a model-only edit on a Horde config doesn't wrongly trigger a Featherless lookup.
+  const effectiveProvider = patch.provider ?? current.provider
+  if (patch.model && effectiveProvider !== 'horde') {
     const apiKey = getDecryptedFeatherlessKey(db, userId)
     if (apiKey) {
       try {
@@ -145,14 +155,19 @@ agentsRoute.patch('/:id', sValidator('json', patchSchema, validationHook), async
     }
   }
 
-  const updated = updateModelConfig(db, c.req.param('id')!, patch)
+  const updated = updateModelConfig(db, id, patch)
   if (!updated) return c.json({ error: 'model config not found' }, 404)
   return c.json({ config: updated })
 })
 
 agentsRoute.delete('/:id', (c) => {
-  const { db } = ensureSeeded(c)
-  deleteModelConfig(db, c.req.param('id'))
+  const { db, userId } = ensureSeeded(c)
+  const id = c.req.param('id')!
+  // Owner-scope the delete: deleteModelConfig's SQL isn't user-filtered, so verify ownership
+  // here or any authenticated user could delete another's config.
+  const current = getModelConfig(db, id)
+  if (!current || current.userId !== userId) return c.json({ error: 'model config not found' }, 404)
+  deleteModelConfig(db, id)
   return c.json({ ok: true })
 })
 

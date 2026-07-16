@@ -40,7 +40,11 @@ clientErrorsRoute.post('/', sValidator('json', createErrorSchema, validationHook
 
 clientErrorsRoute.get('/', (c) => {
   const limitParam = c.req.query('limit')
-  const limit = limitParam ? Number(limitParam) : undefined
+  const parsed = limitParam ? Number(limitParam) : NaN
+  // listClientErrors defaults to 200 when no limit is given — mirror that default here for
+  // any missing/malformed value (e.g. `?limit=abc`) instead of letting NaN reach the DB layer,
+  // where better-sqlite3 throws a "datatype mismatch" binding it to LIMIT.
+  const limit = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined
   const db = getGlobalDb()
   return c.json({ errors: listClientErrors(db, { limit }) })
 })

@@ -5,6 +5,7 @@ import {
   setHordeRequestId,
   setJobModel,
   listRunningHordeJobs,
+  listActiveJobs,
   hasActiveJobByType,
   type JobRow,
   type JobType,
@@ -103,6 +104,31 @@ export function trackStoryDb(storyId: string, db: Database.Database): void {
 /** Must be called whenever a story's underlying DB handle is closed (e.g. story deletion) — otherwise the next scan tick hits a closed better-sqlite3 connection and throws inside a bare setInterval callback, which is fatal to the whole process (see stub-revisions.md, 2026-07-02). */
 export function untrackStoryDb(storyId: string): void {
   trackedDbs.delete(storyId)
+}
+
+/**
+ * Aggregate job counts across every tracked story DB, for src/index.ts's pipeline-health
+ * snapshot (buildHealthSnapshot). trackedDbs is otherwise process-internal to this module, so
+ * this is the minimal exported accessor rather than reaching into it directly from index.ts.
+ * Skips any DB whose handle has since closed (e.g. story deletion raced with a snapshot tick).
+ */
+export function getTrackedJobCounts(): {
+  activeJobs: number
+  pendingJobs: number
+  hordeJobsRunning: number
+} {
+  let activeJobs = 0
+  let pendingJobs = 0
+  let hordeJobsRunning = 0
+  for (const db of trackedDbs.values()) {
+    if (!db.open) continue
+    for (const job of listActiveJobs(db)) {
+      if (job.status === 'running') activeJobs++
+      else pendingJobs++
+    }
+    hordeJobsRunning += listRunningHordeJobs(db).length
+  }
+  return { activeJobs, pendingJobs, hordeJobsRunning }
 }
 
 export function startPipelineRunner(): void {

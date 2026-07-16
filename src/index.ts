@@ -12,7 +12,7 @@ import { sessionsRoute } from './routes/sessions.js'
 import { accountRoute } from './routes/account.js'
 import { preferenceProfilesRoute } from './routes/preference-profiles.js'
 import { sessionGuard, type AppVariables } from './middleware/session-guard.js'
-import { startPipelineRunner, trackStoryDb } from './queue/dispatch.js'
+import { startPipelineRunner, trackStoryDb, getTrackedJobCounts } from './queue/dispatch.js'
 import { getQueueStatus } from './queue/slots.js'
 import { getGlobalDb } from './db/global-db.js'
 import { listAllStories } from './db/story-store.js'
@@ -101,12 +101,13 @@ function buildHealthSnapshot(): Omit<HealthSnapshot, 'at'> {
   const users = listUsers(db)
   const userId = users[0]?.id ?? ''
   const queue = getQueueStatus(userId)
+  const { activeJobs, pendingJobs, hordeJobsRunning } = getTrackedJobCounts()
   return {
-    activeJobs: 0,
-    pendingJobs: 0,
+    activeJobs,
+    pendingJobs,
     slotsUsed: queue.used,
     slotsMax: queue.max,
-    hordeJobsRunning: 0,
+    hordeJobsRunning,
     trackedStories: listAllStories(db).length,
   }
 }

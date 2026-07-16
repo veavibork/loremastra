@@ -88,12 +88,14 @@ server.registerTool(
     description: 'Get all worldbook entries for a story, including hidden ones.',
     inputSchema: { storyId: z.string() },
   },
-  async ({ storyId }) =>
-    withStoryDb(storyId, (db) => {
+  async ({ storyId }) => {
+    if (!getStory(getGlobalDb(), storyId)) return textResult({ error: 'story not found' })
+    return withStoryDb(storyId, (db) => {
       const worldbook = getBookByType(db, 'worldbook')
       if (!worldbook) return textResult({ error: 'no worldbook book for this story' })
       return textResult(listWorldbookEntries(db, worldbook.id, { includeHidden: true }))
-    }),
+    })
+  },
 )
 
 server.registerTool(
@@ -103,14 +105,16 @@ server.registerTool(
       'Live queue state for a story: recent jobs (any status) plus global concurrency slot usage.',
     inputSchema: { storyId: z.string() },
   },
-  async ({ storyId }) =>
-    withStoryDb(storyId, (db) => {
-      const story = getStory(getGlobalDb(), storyId)
+  async ({ storyId }) => {
+    const story = getStory(getGlobalDb(), storyId)
+    if (!story) return textResult({ error: 'story not found' })
+    return withStoryDb(storyId, (db) => {
       return textResult({
-        slots: story ? getQueueStatus(story.ownerUserId) : null,
+        slots: getQueueStatus(story.ownerUserId),
         jobs: listRecentJobs(db, 30),
       })
-    }),
+    })
+  },
 )
 
 server.registerTool(
@@ -119,13 +123,15 @@ server.registerTool(
     description: 'Recent log entries (posts) for a story, oldest first, including hidden ones.',
     inputSchema: { storyId: z.string(), limit: z.number().optional() },
   },
-  async ({ storyId, limit }) =>
-    withStoryDb(storyId, (db) => {
+  async ({ storyId, limit }) => {
+    if (!getStory(getGlobalDb(), storyId)) return textResult({ error: 'story not found' })
+    return withStoryDb(storyId, (db) => {
       const logbook = getBookByType(db, 'logbook')
       if (!logbook) return textResult({ error: 'no logbook for this story' })
       const { entries } = buildLogView(db, logbook.id, { limit })
       return textResult(entries)
-    }),
+    })
+  },
 )
 
 server.registerTool(
@@ -162,12 +168,14 @@ server.registerTool(
       'Compact memory health check: stale compress counts, archive gaps, broken blocks — no full post dump.',
     inputSchema: { storyId: z.string() },
   },
-  async ({ storyId }) =>
-    withStoryDb(storyId, (db) => {
+  async ({ storyId }) => {
+    if (!getStory(getGlobalDb(), storyId)) return textResult({ error: 'story not found' })
+    return withStoryDb(storyId, (db) => {
       const logbook = getBookByType(db, 'logbook')
       if (!logbook) return textResult({ error: 'no logbook for this story' })
       return textResult(buildMemorySummary(db, logbook.id))
-    }),
+    })
+  },
 )
 
 server.registerTool(
@@ -220,12 +228,14 @@ server.registerTool(
       'Per-post memory diagnostics: content stamps, compress validity, and archive coverage for a story.',
     inputSchema: { storyId: z.string() },
   },
-  async ({ storyId }) =>
-    withStoryDb(storyId, (db) => {
+  async ({ storyId }) => {
+    if (!getStory(getGlobalDb(), storyId)) return textResult({ error: 'story not found' })
+    return withStoryDb(storyId, (db) => {
       const logbook = getBookByType(db, 'logbook')
       if (!logbook) return textResult({ error: 'no logbook for this story' })
       return textResult(buildMemoryManifest(db, logbook.id))
-    }),
+    })
+  },
 )
 
 server.registerTool(
