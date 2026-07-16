@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3'
 import { getGlobalDb } from '../db/global-db.js'
-import { getAgentConfigOverride } from '../db/agent-config-store.js'
 import {
   listModelConfigs,
   createModelConfig,
@@ -26,20 +25,25 @@ const DEFAULTS: Record<AgentRole, AgentProfile> = {
 const ROLE_ORDER: AgentRole[] = ['author', 'worker', 'editor']
 
 /**
- * One-time migration from the old one-row-per-role `agent_configs` table to the new flat,
- * reorderable `model_configs` list (Config > Agents rebuild) — runs only when a user has no
- * model_configs rows yet, so it never clobbers anything already set up under the new system.
- * Preserves whatever was actually live (a saved override, or the config.ts default) as one
- * row per role, in author/worker/editor order, rather than silently resetting anyone's
- * working setup. A role's saved fallbackModels become their own rows, checked for that role
- * only — see model_configs' schema comment for why these aren't deduped by model id even
- * when the same model string repeats across rows.
+ * One-time seed from the built-in config.ts defaults into the flat, reorderable `model_configs`
+ * list (Config > Agents rebuild) — runs only when a user has no model_configs rows yet, so it
+ * never clobbers anything already set up under the new system. Seeds one row per role, in
+ * author/worker/editor order. A role's default fallbackModels become their own rows, checked
+ * for that role only — see model_configs' schema comment for why these aren't deduped by model
+ * id even when the same model string repeats across rows.
+ *
+ * Deliberately does NOT consult the legacy `agent_configs` table (getAgentConfigOverride):
+ * that table is keyed by role alone with no user_id (src/db/global-schema.ts), so it holds one
+ * global row shared across every account. Seeding a new user from it would leak whichever
+ * user happened to save an override first into every other account's "fresh" setup — the
+ * opposite of the per-user isolation this table exists to provide. Always seeding from the
+ * hardcoded defaults keeps new users isolated regardless of what any other account has saved.
  */
 function ensureModelConfigsSeeded(db: Database.Database, userId: string): void {
   if (listModelConfigs(db, userId).length > 0) return
 
   for (const role of ROLE_ORDER) {
-    const profile = getAgentConfigOverride(db, role) ?? DEFAULTS[role]
+    const profile = DEFAULTS[role]
     const roleFlags = {
       useAuthor: role === 'author',
       useEditor: role === 'editor',

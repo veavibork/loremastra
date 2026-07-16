@@ -265,12 +265,15 @@ export function normalizeLayoutConfig(raw: unknown): LayoutConfigData {
       mergeNavButtons({
         version: 2,
         nav: {
-          containers: config.nav.containers
-            .filter((c) => c.visible !== false)
-            .map((c) => ({
-              ...c,
-              buttons: normalizeButtons(c.buttons ?? []),
-            })),
+          // Mirror normalizeButton: preserve invisible containers (and their buttons) in the
+          // persisted config rather than dropping them, so mergeNavButtons doesn't see their
+          // button ids as missing and resurrect them into a default container. Rendering still
+          // skips them via flattenNavTabs' `!container.visible` check.
+          containers: config.nav.containers.map((c) => ({
+            ...c,
+            visible: c.visible !== false,
+            buttons: normalizeButtons(c.buttons ?? []),
+          })),
         },
         inputBar: {
           containers: (config.inputBar.containers ?? DEFAULT_LAYOUT_CONFIG.inputBar.containers).map(

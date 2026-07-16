@@ -60,6 +60,7 @@ layoutRoute.patch('/', sValidator('json', patchSchema, validationHook), async (c
 
 layoutRoute.post('/:id/activate', (c) => {
   const db = getGlobalDb()
-  setActiveLayoutConfig(db, c.get('userId'), c.req.param('id'))
+  const ok = setActiveLayoutConfig(db, c.get('userId'), c.req.param('id'))
+  if (!ok) return c.json({ error: 'layout config not found' }, 404)
   return c.json({ ok: true })
 })

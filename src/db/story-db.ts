@@ -134,6 +134,7 @@ function migrateJobTypeWorldbookCompact(db: Database.Database): void {
   ensureColumn(db, 'jobs_pre_worldbook_compact_migration', 'input_token_estimate', 'INTEGER')
   ensureColumn(db, 'jobs_pre_worldbook_compact_migration', 'horde_request_id', 'TEXT')
   ensureColumn(db, 'jobs_pre_worldbook_compact_migration', 'elapsed_ms', 'INTEGER')
+  ensureColumn(db, 'jobs_pre_worldbook_compact_migration', 'result_summary', 'TEXT')
   ensureColumn(
     db,
     'jobs_pre_worldbook_compact_migration',
@@ -150,8 +151,8 @@ function finishJobTypeWorldbookCompactMigration(db: Database.Database): void {
     .get()
   if (!exists) return
   db.exec(`
-    INSERT INTO jobs (id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id, elapsed_ms)
-    SELECT id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, horde_request_id, elapsed_ms
+    INSERT INTO jobs (id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, input_token_estimate, horde_request_id, elapsed_ms, result_summary)
+    SELECT id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, input_token_estimate, horde_request_id, elapsed_ms, result_summary
     FROM jobs_pre_worldbook_compact_migration;
     DROP TABLE jobs_pre_worldbook_compact_migration;
   `)
@@ -189,30 +190,43 @@ export function getStoryDb(
 
   mkdirSync(STORIES_DIR, { recursive: true })
   const db = new Database(storyDbPath(storyId))
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-  db.pragma('busy_timeout = 5000')
-  migrateWorldbookEntryShape(db)
-  migrateJobTypeCheck(db)
-  migrateJobTypeWorldbookCompact(db)
-  dropTagTablesIfExist(db)
-  db.exec(STORY_SCHEMA_SQL)
-  ensureColumn(db, 'story_state', 'current_page_id', 'TEXT REFERENCES page(id)')
-  ensureColumn(db, 'story_state', 'history_cursor_seq', 'INTEGER NOT NULL DEFAULT 0')
-  ensureColumn(db, 'story_state', 'ooc_session_start_page_id', 'TEXT REFERENCES page(id)')
-  ensureColumn(db, 'jobs', 'model', 'TEXT')
-  ensureColumn(db, 'jobs', 'token_estimate', 'INTEGER')
-  ensureColumn(db, 'jobs', 'input_token_estimate', 'INTEGER')
-  ensureColumn(db, 'jobs', 'horde_request_id', 'TEXT')
-  ensureColumn(db, 'jobs', 'elapsed_ms', 'INTEGER')
-  ensureColumn(db, 'jobs', 'result_summary', 'TEXT')
-  ensureColumn(db, 'page', 'content_hash', 'TEXT')
-  ensureColumn(db, 'jobs', 'target_story_to_date_id', 'TEXT REFERENCES story_to_date_segment(id)')
-  ensureColumn(db, 'story_to_date_segment', 'name', 'TEXT')
-  finishJobTypeCheckMigration(db)
-  finishJobTypeWorldbookCompactMigration(db)
-  backfillSelectedForks(db)
-  if (!options?.skipRecovery) recoverStaleJobs(db)
+  try {
+    db.pragma('journal_mode = WAL')
+    db.pragma('foreign_keys = ON')
+    db.pragma('busy_timeout = 5000')
+    migrateWorldbookEntryShape(db)
+    migrateJobTypeCheck(db)
+    migrateJobTypeWorldbookCompact(db)
+    dropTagTablesIfExist(db)
+    db.exec(STORY_SCHEMA_SQL)
+    ensureColumn(db, 'story_state', 'current_page_id', 'TEXT REFERENCES page(id)')
+    ensureColumn(db, 'story_state', 'history_cursor_seq', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(db, 'story_state', 'ooc_session_start_page_id', 'TEXT REFERENCES page(id)')
+    ensureColumn(db, 'jobs', 'model', 'TEXT')
+    ensureColumn(db, 'jobs', 'token_estimate', 'INTEGER')
+    ensureColumn(db, 'jobs', 'input_token_estimate', 'INTEGER')
+    ensureColumn(db, 'jobs', 'horde_request_id', 'TEXT')
+    ensureColumn(db, 'jobs', 'elapsed_ms', 'INTEGER')
+    ensureColumn(db, 'jobs', 'result_summary', 'TEXT')
+    ensureColumn(db, 'page', 'content_hash', 'TEXT')
+    ensureColumn(db, 'jobs', 'target_story_to_date_id', 'TEXT REFERENCES story_to_date_segment(id)')
+    ensureColumn(db, 'story_to_date_segment', 'name', 'TEXT')
+    finishJobTypeCheckMigration(db)
+    finishJobTypeWorldbookCompactMigration(db)
+    backfillSelectedForks(db)
+    if (!options?.skipRecovery) recoverStaleJobs(db)
+  } catch (err) {
+    // Setup threw after the handle was opened but before it was registered in openStoryDbs —
+    // closing it here is the only way to release the OS file handle; closeStoryDb can't reach
+    // it since it was never registered. Leaving it open leaks (and on Windows, can EBUSY a
+    // later delete/rename of the same story file).
+    try {
+      db.close()
+    } catch {
+      // already closed/broken — nothing more we can do
+    }
+    throw err
+  }
   openStoryDbs.set(storyId, db)
   return db
 }

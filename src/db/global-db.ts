@@ -23,6 +23,7 @@ export function getGlobalDb(): Database.Database {
   db = new Database(GLOBAL_DB_PATH)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  db.pragma('busy_timeout = 5000')
   db.exec(GLOBAL_SCHEMA_SQL)
   ensureColumn(db, 'agent_configs', 'fallback_models', 'TEXT')
   ensureColumn(db, 'model_configs', 'provider', "TEXT NOT NULL DEFAULT 'featherless'")

@@ -97,7 +97,19 @@ export function updateLayoutConfigJson(
   return getLayoutConfig(db, id)!
 }
 
-export function setActiveLayoutConfig(db: Database.Database, userId: string, id: string): void {
+/**
+ * Returns false (and makes no changes) if `id` doesn't exist or isn't owned by `userId` —
+ * mirrors setActivePreferenceProfile's check-before-deactivate pattern. Validating ownership
+ * before the first UPDATE matters: deactivating every one of the user's configs and then
+ * having the second UPDATE match zero rows (bad/foreign id) would otherwise leave the user
+ * with no active config at all.
+ */
+export function setActiveLayoutConfig(db: Database.Database, userId: string, id: string): boolean {
+  const existing = db
+    .prepare(`SELECT id FROM layout_configs WHERE id = ? AND user_id = ?`)
+    .get(id, userId)
+  if (!existing) return false
+
   const run = db.transaction(() => {
     db.prepare(`UPDATE layout_configs SET is_active = 0 WHERE user_id = ?`).run(userId)
     db.prepare(
@@ -105,4 +117,5 @@ export function setActiveLayoutConfig(db: Database.Database, userId: string, id:
     ).run(nowIso(), id, userId)
   })
   run()
+  return true
 }
