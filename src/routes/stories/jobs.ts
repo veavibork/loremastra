@@ -4,6 +4,7 @@ import type { AppVariables } from '../../middleware/session-guard.js'
 import { getJob, listRecentJobs, listActiveJobs, cancelJob } from '../../db/job-store.js'
 import { getText } from '../../db/text-store.js'
 import { requestJobCancel } from '../../queue/cancel.js'
+import { clearJobEphemeralState } from '../../queue/dispatch.js'
 import {
   subscribeJob,
   getJobBuffer,
@@ -52,6 +53,9 @@ jobsRoute.post('/:id/jobs/:jobId/cancel', (c) => {
   }
   if (job.status === 'pending') {
     cancelJob(storyDb, jobId)
+    // Pending jobs never reach dispatch (where guidance/options are normally consumed and cleared),
+    // so clear their ephemeral in-memory state here or it leaks for the process lifetime.
+    clearJobEphemeralState(jobId)
     publishCancelled(jobId)
     return c.json({ ok: true })
   }

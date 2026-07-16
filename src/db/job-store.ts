@@ -271,7 +271,7 @@ export function finishJob(
   meta?: { model?: string; tokenEstimate?: number; elapsedMs?: number; resultSummary?: string },
 ): void {
   db.prepare(
-    `UPDATE jobs SET status = ?, finished_at = ?, error = ?, model = COALESCE(?, model), token_estimate = COALESCE(?, token_estimate), elapsed_ms = COALESCE(?, elapsed_ms), result_summary = COALESCE(?, result_summary) WHERE id = ?`,
+    `UPDATE jobs SET status = ?, finished_at = ?, error = ?, model = COALESCE(?, model), token_estimate = COALESCE(?, token_estimate), elapsed_ms = COALESCE(?, elapsed_ms), result_summary = COALESCE(?, result_summary) WHERE id = ? AND status != 'cancelled'`,
   ).run(
     status,
     nowIso(),

@@ -81,15 +81,23 @@ export function onCanonicalTextChanged(
 ): void {
   const page = getPage(db, pageId)
   if (!page) return
-  const text = page.selectedTextId ? getText(db, page.selectedTextId) : null
-  if (!text?.genPackage?.trim()) return
 
+  // Invalidate the StoryToDate segments that summarized this page's prior content whenever its
+  // canonical text changes — including a retry, where selectedTextId now points at a fresh blank
+  // placeholder. Coverage is compared by post position (not text content), so this is correct even
+  // before the replacement content exists. Gating this on the new text already having content (as
+  // it used to) skipped invalidation entirely on retry, leaving stale memory in the Author prompt.
   invalidateStoryToDateForPage(db, userId, logbookId, storyId, pageId)
 
-  const stamp = computeTextContentStamp(text)
-  if (stamp) {
-    setContentHash(db, pageId, stamp)
-    setTextBroken(db, text.id, false)
+  // Only (re)stamp the content hash / clear the broken flag when there's real content — a blank
+  // placeholder has no meaningful stamp.
+  const text = page.selectedTextId ? getText(db, page.selectedTextId) : null
+  if (text?.genPackage?.trim()) {
+    const stamp = computeTextContentStamp(text)
+    if (stamp) {
+      setContentHash(db, pageId, stamp)
+      setTextBroken(db, text.id, false)
+    }
   }
 }
 

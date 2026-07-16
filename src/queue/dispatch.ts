@@ -78,6 +78,16 @@ export function setJobGenerationOptions(jobId: string, options: GenerationOption
   jobGenerationOptions.set(jobId, options)
 }
 
+/**
+ * Drops a job's ephemeral in-memory state (guidance + generation options). Dispatch clears these
+ * as it claims a job, but a job cancelled while still *pending* never gets dispatched — call this
+ * on that path so its entries don't leak for the lifetime of the process.
+ */
+export function clearJobEphemeralState(jobId: string): void {
+  jobGuidance.delete(jobId)
+  jobGenerationOptions.delete(jobId)
+}
+
 // Deliberately not gated by src/middleware/session-guard.ts — this loop isn't an HTTP
 // request, and per the single-active-session design a job a since-superseded session
 // started still runs to completion; claiming only changes who's allowed to submit *new*
@@ -413,26 +423,54 @@ async function resolveHordeJob(
 
   if (status.done) {
     const fullText = status.text ?? ''
-    const targetText = getText(db, targetTextId)
-    const targetPage = targetText ? getPage(db, targetText.pageId) : null
     const tokenEstimate = Math.ceil(fullText.length / 4)
+    try {
+      const targetText = getText(db, targetTextId)
+      const targetPage = targetText ? getPage(db, targetText.pageId) : null
 
-    fillTextGeneration(db, targetTextId, {
-      genPackage: fullText,
-      genMetrics: JSON.stringify({ tokenEstimate }),
-    })
-    if (targetPage) {
-      maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId)
-      const logbook = getBookByType(db, 'logbook')
-      if (logbook) maybeEnqueueStoryToDateJob(db, userId, storyId, logbook.id)
+      fillTextGeneration(db, targetTextId, {
+        genPackage: fullText,
+        genMetrics: JSON.stringify({ tokenEstimate }),
+      })
+
+      // Follow-up bookkeeping (story-name + story-to-date enqueue) is secondary to delivering the
+      // reply — isolate it so a throw here can't abort completion below and leave the job stuck
+      // 'running' to be re-polled (and re-thrown) every tick forever.
+      try {
+        if (targetPage) {
+          maybeQueueStoryNameJob(db, userId, storyId, targetPage, targetTextId)
+          const logbook = getBookByType(db, 'logbook')
+          if (logbook) maybeEnqueueStoryToDateJob(db, userId, storyId, logbook.id)
+        }
+      } catch (err) {
+        createLogger({ jobId: job.id, jobType: 'horde-resolve' }).error(
+          'horde post-completion follow-up failed (reply still delivered)',
+          { error: err instanceof Error ? err.message : String(err) },
+        )
+      }
+
+      hordeJobTerminal(job.id)
+      // job.model was recorded at submit time (see executeHordeProseSubmit) — reading it back
+      // here, rather than re-querying getAgentProfile("author"), is what keeps attribution
+      // correct if the user reordered/edited Agents configs while this job was in flight.
+      finishJob(db, job.id, 'done', undefined, { model: job.model ?? undefined, tokenEstimate })
+      publishDone(job.id, fullText)
+    } catch (err) {
+      // Delivering the reply itself failed (e.g. the fillTextGeneration write). Fail the job
+      // terminally so the error surfaces and it stops being re-polled — otherwise it stays
+      // 'running' with horde_request_id set and this branch re-runs (and re-fails) every tick,
+      // the exact silent-stuck-forever state this guard exists to prevent.
+      const message = err instanceof Error ? err.message : String(err)
+      createLogger({ jobId: job.id, jobType: 'horde-resolve' }).error(
+        'horde job completion failed',
+        {
+          error: message,
+        },
+      )
+      hordeJobTerminal(job.id)
+      finishJob(db, job.id, 'failed', message)
+      publishError(job.id, message)
     }
-
-    hordeJobTerminal(job.id)
-    // job.model was recorded at submit time (see executeHordeProseSubmit) — reading it back
-    // here, rather than re-querying getAgentProfile("author"), is what keeps attribution
-    // correct if the user reordered/edited Agents configs while this job was in flight.
-    finishJob(db, job.id, 'done', undefined, { model: job.model ?? undefined, tokenEstimate })
-    publishDone(job.id, fullText)
     return
   }
 

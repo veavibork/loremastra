@@ -52,6 +52,7 @@ export async function executeStoryToDateNameJob(
           lastError = `no usable [NAME] block on attempt ${attempt}: "${rawText.trim().slice(0, 80)}"`
         }
       } catch (err) {
+        if (err instanceof JobCancelledError) throw err
         lastError = `attempt ${attempt} failed: ${err instanceof Error ? err.message : String(err)}`
       }
     }

@@ -98,13 +98,11 @@ export function enqueueEligibleFoldJob(
 }
 
 function nextSegmentKind(db: Database.Database, logbookId: string): StoryBlockKind | null {
-  const ready = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken)
-  if (!ready.length) return 'begins'
-  const incomplete = listStoryToDateSegments(db, logbookId).find(
-    (s) => !s.content?.trim() && !s.broken,
-  )
+  const segments = listStoryToDateSegments(db, logbookId)
+  const incomplete = segments.find((s) => !s.content?.trim() && !s.broken)
   if (incomplete) return null
-  return 'continues'
+  const ready = segments.filter((s) => s.content?.trim() && !s.broken)
+  return ready.length ? 'continues' : 'begins'
 }
 
 /** Queue a story-to-date Editor job when assembled Author prompt crosses the trigger threshold. */
