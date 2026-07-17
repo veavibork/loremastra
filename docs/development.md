@@ -750,6 +750,25 @@ Findings (artifacts: `data/experiments/verify-ab/2026-07-17T12-53-24-736Z/`):
 - Judge noise exists (one pass-verdict with a listed missing item; counts vary run to run) — it
   would need calibration (e.g. majority vote) before acting as an unattended production gate.
 
+#### Follow-up (same day): window halved 24 → 12; Flash rejected as Editor
+
+- **`NEXT_SCENE_INPUT_WINDOW_POSTS` 24 → 12** (`NEXT_SCENE_MAX_COVERAGE_DELTA` 32 → 20): since
+  the model treats the input ceiling as the scene boundary no matter what the prompt says, the
+  window must carry the scene budget. Validation rerun on the dense fight window: blocks now
+  land at ~15–20 words of memory per covered post (vs ~4–11 at window 24) and stay scene-scoped.
+  Judge missing-counts on these runs (12/2/17 across identical trials) mostly measured judge
+  granularity variance, not block quality — confirmed by hand-reading blocks vs judge lists
+  (one "17 missing" list included events the block plainly contained, plus staging its own
+  rubric excludes).
+- **DeepSeek-V4-Flash rejected for the Editor role** despite ~4× speed (25s vs 81–114s/trial):
+  2/3 trials produced no parseable `[STORY CONTINUES]`/`[COVERAGE]` output, and the successful
+  block was semi-coherent with confabulated events ("photograph Jesse left behind", a "3:48"
+  timestamp, phrases like "dispersing protein fly blow across Ash Wednesday memory") and
+  narrated posts beyond its claimed coverage. Pro's earlier multi-minute stalls were upstream
+  congestion, not its normal profile. Editor stays on DeepSeek-V4-Pro.
+- Harness now saves `failed-raw-N.txt` on parse/validation failure and takes `--model` for
+  side-by-side model trials.
+
 ### Streaming/refresh review + fixes — ✅ done, 2026-07-17
 
 Full audit of SSE, polling, and timer state after the polling-elimination refactor. Fixed:

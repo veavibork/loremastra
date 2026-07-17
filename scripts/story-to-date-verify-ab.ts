@@ -84,6 +84,8 @@ if (!storyId || storyId.startsWith('--')) {
 const trials = Number(argValue(args, '--trials') ?? 3)
 const afterSeqs = (argValue(args, '--after') ?? '0,1').split(',').map((s) => Number(s.trim()))
 const arms = (argValue(args, '--arms') ?? 'A,B').split(',').map((s) => s.trim()) as ('A' | 'B')[]
+/** Override the Editor model (e.g. --model deepseek-ai/DeepSeek-V4-Flash) without touching DB config. */
+const modelOverride = argValue(args, '--model')
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -95,7 +97,8 @@ if (!story) throw new Error(`story not found: ${storyId}`)
 const db = getStoryDb(storyId, { skipRecovery: true })
 const logbook = getBookByType(db, 'logbook')
 if (!logbook) throw new Error('story has no logbook')
-const editor: AgentProfile = getAgentProfile(story.ownerUserId, 'editor')
+const baseEditor = getAgentProfile(story.ownerUserId, 'editor')
+const editor: AgentProfile = modelOverride ? { ...baseEditor, model: modelOverride } : baseEditor
 const apiKey =
   process.env.FEATHERLESS_API_KEY?.trim() ||
   getDecryptedFeatherlessKey(globalDb, story.ownerUserId) ||
@@ -129,6 +132,8 @@ interface GenOutcome {
   calls: number
   gateRetries: number
   messages: ChatMessage[]
+  /** Raw responses from attempts that failed to parse or validate — kept for diagnosis. */
+  failedRaws: string[]
 }
 
 function validateCandidate(
@@ -171,6 +176,7 @@ async function generateCandidate(
   let calls = 0
   let gateRetries = 0
   let lastError = 'unknown'
+  const failedRaws: string[] = []
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     // Mirror worker.ts: a thrown call (idle timeout, transient 5xx) consumes an attempt
@@ -264,17 +270,19 @@ async function generateCandidate(
 
     if (!candidate) {
       lastError = 'missing block or coverage'
+      failedRaws.push(raw)
       continue
     }
     candidate = { ...candidate, block: sanitizeStoryBlockContent(candidate.block) }
     const invalid = validateCandidate(candidate, corpus, priorCoverage, priorBlock)
     if (invalid) {
       lastError = invalid
+      failedRaws.push(raw)
       continue
     }
-    return { candidate, failReason: null, calls, gateRetries, messages }
+    return { candidate, failReason: null, calls, gateRetries, messages, failedRaws }
   }
-  return { candidate: null, failReason: lastError, calls, gateRetries, messages }
+  return { candidate: null, failReason: lastError, calls, gateRetries, messages, failedRaws }
 }
 
 // ---------------------------------------------------------------------------
@@ -402,6 +410,7 @@ async function runTrial(
       durationMs: Date.now() - t0,
     })
     writeFileSync(join(dir, 'FAILED.txt'), gen.failReason ?? 'unknown')
+    gen.failedRaws.forEach((r, i) => writeFileSync(join(dir, `failed-raw-${i + 1}.txt`), r))
     console.log(`  ${scenario} ${arm} t${trial}: GENERATION FAILED (${gen.failReason})`)
     return
   }

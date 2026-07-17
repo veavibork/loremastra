@@ -541,8 +541,15 @@ export function storyBlockWordCount(text: string): number {
  * coverage, so the input ceiling — and therefore the max claimable coverage — stays within
  * one job of the front edge. Catch-up over a large backlog happens by chaining jobs (the
  * executor re-checks the trigger after each fill), not by widening one job's input.
+ *
+ * Sized to roughly one scene's worth of material, because the verify-ab experiment
+ * (2026-07-17, development.md) showed the model runs coverage to the input ceiling on
+ * essentially every call regardless of the "stop at the first scene seam" instruction —
+ * the ceiling IS the effective scene boundary, so it has to carry the length budget the
+ * prompt alone can't enforce. At 24, dense stretches (20+ posts of consequential events)
+ * saturated the one-scene block and real events fell out of memory.
  */
-export const NEXT_SCENE_INPUT_WINDOW_POSTS = 24
+export const NEXT_SCENE_INPUT_WINDOW_POSTS = 12
 /** Next-scene continues: minimum words-per-covered-post before we treat coverage as a sprint. */
 export const NEXT_SCENE_MIN_WORDS_PER_COVERED_POST = 2.5
 /** Only apply the sprint gate once coverage advances at least this many posts. */
@@ -553,7 +560,7 @@ export const NEXT_SCENE_COVERAGE_SPRINT_MIN_DELTA = 15
  * by a margin for interleaved hidden OOC turns — it should never bind on a windowed input,
  * only on non-windowed paths and regressions.
  */
-export const NEXT_SCENE_MAX_COVERAGE_DELTA = 32
+export const NEXT_SCENE_MAX_COVERAGE_DELTA = 20
 
 /** True when a next-scene continues block claims far more posts than its length can support. */
 export function looksNextSceneCoverageSprint(block: string, coverageDelta: number): boolean {
