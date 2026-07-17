@@ -31,7 +31,8 @@ import { createLogger } from '../../inference/outbound-telemetry.js'
 import { releaseSlot } from '../slots.js'
 import { streamingModels, runningControllers, handleStreamingCancel } from '../cancel.js'
 import { streamWithFallback } from '../provider-dispatch.js'
-import { publishDone, publishError, publishJobCreated } from '../job-events.js'
+import { publishDone, publishError } from '../job-events.js'
+import { publishStoryDataChanged } from '../story-events.js'
 
 export type GuidanceIntent = 'regenerate' | 'continue'
 
@@ -127,7 +128,7 @@ export async function executeSetupJob(
           slotCost: getAgentProfile(userId, 'editor').concurrencyCost,
           priority: 10,
         })
-        publishJobCreated(worldbookJob.id, worldbookJob.jobType, storyId)
+        publishStoryDataChanged(storyId, 'jobs')
         followUp = { jobId: worldbookJob.id, pageId: worldbookPage.id }
       } catch (err) {
         createLogger({ jobId, storyId, jobType: 'setup' }).error(

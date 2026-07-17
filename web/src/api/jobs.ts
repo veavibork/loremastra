@@ -122,7 +122,7 @@ export function streamJob(
 
 export interface StoryDataEvent {
   type: 'data-changed'
-  kind: 'worldbook' | 'segments'
+  kind: 'worldbook' | 'segments' | 'jobs'
 }
 
 /**

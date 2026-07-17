@@ -14,7 +14,7 @@ import { completeChat, type ChatMessage } from '../../inference/featherless.js'
 import { WORLDBOOK_COMPACT_SYSTEM_PROMPT } from '../../prompts.js'
 import { getAgentProfile } from '../agent-config.js'
 import { estimateTokens } from '../story-to-date/engine.js'
-import { publishJobCreated } from '../../queue/job-events.js'
+import { publishStoryDataChanged } from '../../queue/story-events.js'
 /** Large worldbook entries can legitimately take several minutes to compact — still bounded. */
 export const WORLDBOOK_COMPACT_TIMEOUT_MS = 10 * 60_000
 
@@ -216,6 +216,7 @@ export async function compactStoryWorldbook(
 export function enqueueWorldbookCompactJob(
   db: Database.Database,
   userId: string,
+  storyId: string,
   opts: WorldbookCompactOpts = {},
 ): JobRow {
   if (hasActiveWorldbookCompactJob(db)) {
@@ -237,6 +238,6 @@ export function enqueueWorldbookCompactJob(
     priority: 0,
   })
   setWorldbookCompactJobOpts(job.id, opts)
-  publishJobCreated(job.id, job.jobType)
+  publishStoryDataChanged(storyId, 'jobs')
   return job
 }

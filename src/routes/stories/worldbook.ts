@@ -87,9 +87,10 @@ worldbookRoute.post(
   sValidator('json', compactSchema, validationHook),
   (c) => {
     const body = c.req.valid('json')
-    const storyDb = openTrackedStoryDb(c.req.param('id')!)
+    const storyId = c.req.param('id')!
+    const storyDb = openTrackedStoryDb(storyId)
     try {
-      const job = enqueueWorldbookCompactJob(storyDb, c.get('userId'), {
+      const job = enqueueWorldbookCompactJob(storyDb, c.get('userId'), storyId, {
         entryType: body.entryType,
         includeHidden: body.includeHidden,
       })

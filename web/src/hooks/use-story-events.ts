@@ -2,9 +2,13 @@ import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { streamStoryEvents } from '../api'
 
-const KIND_QUERY_KEYS: Record<'worldbook' | 'segments', string> = {
+const KIND_QUERY_KEYS: Record<'worldbook' | 'segments' | 'jobs', string> = {
   worldbook: 'worldbook',
   segments: 'story-to-date',
+  // 'jobs' pings fire on job creation — the Queue tab keeps its own 2s poll for status
+  // transitions (claim/finish happen inside executors that don't all publish), but a new job
+  // appears in the list instantly instead of on the next poll tick.
+  jobs: 'jobs',
 }
 
 /**

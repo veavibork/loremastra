@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events'
 const emitter = new EventEmitter()
 emitter.setMaxListeners(0)
 
-export type StoryDataKind = 'worldbook' | 'segments'
+export type StoryDataKind = 'worldbook' | 'segments' | 'jobs'
 
 export interface StoryDataEvent {
   type: 'data-changed'

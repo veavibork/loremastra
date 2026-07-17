@@ -29,7 +29,7 @@ import {
   setJobGuidance,
   setJobGenerationOptions,
 } from '../queue/dispatch.js'
-import { publishJobCreated } from '../queue/job-events.js'
+import { publishStoryDataChanged } from '../queue/story-events.js'
 import { enqueueEligibleStoryToDateJob } from './story-to-date/index.js'
 import { onCanonicalTextChangedForStory } from './context/invalidation.js'
 import { finalizeSetup } from './story-transition.js'
@@ -155,7 +155,7 @@ export function postMessage(
     slotCost: getAgentProfile(userId, 'author').concurrencyCost,
     priority: 10,
   })
-  publishJobCreated(job.id, job.jobType, storyId)
+  publishStoryDataChanged(storyId, 'jobs')
   if (generationOptions) setJobGenerationOptions(job.id, generationOptions)
   enqueueEligibleStoryToDateJob(storyDb, userId, logbook.id, storyId)
 
@@ -203,7 +203,7 @@ export function retryPost(
     slotCost: getAgentProfile(userId, isSetupPage ? 'editor' : 'author').concurrencyCost,
     priority: 10,
   })
-  publishJobCreated(job.id, job.jobType, storyId)
+  publishStoryDataChanged(storyId, 'jobs')
   if (guidance?.trim()) setJobGuidance(job.id, guidance.trim(), 'regenerate')
   if (!isSetupPage && generationOptions) setJobGenerationOptions(job.id, generationOptions)
 
@@ -287,7 +287,7 @@ export function continueStory(
     slotCost: getAgentProfile(userId, isSetupContinuation ? 'editor' : 'author').concurrencyCost,
     priority: 10,
   })
-  publishJobCreated(job.id, job.jobType, storyId)
+  publishStoryDataChanged(storyId, 'jobs')
   if (guidance?.trim()) setJobGuidance(job.id, guidance.trim(), 'continue')
   if (!isSetupContinuation && generationOptions) setJobGenerationOptions(job.id, generationOptions)
 
@@ -339,7 +339,7 @@ export function postSetupMessage(
     slotCost: getAgentProfile(userId, 'editor').concurrencyCost,
     priority: 10,
   })
-  publishJobCreated(job.id, job.jobType, storyId)
+  publishStoryDataChanged(storyId, 'jobs')
   return { userPageId: userPage.id, agentPageId: agentPage.id, jobId: job.id }
 }
 
@@ -382,7 +382,7 @@ export function kickoffStory(
     slotCost: getAgentProfile(userId, 'author').concurrencyCost,
     priority: 10,
   })
-  publishJobCreated(job.id, job.jobType, storyId)
+  publishStoryDataChanged(storyId, 'jobs')
   return { agentPageId: page.id, jobId: job.id }
 }
 

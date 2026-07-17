@@ -104,9 +104,11 @@ export function publishCancelled(jobId: string): void {
   buffers.delete(jobId)
   emitter.emit(jobId, { type: 'cancelled' })
 }
-export function publishJobCreated(jobId: string, jobType: string, storyId?: string): void {
-  emitter.emit(jobId, { type: 'created', jobType, storyId, at: new Date().toISOString() })
-}
+// publishJobCreated used to live here, emitting a 'created' event on the per-job channel — but
+// no client can be subscribed to a job's channel before it learns the job id from the creating
+// request's response, so every emission fired into an empty room. Job creation now publishes a
+// 'jobs' data-changed ping on the story-scoped bus (story-events.ts) instead, where the Queue
+// tab's listener exists before the job does.
 
 export function publishJobClaimed(jobId: string): void {
   emitter.emit(jobId, { type: 'claimed', at: new Date().toISOString() })
@@ -143,7 +145,6 @@ export type JobEvent =
   | { type: 'cancelled' }
   | { type: 'queued' }
   | { type: 'prefill'; inputTokenEstimate?: number }
-  | { type: 'created'; jobType: string; storyId: string; at: string }
   | { type: 'claimed'; at: string }
   | { type: 'started'; at: string }
 

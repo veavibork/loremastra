@@ -10,7 +10,7 @@ import { getGlobalDb } from '../db/global-db.js'
 import { getAgentProfile } from '../services/agent-config.js'
 import { isOpeningPostPage } from '../services/story-transition.js'
 import { enqueueEligibleStoryToDateJob } from '../services/story-to-date/index.js'
-import { publishJobCreated } from './job-events.js'
+import { publishStoryDataChanged } from './story-events.js'
 import { DEFAULT_STORY_NAME } from '../db/story-store.js'
 import type { PageRow } from '../db/page-store.js'
 
@@ -33,13 +33,13 @@ export function maybeQueueStoryNameJob(
 
   const story = getStory(getGlobalDb(), storyId)
   if (!story || story.name !== DEFAULT_STORY_NAME) return
-  const job = createJob(db, {
+  createJob(db, {
     targetTextId,
     jobType: 'story-name',
     slotCost: getAgentProfile(userId, 'worker').concurrencyCost,
     priority: -1,
   })
-  publishJobCreated(job.id, job.jobType, storyId)
+  publishStoryDataChanged(storyId, 'jobs')
 }
 
 export function maybeEnqueueStoryToDateJob(

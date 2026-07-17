@@ -1,7 +1,12 @@
 import { logUnhandledError } from './lib/errors.js'
-import { startHealthSnapshots, type HealthSnapshot } from './lib/pipeline-health.js'
+import {
+  startHealthSnapshots,
+  stopHealthSnapshots,
+  type HealthSnapshot,
+} from './lib/pipeline-health.js'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
+import { stopAllConcurrencyFeeds } from './queue/concurrency-feed.js'
 import { storiesRoute } from './routes/stories.js'
 import { layoutRoute } from './routes/layout.js'
 import { agentsRoute } from './routes/agents.js'
@@ -12,7 +17,12 @@ import { sessionsRoute } from './routes/sessions.js'
 import { accountRoute } from './routes/account.js'
 import { preferenceProfilesRoute } from './routes/preference-profiles.js'
 import { sessionGuard, type AppVariables } from './middleware/session-guard.js'
-import { startPipelineRunner, trackStoryDb, getTrackedJobCounts } from './queue/dispatch.js'
+import {
+  startPipelineRunner,
+  stopPipelineRunner,
+  trackStoryDb,
+  getTrackedJobCounts,
+} from './queue/dispatch.js'
 import { getQueueStatus } from './queue/slots.js'
 import { getGlobalDb } from './db/global-db.js'
 import { listAllStories } from './db/story-store.js'
@@ -78,9 +88,31 @@ function trackAllStoriesAtStartup(): void {
 
 trackAllStoriesAtStartup()
 startPipelineRunner()
-serve({ fetch: app.fetch, port }, (info) => {
+const server = serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Loremaster listening on http://localhost:${info.port}`)
 })
+
+/**
+ * Graceful shutdown — SIGTERM is what systemd sends on `systemctl stop/restart` (VM deploys),
+ * SIGINT is Ctrl+C in dev. Stop claiming new work first (pipeline runner), then the periodic
+ * loggers and upstream feeds, then the HTTP listener. Jobs already mid-flight are NOT awaited:
+ * SQLite's WAL keeps their writes crash-safe and recoverStaleJobs re-pends anything left
+ * 'running' on next boot — waiting minutes for an Editor call to finish would just make
+ * restarts hang. The 5s hard-exit backstop covers a listener that won't close (stuck SSE).
+ */
+let shuttingDown = false
+function shutdown(signal: string): void {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[shutdown] ${signal} received — stopping pipeline, feeds, and HTTP listener`)
+  stopPipelineRunner()
+  stopHealthSnapshots()
+  stopAllConcurrencyFeeds()
+  server.close(() => process.exit(0))
+  setTimeout(() => process.exit(0), 5000).unref()
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
 
 // -- Global error handlers --
 
