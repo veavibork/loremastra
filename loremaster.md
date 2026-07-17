@@ -223,10 +223,11 @@ This is the core of LM's context management (shipped 2026-07-04). Older history 
 ### Trigger and input
 
 - **Trigger:** when the fully assembled Author prompt (system + worldbook + merged story-to-date + verbose tail) reaches **80%** of usable context (context limit minus response reserve).
-- **Editor input:** worldbook + verbose prose through the same **80%** cutoff; `[STORY CONTINUES]` also receives the prior merged `[STORY TO DATE]` text.
+- **Editor input:** worldbook + verbose prose, plus the prior merged `[STORY TO DATE]` for `[STORY CONTINUES]`. `[STORY BEGINS]` takes the log up to the **80%** token cutoff; `[STORY CONTINUES]` is **windowed to the next 24 visible posts after prior coverage** (`NEXT_SCENE_INPUT_WINDOW_POSTS`) — the input ceiling structurally caps how far `[COVERAGE]` can claim, so a segment can never skip past unsummarized scenes (2026-07-17 fix; a 60-post backlog once produced a segment that claimed 56 posts while summarizing only the final scene). Catch-up over a backlog happens by chaining jobs — the executor re-checks the trigger after each fill.
 - **Seam gate:** if coverage equals the input ceiling (mid-scene cut), one retry with step-back instructions.
+- **Sprint gate:** a continues block claiming more than 32 posts (`NEXT_SCENE_MAX_COVERAGE_DELTA`, margin above the window for hidden turns), or fewer than 2.5 words per claimed post, is rejected with a rewrite retry.
 
-Implementation: `src/services/story-to-date.ts`, `src/services/story-to-date-worker.ts`, `src/services/history.ts`. Local iteration harness: `scripts/story-to-date-experiment.ts` (see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md)).
+Implementation: `src/services/story-to-date/` (`index.ts` trigger/enqueue, `worker.ts` job execution, `engine.ts` corpus + gates), `src/services/history.ts` (assembly). Local iteration harness: `scripts/story-to-date-experiment.ts` (see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md)).
 
 ### Content stamps and invalidation
 

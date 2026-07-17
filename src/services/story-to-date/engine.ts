@@ -97,6 +97,13 @@ export interface CorpusOptions {
   priorStoryToDate?: string | null
   /** Experiment override: include posts through this IC post number even if over token budget. */
   throughPost?: number | null
+  /**
+   * Cap on visible posts included in the Editor input. Bounding the window is what structurally
+   * prevents coverage sprints: the model cannot claim coverage over posts it never saw, so a
+   * segment's coverage can't skip past unsummarized scenes no matter what [COVERAGE] it reports.
+   * Ignored when throughPost is set (explicit experiment override).
+   */
+  maxIncludedPosts?: number | null
 }
 
 /** Build worldbook + full verbose history stats and a truncated corpus for Editor input. */
@@ -173,7 +180,9 @@ export function buildStoryCorpus(
       inputCeilingPageId = post.pageId
     }
   } else {
+    const maxPosts = options.maxIncludedPosts ?? Infinity
     for (const post of posts) {
+      if (includedPosts.length >= maxPosts) break
       if (spent + post.tokens > inputBudget) break
       includedPosts.push(post)
       spent += post.tokens
@@ -527,12 +536,24 @@ export function storyBlockWordCount(text: string): number {
   return storyBlockWordList(text).length
 }
 
+/**
+ * Visible posts handed to a next-scene continues job. The window starts right after prior
+ * coverage, so the input ceiling — and therefore the max claimable coverage — stays within
+ * one job of the front edge. Catch-up over a large backlog happens by chaining jobs (the
+ * executor re-checks the trigger after each fill), not by widening one job's input.
+ */
+export const NEXT_SCENE_INPUT_WINDOW_POSTS = 24
 /** Next-scene continues: minimum words-per-covered-post before we treat coverage as a sprint. */
 export const NEXT_SCENE_MIN_WORDS_PER_COVERED_POST = 2.5
 /** Only apply the sprint gate once coverage advances at least this many posts. */
 export const NEXT_SCENE_COVERAGE_SPRINT_MIN_DELTA = 15
-/** Hard cap on posts one scene block may claim — catches ceiling-hugging sprints even with padded prose. */
-export const NEXT_SCENE_MAX_COVERAGE_DELTA = 70
+/**
+ * Hard cap on posts one scene block may claim. Coverage deltas count hidden turns while the
+ * input window counts only visible posts, so this sits above NEXT_SCENE_INPUT_WINDOW_POSTS
+ * by a margin for interleaved hidden OOC turns — it should never bind on a windowed input,
+ * only on non-windowed paths and regressions.
+ */
+export const NEXT_SCENE_MAX_COVERAGE_DELTA = 32
 
 /** True when a next-scene continues block claims far more posts than its length can support. */
 export function looksNextSceneCoverageSprint(block: string, coverageDelta: number): boolean {

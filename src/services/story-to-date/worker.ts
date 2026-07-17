@@ -20,6 +20,7 @@ import {
   mergeStoryToDate,
   hasLeakedStoryMarkers,
   looksNextSceneCoverageSprint,
+  NEXT_SCENE_INPUT_WINDOW_POSTS,
   sanitizeStoryBlockContent,
   shouldRetrySeamGate,
   STORY_BLOCK_DUPLICATE_OVERLAP_THRESHOLD,
@@ -62,6 +63,7 @@ function buildMessages(
     inputCutoff: STORY_TO_DATE_INPUT_CUTOFF,
     afterPageId: kind === 'continues' ? lastCoverage : null,
     priorStoryToDate,
+    maxIncludedPosts: kind === 'continues' ? NEXT_SCENE_INPUT_WINDOW_POSTS : null,
   })
 
   const corpusText = formatCorpusForEditor(corpus, corpus.includedPosts, true)

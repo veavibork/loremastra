@@ -18,6 +18,7 @@ import {
   buildStoryCorpus,
   estimateTokens,
   mergeStoryToDate,
+  NEXT_SCENE_INPUT_WINDOW_POSTS,
   selectFoldSet,
   STORY_TO_DATE_SOFT_CAP_TOKENS,
   type StoryBlockKind,
@@ -140,6 +141,7 @@ export function enqueueEligibleStoryToDateJob(
       inputCutoff: STORY_TO_DATE_INPUT_CUTOFF,
       afterPageId: last.coveragePageId,
       priorStoryToDate,
+      maxIncludedPosts: NEXT_SCENE_INPUT_WINDOW_POSTS,
     })
     if (!corpus.includedPosts.length) return null
   }

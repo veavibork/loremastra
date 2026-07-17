@@ -703,3 +703,23 @@ in favor of a single SSE-only update path. Three-phase refactor per `storyview-r
 Architecture doc: `docs/refactor/storyview-architecture.md`. 9 commits, deployed to VM.
 Bundle: 143KB gzipped JS (was 115KB pre-Phase 6). 0 typecheck errors, 0 lint errors, 1 pre-existing
 warning (forceTick exhaustive-deps, intentionally kept). 142 tests (126 Vitest + 16 Playwright).
+
+### Story-to-date coverage-skip fix (bounded input window) — ✅ done, 2026-07-17
+
+Live save `019f62e5` exposed a scene-loss bug: a continues job handed a 60-post backlog
+summarized only the final scene but self-reported `[COVERAGE]` 56 posts past prior coverage.
+The skipped scenes (an entire combat arc, posts 60–99) fell out of the umbrella — absent
+from the segment _and_ dropped from the verbose tail at assembly. Root cause: coverage is
+self-reported and every gate validated only the claim's back edge (ceiling, seam, words-per-post
+ratio — 236 words / 56 posts = 4.2 wpp sailed past the 2.5 sprint threshold and the 70-post cap).
+
+- **Structural fix:** continues corpora are windowed to the next 24 visible posts after prior
+  coverage (`NEXT_SCENE_INPUT_WINDOW_POSTS`, `maxIncludedPosts` corpus option). The input
+  ceiling now caps claimable coverage — the model can't skip scenes it never saw. Backlog
+  catch-up chains jobs (executor already re-checks the trigger after each fill).
+- **Belt-and-braces:** `NEXT_SCENE_MAX_COVERAGE_DELTA` 70 → 32 (window + hidden-turn margin).
+- Tests: `tests/services/story-to-date-engine.test.ts` (10 tests incl. the live failure shape).
+  Verified against the pulled VM save: worker input becomes posts 60–83 / 11k tokens (was
+  60–119 / 23k).
+- Planned next: A/B a model-judged coverage-verification pass on top (free tokens on
+  Featherless/Horde make the extra call cheap).
