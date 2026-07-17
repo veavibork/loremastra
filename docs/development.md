@@ -725,6 +725,31 @@ ratio — 236 words / 56 posts = 4.2 wpp sailed past the 2.5 sprint threshold an
 - Planned next: A/B a model-judged coverage-verification pass on top (free tokens on
   Featherless/Horde make the extra call cheap).
 
+#### Verification-pass A/B (2026-07-17) — ran; rewrite loop NOT adopted
+
+`scripts/story-to-date-verify-ab.ts` (kept for future runs): arm A = production flow, arm B =
+production + judge-audit + one rewrite-with-feedback, both arms' final blocks scored by the same
+judge. Run against the pulled VM save, windows after seg0 (posts 33–56) and seg1 (posts 60–83,
+the dense skinwalker fight). 12 trials, 8 scored (4 lost to Featherless stalls/empty completions).
+
+Findings (artifacts: `data/experiments/verify-ab/2026-07-17T12-53-24-736Z/`):
+
+- **The judge works as a detector.** Its missing-events lists were real and load-bearing
+  (verified by hand: Rook's clawed shoulder, Briar's transformation + threshold seal, the anchor
+  promise). It reliably flags blocks whose coverage claim outruns their content.
+- **The rewrite remedy failed.** Arm B went 0/3 pass with equal-or-worse final missing counts
+  (4–8) than arm A (1–7); offered "add the events or roll coverage back," DeepSeek added words
+  (272–386w vs A's ~220–275w) and still failed. ~1.7× calls per trial, plus more exposure to
+  upstream flakiness. Judge+rewrite is not worth wiring into production.
+- **Dense stretches saturate the one-scene block.** In the fight window every trial failed
+  regardless of arm — ~200–380 words cannot hold 20+ posts of consequential events. The lever is
+  narrower coverage per block, not longer blocks.
+- **The seam gate fired on 8/8 scored trials** — the model runs coverage to the input ceiling
+  essentially every time despite the "stop at first seam" instruction. The bounded window is
+  what actually contains it.
+- Judge noise exists (one pass-verdict with a listed missing item; counts vary run to run) — it
+  would need calibration (e.g. majority vote) before acting as an unattended production gate.
+
 ### Streaming/refresh review + fixes — ✅ done, 2026-07-17
 
 Full audit of SSE, polling, and timer state after the polling-elimination refactor. Fixed:
