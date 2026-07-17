@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { newId } from '../lib/uuid.js'
 import { nowIso } from '../lib/time.js'
+import { requestJobCancel } from '../queue/cancel.js'
 import type { StoryBlockKind } from '../services/story-to-date/engine.js'
 
 export interface StoryToDateSegmentRow {
@@ -209,12 +210,18 @@ export function hasActiveJobForStoryToDateSegment(
   return !!row
 }
 
+/** See the equivalent job-store.ts cancelPendingJobsForStoryToDate for why requestJobCancel is
+ * needed here too — a bare status UPDATE doesn't stop a running job's in-flight Featherless call. */
 export function cancelPendingJobsForStoryToDateSegment(
   db: Database.Database,
   segmentId: string,
 ): void {
+  const running = db
+    .prepare(`SELECT id FROM jobs WHERE target_story_to_date_id = ? AND status = 'running'`)
+    .all(segmentId) as { id: string }[]
   db.prepare(
     `UPDATE jobs SET status = 'cancelled', finished_at = ?, error = ?
      WHERE target_story_to_date_id = ? AND status IN ('pending', 'running')`,
   ).run(nowIso(), 'segment invalidated', segmentId)
+  for (const { id } of running) requestJobCancel(id)
 }

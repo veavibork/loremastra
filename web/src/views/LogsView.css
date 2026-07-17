@@ -16,6 +16,18 @@
 .logs-slots-bar {
   margin-bottom: 0.75rem;
   font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logs-panic-button {
+  font-size: 0.8rem;
+}
+
+.logs-panic-result {
+  font-size: 0.8rem;
+  opacity: 0.8;
 }
 
 .logs-table {

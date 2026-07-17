@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { newId } from '../lib/uuid.js'
 import { nowIso } from '../lib/time.js'
+import { requestJobCancel } from '../queue/cancel.js'
 
 export type JobType =
   | 'continuity'
@@ -207,10 +208,20 @@ export function hasActiveJobForStoryToDate(
   return !!row
 }
 
+/**
+ * Marking a running job's row 'cancelled' here doesn't stop it — its executor is still awaiting
+ * an in-flight Featherless call and won't notice until that call resolves on its own (Editor jobs:
+ * minutes), silently holding its concurrency slot the whole time. requestJobCancel aborts the
+ * real in-flight call for any row that's actually 'running' in this process, so the slot frees
+ * immediately instead of drifting.
+ */
 export function cancelPendingJobsForStoryToDate(
   db: Database.Database,
   targetStoryToDateId: string,
 ): void {
+  const running = db
+    .prepare(`SELECT id FROM jobs WHERE target_story_to_date_id = ? AND status = 'running'`)
+    .all(targetStoryToDateId) as { id: string }[]
   db.prepare(
     `UPDATE jobs SET status = 'cancelled', finished_at = ?, cancel_requested = 1, error = COALESCE(error, ?)
      WHERE target_story_to_date_id = ? AND status IN ('pending', 'running')`,
@@ -218,6 +229,7 @@ export function cancelPendingJobsForStoryToDate(
   db.prepare(
     `UPDATE jobs SET target_story_to_date_id = NULL WHERE target_story_to_date_id = ?`,
   ).run(targetStoryToDateId)
+  for (const { id } of running) requestJobCancel(id)
 }
 
 /** Most recent jobs regardless of status, for the Debug section's live queue view. */

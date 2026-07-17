@@ -18,7 +18,8 @@ import {
   cancelPendingJobsForStoryToDateSegment,
   type StoryToDateSegmentRow,
 } from '../../src/db/story-to-date-store.js'
-import { createJob } from '../../src/db/job-store.js'
+import { createJob, claimNextJob, cancelPendingJobsForStoryToDate } from '../../src/db/job-store.js'
+import { runningControllers } from '../../src/queue/cancel.js'
 
 let db: Database.Database
 let bookId: string
@@ -251,5 +252,37 @@ describe('cancelPendingJobsForStoryToDateSegment', () => {
     createJob(db, { jobType: 'story-to-date', targetStoryToDateId: seg.id })
     cancelPendingJobsForStoryToDateSegment(db, seg.id)
     expect(hasActiveJobForStoryToDateSegment(db, seg.id)).toBe(false)
+  })
+
+  it('aborts the in-flight controller for a running job instead of just flipping its status', () => {
+    const seg = createSegment('begins', 0)
+    createJob(db, { jobType: 'story-to-date', targetStoryToDateId: seg.id })
+    const job = claimNextJob(db, ['story-to-date'])!
+    const controller = new AbortController()
+    runningControllers.set(job.id, controller)
+    try {
+      cancelPendingJobsForStoryToDateSegment(db, seg.id)
+      expect(controller.signal.aborted).toBe(true)
+      expect(hasActiveJobForStoryToDateSegment(db, seg.id)).toBe(false)
+    } finally {
+      runningControllers.delete(job.id)
+    }
+  })
+})
+
+describe('cancelPendingJobsForStoryToDate', () => {
+  it('aborts the in-flight controller for a running job instead of just flipping its status', () => {
+    const seg = createSegment('begins', 0)
+    createJob(db, { jobType: 'story-to-date', targetStoryToDateId: seg.id })
+    const job = claimNextJob(db, ['story-to-date'])!
+    const controller = new AbortController()
+    runningControllers.set(job.id, controller)
+    try {
+      cancelPendingJobsForStoryToDate(db, seg.id)
+      expect(controller.signal.aborted).toBe(true)
+      expect(hasActiveJobForStoryToDateSegment(db, seg.id)).toBe(false)
+    } finally {
+      runningControllers.delete(job.id)
+    }
   })
 })

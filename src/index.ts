@@ -22,6 +22,7 @@ import {
   stopPipelineRunner,
   trackStoryDb,
   getTrackedJobCounts,
+  panicStopAllJobs,
 } from './queue/dispatch.js'
 import { getQueueStatus } from './queue/slots.js'
 import { getGlobalDb } from './db/global-db.js'
@@ -58,6 +59,7 @@ app.route('/api/settings', settingsSpacesRoute)
 app.route('/api/client-errors', clientErrorsRoute)
 app.route('/api/preference-profiles', preferenceProfilesRoute)
 app.get('/api/debug/slots', (c) => c.json(getQueueStatus(c.get('userId'))))
+app.post('/api/debug/slots/panic', (c) => c.json(panicStopAllJobs(c.get('userId'))))
 // Exempt from session-guard (GET only) — the profile picker needs this before any session exists.
 app.get('/api/users', (c) => c.json(listUsers(getGlobalDb())))
 

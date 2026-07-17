@@ -14,6 +14,12 @@ export async function fetchSlots(opts?: {
   return res.json()
 }
 
+/** Panic button: stops every pending/running job across every story this user owns. */
+export async function panicStopAllJobs(): Promise<{ aborted: number; reaped: number }> {
+  const res = await apiFetch(`/api/debug/slots/panic`, { method: 'POST' })
+  return res.json()
+}
+
 /**
  * Single job by id — for polling a specific long-running background job. Unlike fetchJobs
  * (capped to the 30 most recent), this can't lose track of the job if other jobs pile up

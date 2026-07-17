@@ -75,6 +75,7 @@ export {
   fetchJob,
   fetchSlots,
   cancelJob,
+  panicStopAllJobs,
   fetchActiveJobs,
   streamJob,
   streamStoryEvents,

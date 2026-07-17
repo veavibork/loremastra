@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import {
   claimNextJob,
+  cancelJob,
   finishJob,
   setHordeRequestId,
   setJobModel,
@@ -26,9 +27,10 @@ import {
   publishError,
   publishJobClaimed,
   publishJobStarted,
+  publishCancelled,
 } from './job-events.js'
 import { publishStoryDataChanged, type StoryDataKind } from './story-events.js'
-import { runningControllers } from './cancel.js'
+import { runningControllers, requestJobCancel } from './cancel.js'
 import {
   maybeQueueStoryNameJob,
   maybeEnqueueStoryToDateJob,
@@ -154,6 +156,38 @@ export function getTrackedJobCounts(): {
     hordeJobsRunning += listRunningHordeJobs(db).length
   }
   return { activeJobs, pendingJobs, hordeJobsRunning }
+}
+
+/**
+ * Panic button: stop every pending/running job across every story this user owns, right now.
+ * Running jobs get requestJobCancel'd (aborts the in-flight Featherless call, same as the
+ * per-job Stop button) rather than a bare status flip, so this doesn't just hide the queue while
+ * leaving the abandoned calls to keep burning concurrency slots in the background — the exact
+ * drift this was built to stop. A running job with no live controller (a zombie — its executor
+ * already exited without finalizing) is reaped by cancelling its row directly, same fallback the
+ * single-job cancel route uses. Featherless's own account-side usage can still lag behind this
+ * for jobs it's already mid-generation on — aborting stops us from waiting on them, but per prior
+ * testing Featherless doesn't necessarily free the real slot until that generation completes.
+ */
+export function panicStopAllJobs(userId: string): { aborted: number; reaped: number } {
+  const globalDb = getGlobalDb()
+  let aborted = 0
+  let reaped = 0
+  for (const [storyId, db] of trackedDbs) {
+    const story = getStory(globalDb, storyId)
+    if (!story || story.ownerUserId !== userId) continue
+    for (const job of listActiveJobs(db)) {
+      if (job.status === 'running' && requestJobCancel(job.id)) {
+        aborted++
+        continue
+      }
+      clearJobEphemeralState(job.id)
+      cancelJob(db, job.id)
+      publishCancelled(job.id)
+      reaped++
+    }
+  }
+  return { aborted, reaped }
 }
 
 export function startPipelineRunner(): void {

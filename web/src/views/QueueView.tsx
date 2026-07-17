@@ -1,4 +1,4 @@
-import { useJobs, useSlots } from '../hooks/use-jobs'
+import { useJobs, useSlots, usePanicStopAllJobs } from '../hooks/use-jobs'
 import { useNowTick } from '../hooks/use-now-tick'
 import type { Job } from '../api'
 import type { PanelProps } from '../lib/panel-types'
@@ -23,6 +23,7 @@ function jobResponse(job: Job): string {
 export default function QueueView({ story }: PanelProps) {
   const { data: jobs } = useJobs(story?.id ?? null, { background: true, refetchInterval: 2000 })
   const { data: slots } = useSlots({ background: true, refetchInterval: 2000 })
+  const panic = usePanicStopAllJobs()
 
   // The 2s refetch keeps the data fresh, but for a still-running job it returns deep-equal rows
   // that structural sharing collapses to the same reference — so the turnaround clock (a
@@ -31,11 +32,38 @@ export default function QueueView({ story }: PanelProps) {
 
   if (!story) return <div className="logs-view">No active story.</div>
 
+  function handlePanic() {
+    if (
+      !confirm(
+        'Hard-stop every queued and in-progress job across ALL your stories, right now?\n\n' +
+          'This aborts in-flight generations. Featherless may still hold onto a slot for a bit ' +
+          'after that for anything it was already mid-generation on — this stops us from waiting ' +
+          "on it, but can't force their side to free it instantly.",
+      )
+    ) {
+      return
+    }
+    panic.mutate()
+  }
+
   return (
     <div className="logs-view">
       <h2>Queue</h2>
       <div className="logs-slots-bar">
         Concurrency slots: {slots ? `${slots.used} / ${slots.max}` : '…'}
+        <button
+          type="button"
+          className="danger logs-panic-button"
+          onClick={handlePanic}
+          disabled={panic.isPending}
+        >
+          {panic.isPending ? 'Stopping…' : 'Panic — stop everything'}
+        </button>
+        {panic.data && (
+          <span className="logs-panic-result">
+            Aborted {panic.data.aborted}, reaped {panic.data.reaped}
+          </span>
+        )}
       </div>
       <table className="logs-table logs-jobs-table">
         <thead>
