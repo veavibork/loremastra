@@ -433,7 +433,7 @@ Featherless ($25/mo tier) uses an OpenAI-compatible API with streaming, capped a
 
 Ranked-choice model fallback (trying a second model if the first is unavailable) works within each provider independently. Generic OpenAI-compatible endpoints and additional providers remain deferred.
 
-The provider boundary is cleanly separated at the module level: `src/inference/featherless.ts`, `src/inference/horde.ts`, and their respective config modules handle provider-specific transport. The pipeline runner branches on provider at the dispatch level; extracting a common adapter interface is a known improvement captured in `docs/refactor/evaluation-roadmap.md` (F-032).
+The provider boundary is cleanly separated at the module level: `src/inference/featherless.ts`, `src/inference/horde.ts`, and their respective config modules handle provider-specific transport. The pipeline runner branches on provider at the dispatch level; extracting a common adapter interface is a known, deliberately deferred improvement (tracked as F-032 in a since-retired refactor evaluation).
 ---
 
 ## Multi-User & Second Provider Milestone
@@ -493,6 +493,6 @@ Phase 1 is complete — Loremaster is a purpose-built TypeScript application, de
 - **Auth:** Password-gated login, per-user sessions, admin-provisioned accounts only (`npm run user:create`)
 - **Dev tooling:** MCP server (`npm run mcp`), testing (vitest + playwright — `npm test`, `npm run test:e2e`), linting (oxlint — `npm run lint`), formatting (Prettier — `npm run format`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
 
-Deferred from Phase 1: full encryption at rest for story content, preference-profile CRUD, input-bar weapon wheel, bespoke touch-first chrome. See `docs/roadmap.md` for the open backlog.
+Deferred from Phase 1: full encryption at rest for story content, preference-profile CRUD, input-bar weapon wheel, bespoke touch-first chrome. See `docs/next-session.md` for open items.
 
 When beginning a development session, see `CLAUDE.md` for the session checklist and `docs/development.md` for milestone history.

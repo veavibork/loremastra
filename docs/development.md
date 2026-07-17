@@ -1,7 +1,8 @@
 # Loremaster development log
 
-Detailed milestone history and implementation notes. For a scannable backlog of open work only,
-see [roadmap.md](roadmap.md).
+Detailed milestone history and implementation notes. For the current session handoff and open
+items, see [next-session.md](next-session.md). (A separate roadmap.md backlog existed through
+2026-07-12; it was removed as stale — open work lives in next-session.md now.)
 
 Two checkpoints ahead: **Vertical Slice** (every core mechanism touched at least once, end-to-end, with
 a minimal real UI) and **Phase 1 Complete** (everything loremaster.md scopes to Phase 1, excluding the

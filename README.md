@@ -82,7 +82,7 @@ See [loremaster.md](loremaster.md) (MCP Server section) for the full MCP tool li
 ## Project layout
 
 - `scripts/` — one-off/dev scripts (DB init, user creation, dev server management)
-- `docs/roadmap.md` — high-level backlog (open items only)
+- `docs/next-session.md` — session handoff and open items
 - `docs/development.md` — detailed milestone history and implementation notes
 - `docs/providers/reasoning-stream-research.md` — thinking/reasoning stream probes, Effort matrix, future per-model confirmation workflow
 - `loremaster.md` — project mission, architecture, and terminology reference

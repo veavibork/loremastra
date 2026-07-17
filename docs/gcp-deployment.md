@@ -182,11 +182,9 @@ in one glance instead of guessing.
 Story-to-date memory replaces decad archives. After deploy, confirm segments and assembly:
 
 ```
-curl -s https://your-domain.example.com/api/stories/<id>/memory/summary \
+curl -s https://your-domain.example.com/api/stories/<id>/context/summary \
   -H "X-Loremaster-Session: <session>"
 curl -s https://your-domain.example.com/api/stories/<id>/story-to-date \
-  -H "X-Loremaster-Session: <session>"
-curl -s https://your-domain.example.com/api/stories/<id>/prompt-preview \
   -H "X-Loremaster-Session: <session>"
 ```
 
@@ -199,3 +197,20 @@ cd /opt/loremaster && npx tsx scripts/test-memory-pipeline-smoke.ts
 Existing stories get `story_to_date_segment` schema via migrations on first `getStoryDb()` open.
 Legacy `archive` rows are purged automatically. Content stamps backfill on open for diagnostics only
 (compress jobs are not enqueued).
+
+## Redeploy (routine update)
+
+The flow actually used (2026-07-17). No `npm install` needed unless `package.json` changed.
+
+```
+git push origin main                      # from the dev machine
+gcloud compute ssh <instance> --zone=<zone> --command='
+  cd /opt/loremaster && git pull --ff-only &&
+  npm run build && cd web && npm run build && cd .. &&
+  sudo systemctl restart loremaster'
+sudo journalctl -u loremaster -n 5        # expect "[shutdown] SIGTERM received" from the old
+                                          # process (graceful stop) then "Loremaster listening"
+```
+
+The frontend header shows the live commit hash — verify the deploy landed before debugging
+anything else (see reference_loremaster_build_info_header memory / app header).

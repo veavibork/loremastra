@@ -450,8 +450,8 @@ async function executeHordeProseSubmit(
 
 // How long a request is allowed to sit with is_possible: false (a live, continuously
 // recomputed "no worker currently matches this request" signal, not a one-time rejection —
-// see docs/roadmap.md's Horde research notes) before it's treated as a real failure rather
-// than a transient dip in pool availability.
+// see docs/development.md's "Horde as a second provider" notes) before it's treated as a
+// real failure rather than a transient dip in pool availability.
 const HORDE_IMPOSSIBLE_TIMEOUT_MS = 5 * 60_000
 const hordeImpossibleSince = new Map<string, number>()
 

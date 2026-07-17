@@ -69,7 +69,7 @@ const port = Number(process.env.PORT ?? 4113)
  * any story not reopened in the browser after a restart had its pending/running jobs sit frozen
  * indefinitely, even though nothing was actually wrong with them. Tracking every story at boot
  * closes that gap; cheap at this project's current scale (a handful of stories, single default
- * user — see docs/roadmap.md's Phase 2 backlog). Best-effort per story so one corrupt/missing
+ * user — see docs/development.md's Phase 2 backlog). Best-effort per story so one corrupt/missing
  * story file can't block the rest from being tracked or take down startup.
  */
 function trackAllStoriesAtStartup(): void {

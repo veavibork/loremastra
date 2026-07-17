@@ -28,7 +28,6 @@ sessions.
 | `loremaster.md`        | Authoritative project reference: mission, architecture, terminology, story flow, memory pipeline, UI structure, security model, provider abstraction |
 | `docs/conventions.md`  | Coding conventions: database, frontend, testing, TypeScript, linting                                                                                 |
 | `docs/omp-setup.md`    | OMP tooling: MCP servers, model recommendations, troubleshooting, raw API test kit                                                                   |
-| `docs/roadmap.md`      | Open backlog — build items and play-testing watch list                                                                                               |
 | `docs/development.md`  | Milestone history and implementation notes                                                                                                           |
 | `docs/next-session.md` | Session handoff — what's done, what's next                                                                                                           |
 
@@ -39,7 +38,7 @@ sessions.
 - **Validation:** `zod` + `@hono/standard-validator` · **Auth:** `bcryptjs` · **IDs:** UUID v7 (`uuid`)
 - **MCP SDK:** `@modelcontextprotocol/sdk`
 - **Run/dev:** `tsx` · **Compile:** `tsc`
-- **Test:** Vitest (126 tests, `tests/db/`, `tests/lib/`, `tests/services/`) + Playwright (16 tests: 9 contract + 7 critical path, `e2e/`)
+- **Test:** Vitest (136 tests, `tests/db/`, `tests/lib/`, `tests/services/`) + Playwright (16 tests: 9 contract + 7 critical path, `e2e/`)
 - **Formatter:** Prettier (`.prettierrc`) · **Linting:** `oxlint` for backend (`src`, `scripts`) and frontend (`web/`)
 
 ## Commands
