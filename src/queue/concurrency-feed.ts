@@ -90,9 +90,11 @@ function scheduleReconnect(userId: string, state: FeedState): void {
 async function connect(userId: string, state: FeedState): Promise<void> {
   if (state.stopped) return
   if (!state.apiKey) {
-    // No key configured — nothing to connect to. Callers see this via isFeedHealthy() staying
-    // false forever and fall back to the local counter.
-    scheduleReconnect(userId, state)
+    // No key configured — nothing to connect to, and nothing to retry: re-arming the reconnect
+    // timer here just churned a setTimeout every 10s forever for keyless (e.g. Horde-only) users.
+    // Callers see this via isFeedHealthy() staying false and fall back to the local counter;
+    // ensureConcurrencyFeedForUser starts a fresh feed the moment a key appears, because the
+    // stored state's key ('') won't match the new one.
     return
   }
 

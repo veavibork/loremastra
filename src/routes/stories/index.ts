@@ -26,6 +26,7 @@ import { positionRoute } from './position.js'
 import { messagesRoute } from './messages.js'
 import { worldbookRoute } from './worldbook.js'
 import { jobsRoute } from './jobs.js'
+import { eventsRoute } from './events.js'
 import { segmentsRoute } from './segments.js'
 import { contextRoute } from './context.js'
 
@@ -166,5 +167,6 @@ storiesRoute.route('/', positionRoute)
 storiesRoute.route('/', messagesRoute)
 storiesRoute.route('/', worldbookRoute)
 storiesRoute.route('/', jobsRoute)
+storiesRoute.route('/', eventsRoute)
 storiesRoute.route('/', segmentsRoute)
 storiesRoute.route('/', contextRoute)

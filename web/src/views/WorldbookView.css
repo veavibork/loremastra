@@ -169,3 +169,18 @@
   display: flex;
   gap: 0.5rem;
 }
+
+/* Inline edit inside the expanded card — full width, auto-grows to the content (see
+   AutoGrowTextarea), so editing happens at the same size the entry reads at. */
+.entry-edit-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  line-height: inherit;
+  background: transparent;
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  resize: none;
+}

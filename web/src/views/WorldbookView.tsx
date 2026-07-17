@@ -7,6 +7,7 @@ import {
   useCompactWorldbook,
 } from '../hooks/use-worldbook-mutations'
 import EntryContent from '../components/EntryContent'
+import AutoGrowTextarea from '../components/AutoGrowTextarea'
 import type { PanelProps } from '../lib/panel-types'
 import './WorldbookView.css'
 
@@ -79,6 +80,9 @@ export default function WorldbookView({ story }: PanelProps) {
   function startEdit(entry: WorldbookEntry) {
     setError(null)
     setDraft({ pageId: entry.pageId, entryType: entry.entryType, content: entry.content })
+    // Editing happens inline in the expanded card (not a separate cramped form view), so make
+    // sure the card is actually expanded when Edit is clicked from the collapsed state.
+    setExpanded((prev) => new Set(prev).add(entry.pageId))
   }
 
   async function saveDraft() {
@@ -186,7 +190,8 @@ export default function WorldbookView({ story }: PanelProps) {
 
       {error && <div className="error-banner">{error}</div>}
 
-      {draft ? (
+      {draft && draft.pageId === null ? (
+        // Creating a brand-new entry still uses the standalone form (there's no card to edit in).
         <EntryForm
           draft={draft}
           onChange={setDraft}
@@ -200,7 +205,8 @@ export default function WorldbookView({ story }: PanelProps) {
               <div key={type} className="entry-group">
                 <h3>{type}</h3>
                 {items.map((entry) => {
-                  const isExpanded = expanded.has(entry.pageId)
+                  const isEditing = draft?.pageId === entry.pageId
+                  const isExpanded = isEditing || expanded.has(entry.pageId)
                   return (
                     <div
                       key={entry.pageId}
@@ -210,7 +216,8 @@ export default function WorldbookView({ story }: PanelProps) {
                         <button
                           type="button"
                           className="entry-card-header"
-                          onClick={() => toggleExpanded(entry.pageId)}
+                          // Collapsing mid-edit would hide the editor out from under the draft.
+                          onClick={() => !isEditing && toggleExpanded(entry.pageId)}
                         >
                           <span
                             className={`entry-card-caret ${isExpanded ? 'entry-card-caret-open' : ''}`}
@@ -220,17 +227,43 @@ export default function WorldbookView({ story }: PanelProps) {
                           <strong>{previewText(entry.content)}</strong>
                         </button>
                         <div className="entry-card-actions">
-                          <button type="button" onClick={() => startEdit(entry)}>
-                            Edit
-                          </button>
-                          <button type="button" onClick={() => toggleHidden(entry)}>
-                            {entry.hidden ? 'unhide' : 'hide'}
-                          </button>
+                          {isEditing ? (
+                            <>
+                              <button type="button" onClick={() => void saveDraft()}>
+                                Save
+                              </button>
+                              <button type="button" onClick={() => setDraft(null)}>
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => startEdit(entry)}
+                                disabled={!!draft}
+                              >
+                                Edit
+                              </button>
+                              <button type="button" onClick={() => void toggleHidden(entry)}>
+                                {entry.hidden ? 'unhide' : 'hide'}
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                       {isExpanded && (
                         <div className="entry-card-content">
-                          <EntryContent content={entry.content} />
+                          {isEditing && draft ? (
+                            <AutoGrowTextarea
+                              className="entry-edit-textarea"
+                              value={draft.content}
+                              onChange={(content) => setDraft({ ...draft, content })}
+                              autoFocus
+                            />
+                          ) : (
+                            <EntryContent content={entry.content} />
+                          )}
                         </div>
                       )}
                     </div>

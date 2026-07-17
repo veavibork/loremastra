@@ -120,4 +120,40 @@ export function streamJob(
   }
 }
 
+export interface StoryDataEvent {
+  type: 'data-changed'
+  kind: 'worldbook' | 'segments'
+}
+
+/**
+ * Story-scoped data-change stream — held open for as long as the story is loaded (no terminal
+ * event, unlike streamJob). Drives query invalidation for the Worldbook/Segments tabs instead
+ * of fixed-interval polling. EventSource's native auto-reconnect is left in charge here: there
+ * is no per-event state to reconcile, so on any drop we just let it retry and call onReconnect
+ * once it's back — the caller refetches everything to cover events missed while disconnected.
+ */
+export function streamStoryEvents(
+  storyId: string,
+  onEvent: (event: StoryDataEvent) => void,
+  onReconnect: () => void,
+): () => void {
+  const sessionId = getSessionId()
+  const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : ''
+  const source = new EventSource(`${API_BASE}/api/stories/${storyId}/events${query}`)
+  let dropped = false
+  source.onmessage = (message) => {
+    onEvent(JSON.parse(message.data) as StoryDataEvent)
+  }
+  source.onerror = () => {
+    dropped = true
+  }
+  source.onopen = () => {
+    if (dropped) {
+      dropped = false
+      onReconnect()
+    }
+  }
+  return () => source.close()
+}
+
 export type { Job, ActiveJob, JobStreamEvent } from './types.js'

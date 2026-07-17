@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import { createJob, hasActiveJobForStoryToDate, hasActiveJobByType } from '../../db/job-store.js'
 import { publishJobCreated } from '../../queue/job-events.js'
+import { publishStoryDataChanged } from '../../queue/story-events.js'
 import { getStoryState } from '../../db/story-state-store.js'
 import { resolveIcStartPageId } from '../story-transition.js'
 import {
@@ -155,6 +156,8 @@ export function enqueueEligibleStoryToDateJob(
     slotCost: editor.concurrencyCost,
   })
   publishJobCreated(job.id, job.jobType, storyId)
+  // A new (still-empty) segment row is Segments-tab-visible immediately — ping watchers.
+  publishStoryDataChanged(storyId, 'segments')
   return segment.id
 }
 

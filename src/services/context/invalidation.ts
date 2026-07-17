@@ -9,6 +9,7 @@ import {
   enqueueEligibleStoryToDateJob,
   enqueuePendingStoryToDateJobs,
 } from '../story-to-date/index.js'
+import { publishStoryDataChanged } from '../../queue/story-events.js'
 import { resolveChainPostNumber } from '../post-index.js'
 import { invalidateStoryReadCache } from '../story-read-cache.js'
 
@@ -34,26 +35,30 @@ function invalidateStoryToDateForPage(
   const activeIds = new Set(pages.map((p) => p.id))
   const editedPost = resolveChainPostNumber(db, logbookId, pageId)
 
+  let deleted = 0
+  const drop = (segmentId: string) => {
+    cancelPendingJobsForStoryToDate(db, segmentId)
+    deleteStoryToDateSegment(db, segmentId)
+    deleted++
+  }
+
   for (const segment of listStoryToDateSegments(db, logbookId, {
     includeHidden: true,
     includeBroken: true,
   })) {
     if (segment.coveragePageId && !activeIds.has(segment.coveragePageId)) {
-      cancelPendingJobsForStoryToDate(db, segment.id)
-      deleteStoryToDateSegment(db, segment.id)
+      drop(segment.id)
       continue
     }
 
     if (!segment.content?.trim()) {
-      cancelPendingJobsForStoryToDate(db, segment.id)
-      deleteStoryToDateSegment(db, segment.id)
+      drop(segment.id)
       continue
     }
 
     const coverageIc = segment.coverageThroughIcPost
     if (editedPost != null && coverageIc != null && editedPost <= coverageIc) {
-      cancelPendingJobsForStoryToDate(db, segment.id)
-      deleteStoryToDateSegment(db, segment.id)
+      drop(segment.id)
       continue
     }
 
@@ -62,14 +67,17 @@ function invalidateStoryToDateForPage(
       const pageIndex = pages.findIndex((p) => p.id === pageId)
       const covIdx = pages.findIndex((p) => p.id === segment.coveragePageId)
       if (pageIndex >= 0 && covIdx >= 0 && pageIndex <= covIdx) {
-        cancelPendingJobsForStoryToDate(db, segment.id)
-        deleteStoryToDateSegment(db, segment.id)
+        drop(segment.id)
       }
     }
   }
 
   enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId)
   enqueuePendingStoryToDateJobs(db, userId, logbookId)
+  // A manual post edit/retry/undo that invalidated segments must reach an open Segments tab —
+  // this is the "manual edits" leg of the SSE invalidation design (enqueue above publishes its
+  // own ping when it creates a replacement segment).
+  if (deleted > 0) publishStoryDataChanged(storyId, 'segments')
 }
 
 export function onCanonicalTextChanged(
@@ -110,6 +118,7 @@ export function pruneStoryToDateOffActiveChain(
   const pages = listChronologicalPages(db, logbookId).filter((p) => !p.hidden)
   const activeIds = new Set(pages.map((p) => p.id))
 
+  let deleted = 0
   for (const segment of listStoryToDateSegments(db, logbookId, {
     includeHidden: true,
     includeBroken: true,
@@ -117,10 +126,12 @@ export function pruneStoryToDateOffActiveChain(
     if (segment.coveragePageId && !activeIds.has(segment.coveragePageId)) {
       cancelPendingJobsForStoryToDate(db, segment.id)
       deleteStoryToDateSegment(db, segment.id)
+      deleted++
     }
   }
 
   enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId)
+  if (deleted > 0) publishStoryDataChanged(storyId, 'segments')
 }
 
 export function onCanonicalTextChangedForStory(

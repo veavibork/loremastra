@@ -18,6 +18,7 @@ import {
 } from './api'
 import ClaimGate, { type GateReason } from './components/ClaimGate'
 import Nav from './components/Nav'
+import { useStoryEvents } from './hooks/use-story-events'
 import { useGlobalCssSettings } from './lib/global-css-settings'
 import { toast } from './lib/toast'
 import { PlayTabProvider } from './components/PlayTabSettings'
@@ -28,6 +29,13 @@ import './App.css'
 interface GateState {
   reason: GateReason
   info: SupersededInfo | null
+}
+
+/** Mounts the story-scoped SSE invalidation stream (see use-story-events.ts). Must live inside
+ * QueryClientProvider, which App's own function body is not. */
+function StoryEventsBridge({ storyId }: { storyId: string | null }) {
+  useStoryEvents(storyId)
+  return null
 }
 
 export default function App() {
@@ -95,6 +103,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <StoryEventsBridge storyId={story?.id ?? null} />
       <PlayTabProvider>
         <div className="story-app">
           <header className="app-header">

@@ -27,6 +27,7 @@ import {
   publishJobClaimed,
   publishJobStarted,
 } from './job-events.js'
+import { publishStoryDataChanged, type StoryDataKind } from './story-events.js'
 import { runningControllers } from './cancel.js'
 import {
   maybeQueueStoryNameJob,
@@ -64,6 +65,27 @@ const WORKER_JOB_TYPES: JobType[] = [
   'worldbook-compact',
 ]
 const PROSE_JOB_TYPES: JobType[] = ['prose', 'setup', 'setup-worldbook']
+
+/**
+ * Which story-scoped data view a finished job may have written to — drives the SSE
+ * data-changed ping that replaced the Worldbook/Segments tabs' fixed-interval polling.
+ * Published unconditionally on completion (success or failure): a failed story-to-date
+ * still deleted-then-recreated pending segment rows worth refetching, and a spurious
+ * refetch is one cheap GET.
+ */
+const JOB_DATA_KINDS: Partial<Record<JobType, StoryDataKind>> = {
+  'story-to-date': 'segments',
+  'story-to-date-fold': 'segments',
+  'segment-name': 'segments',
+  'worldbook-compact': 'worldbook',
+  setup: 'worldbook',
+  'setup-worldbook': 'worldbook',
+}
+
+function publishJobDataChanged(storyId: string, jobType: JobType): void {
+  const kind = JOB_DATA_KINDS[jobType]
+  if (kind) publishStoryDataChanged(storyId, kind)
+}
 
 /**
  * Guided retry's direction text is explicitly not stored as a post
@@ -229,6 +251,9 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       }
 
       dispatched = true
+      // Ping at dispatch-start too, not just completion — the Segments tab renders the memory
+      // job's own status (pending/running), and the pending→running flip happens right here.
+      publishJobDataChanged(storyId, job.jobType)
       if (job.jobType === 'story-to-date' && job.targetStoryToDateId) {
         const logbook = getBookByType(db, 'logbook')
         if (!logbook) {
@@ -244,7 +269,7 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
           logbook.id,
           job.id,
           job.targetStoryToDateId,
-        )
+        ).finally(() => publishJobDataChanged(storyId, job.jobType))
       } else if (job.jobType === 'story-to-date-fold' && job.targetStoryToDateId) {
         const logbook = getBookByType(db, 'logbook')
         if (!logbook) {
@@ -259,16 +284,23 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
           logbook.id,
           job.id,
           job.targetStoryToDateId,
-        )
+        ).finally(() => publishJobDataChanged(storyId, job.jobType))
       } else if (job.jobType === 'story-name' && job.targetTextId) {
         publishJobStarted(job.id)
         void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId)
       } else if (job.jobType === 'segment-name' && job.targetStoryToDateId) {
         publishJobStarted(job.id)
-        void executeStoryToDateNameJob(db, story.ownerUserId, job.id, job.targetStoryToDateId)
+        void executeStoryToDateNameJob(
+          db,
+          story.ownerUserId,
+          job.id,
+          job.targetStoryToDateId,
+        ).finally(() => publishJobDataChanged(storyId, job.jobType))
       } else if (job.jobType === 'worldbook-compact' && job.targetTextId) {
         publishJobStarted(job.id)
-        void executeWorldbookCompactJob(db, story.ownerUserId, job.id)
+        void executeWorldbookCompactJob(db, story.ownerUserId, job.id).finally(() =>
+          publishJobDataChanged(storyId, job.jobType),
+        )
       } else {
         finishJob(db, job.id, 'failed', `job ${job.id} (${job.jobType}) has no valid target`)
         releaseSlot(story.ownerUserId, job.id)
@@ -345,12 +377,27 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
     publishJobStarted(job.id)
     const guidance = jobGuidance.get(job.id)
     if (guidance) jobGuidance.delete(job.id)
-    void executeSetupJob(db, userId, job.id, job.targetTextId, controller.signal, storyId, guidance)
+    void executeSetupJob(
+      db,
+      userId,
+      job.id,
+      job.targetTextId,
+      controller.signal,
+      storyId,
+      guidance,
+    ).finally(() => publishJobDataChanged(storyId, job.jobType))
   } else if (job.jobType === 'setup-worldbook' && job.targetTextId) {
     const controller = new AbortController()
     runningControllers.set(job.id, controller)
     publishJobStarted(job.id)
-    void executeSetupWorldbookJob(db, userId, job.id, job.targetTextId, controller.signal, storyId)
+    void executeSetupWorldbookJob(
+      db,
+      userId,
+      job.id,
+      job.targetTextId,
+      controller.signal,
+      storyId,
+    ).finally(() => publishJobDataChanged(storyId, job.jobType))
   } else {
     finishJob(db, job.id, 'failed', `job ${job.id} (${job.jobType}) has no valid target`)
     releaseSlot(userId, job.id)
