@@ -4,7 +4,19 @@ Empirical notes from probing Featherless `deepseek-ai/DeepSeek-V4-Pro` — do no
 field names or SillyTavern/KAI behavior without re-probing on the actual provider.
 
 **Related:** [featherless-notes.md](featherless-notes.md) (API quirks), [development.md](../development.md)
-(milestone history).
+(milestone history), [model-shape-probe-2026-07-17.md](model-shape-probe-2026-07-17.md) (supersedes
+the routing mechanism below).
+
+> **Superseded 2026-07-17.** `looksLikeLeakedReasoningArtifact`, `proseStreamUsesReasoningTrace`, and
+> the peek-buffer machinery described below (`emitReasoningAsAnswer`, `REASONING_LEAK_PEEK_CHARS`)
+> were removed. Kimi-K2.7-Code's reasoning was leaking into visible prose the same way DeepSeek's
+> once did, but its reasoning text doesn't match the `article`-prefix signature this fix was built
+> from — proving the signature-based approach never generalized past the one model it was written
+> for. Trace routing is now shape-based instead: any reasoning-field or `<think>`-tagged content
+> always goes to the trace channel, for any model, no signature-matching or name-gating involved.
+> See [model-shape-probe-2026-07-17.md](model-shape-probe-2026-07-17.md) for the evidence and the
+> new design. The rest of this document is kept as the historical record of how the old mechanism
+> was diagnosed and built — still useful context, no longer current behavior.
 
 ## Probe scripts
 

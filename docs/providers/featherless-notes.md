@@ -223,11 +223,21 @@ etc.) — wired to the Author **Effort** toggle (`src/services/toggle-presets.ts
 
 **Effort Off** (`enable_thinking: false`): confirmed 2026-07-04 — prefill + false routes the full IC
 answer through **`delta.reasoning` only**, triggering false retries. Production now **skips prefill**
-and routes any stray `delta.reasoning` to the prose stream (`proseStreamUsesReasoningTrace` in
-`featherless.ts`). See [reasoning-stream-research.md](reasoning-stream-research.md).
+(`shouldPrefillReasoning` in `featherless.ts`) when Effort is Off.
 
 **Effort On** (`enable_thinking: true`): prefill + reasoning trace; meta planning in `delta.reasoning`,
 IC in `delta.content` when the model cooperates (non-deterministic at temp 1).
+
+**2026-07-17 update:** `enable_thinking` now defaults to `false` unless a caller explicitly sets it
+— not just an Author toggle default anymore, but the actual wire-level default for every call site
+(`streamWithFallback`, `completeChat`, `callWithTools`, all via `resolveChatTemplateKwargs()` in
+`src/inference/featherless.ts`), since at least one family (GLM-4.7-Flash) reasons as unmarked plain
+text with no `chat_template_kwargs` sent at all. `resolveChatTemplateKwargs` also sends **both**
+`enable_thinking` and `thinking` (DeepSeek/Kimi read the latter per the docs table above, not the
+former) rather than trusting one key name across every family. Reasoning-trace routing (whatever
+arrives via a `reasoning`/`reasoning_content` field or a `<think>` tag) is shape-based now, not gated
+by `isReasoningModel`'s name check. See [reasoning-stream-research.md](reasoning-stream-research.md) and
+[model-shape-probe-2026-07-17.md](model-shape-probe-2026-07-17.md).
 
 ## Deferred idea: cross-reference HuggingFace's own API for real per-model tags
 

@@ -401,7 +401,8 @@ Probe matrix and production results: [docs/providers/reasoning-stream-research.m
 trace (trace reset shipped in `21d33d7`; root cause fixed same day). `proseStreamUsesReasoningTrace` /
 `shouldPrefillReasoning` gate prefill, trace UI, idle timeout, and reasoning→prose routing on Effort
 Off vs On. Horde prose path unchanged (no reasoning-channel handling). Horde smoke test re-run after
-changes: OK.
+changes: OK. **2026-07-17:** `proseStreamUsesReasoningTrace` removed — trace routing is shape-based
+now, not gated by Effort/name; see [docs/providers/model-shape-probe-2026-07-17.md](providers/model-shape-probe-2026-07-17.md).
 
 **Additional, post-Phase-1: silent OOC session boundary + Story tab mode persistence** — ✅ done,
 2026-07-03. The post-kickoff OOC "update session" boundary (`ooc_session_start_page_id`) used to be

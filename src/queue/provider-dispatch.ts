@@ -12,8 +12,7 @@ import {
   FeatherlessError,
   JobCancelledError,
   shouldPrefillReasoning,
-  proseStreamUsesReasoningTrace,
-  looksLikeLeakedReasoningArtifact,
+  resolveChatTemplateKwargs,
   REASONING_ASSISTANT_PREFILL,
   streamIdleTimeoutMs,
   type ChatMessage,
@@ -24,9 +23,6 @@ import { streamingModels } from './cancel.js'
 
 const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2
 
-/** Chars to accumulate before testing looksLikeLeakedReasoningArtifact — comfortably more than "article". */
-const REASONING_LEAK_PEEK_CHARS = 16
-
 /**
  * Streams a reply with model fallback, treating an empty-but-error-free completion as a
  * retriable failure rather than a valid (if useless) result. Providers sometimes signal
@@ -36,16 +32,33 @@ const REASONING_LEAK_PEEK_CHARS = 16
  * error) — without this, that failure mode would silently bypass withModelFallback
  * entirely, since the emptiness was only ever checked after it had already returned.
  *
- * For a reasoning model specifically, the same empty-completion failure has a known,
- * reproducible cause: its chat template lets the model decide, per turn, whether/how to open
- * its own `` block, and under temperature the very first sampled token can
- * land on an immediate close-and-stop instead — confirmed live by replaying an identical
- * failing request repeatedly. Prefilling the assistant turn with an already-open block (see
- * REASONING_ASSISTANT_PREFILL) removes that coin-flip — but only when thinking is enabled
- * (Effort On or default). Effort Off sets enable_thinking: false and skips prefill entirely;
- * delta.reasoning tokens are routed to the prose stream instead of the trace.
- * EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE retries before handing off to the next fallback
- * candidate (if any).
+ * Reasoning routing is shape-based, not model-name-based (docs/providers/model-shape-probe-2026-07-17.md):
+ * whatever arrives via `reasoning`/`reasoning_content` (a separate delta field) or a `<think>` tag
+ * inline in `content` (parsed by ReasoningStreamSplitter — Qwen3 uses this shape, DeepSeek/Kimi/gpt-oss
+ * use the separate-field shape) always goes to the thinking-trace channel, unconditionally, for any
+ * model. There's no attempt to guess whether reasoning-field text is secretly a misrouted answer
+ * (an earlier version of this code tried, screening for a DeepSeek-specific leaked-artifact string —
+ * that never generalized past DeepSeek and silently failed on every other family, which is exactly
+ * what surfaced this bug on Kimi-K2.7-Code). If a candidate produces reasoning but the answer
+ * channel (`content`) never gets anything, that's treated the same as a genuinely empty completion —
+ * a retriable failure — rather than promoting the reasoning text into the reply, since a model can
+ * legitimately exhaust its token budget mid-thought (confirmed live on Kimi-K2-Thinking) and showing
+ * raw chain-of-thought as if it were the story would be worse than retrying.
+ *
+ * Separately, `resolveChatTemplateKwargs` defaults `enable_thinking`/`thinking` to `false` below
+ * unless the caller explicitly overrides it — needed because at least one family (GLM-4.7-Flash)
+ * reasons as plain, unmarked text glued directly into `content` with no field or tag at all when
+ * no chat_template_kwargs are sent, which no amount of shape-based routing can separate out after
+ * the fact.
+ *
+ * For a reasoning model specifically, an empty-completion failure has a known, reproducible cause
+ * on top of the above: its chat template lets the model decide, per turn, whether/how to open its
+ * own `<think>` block, and under temperature the very first sampled token can land on an immediate
+ * close-and-stop instead — confirmed live by replaying an identical failing request repeatedly.
+ * Prefilling the assistant turn with an already-open block (see REASONING_ASSISTANT_PREFILL)
+ * removes that coin-flip — but only when thinking is enabled; Effort Off sets enable_thinking:
+ * false and skips prefill entirely (see shouldPrefillReasoning). EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE
+ * retries before handing off to the next fallback candidate (if any).
  */
 export async function streamWithFallback(
   profile: AgentProfile,
@@ -56,15 +69,14 @@ export async function streamWithFallback(
   chatTemplateKwargs?: Record<string, unknown>,
   prefillAssistant = false,
 ): Promise<{ text: string; model: string }> {
+  const effectiveKwargs = resolveChatTemplateKwargs(chatTemplateKwargs)
   let reply = ''
   let usedModel = profile.model
   let isFirstStream = true
   await withModelFallback(profile, async (candidate) => {
     usedModel = candidate.model
     streamingModels.set(jobId, candidate.model)
-    const useReasoningTrace = proseStreamUsesReasoningTrace(candidate.model, chatTemplateKwargs)
-    const usePrefill =
-      prefillAssistant || shouldPrefillReasoning(candidate.model, chatTemplateKwargs)
+    const usePrefill = prefillAssistant || shouldPrefillReasoning(candidate.model, effectiveKwargs)
     const candidateMessages = usePrefill
       ? [...messages, { role: 'assistant' as const, content: REASONING_ASSISTANT_PREFILL }]
       : messages
@@ -78,9 +90,6 @@ export async function streamWithFallback(
       const splitter = new ReasoningStreamSplitter({ startsInThinking: false })
       reply = ''
       let sawReasoning = false
-      let reasoningLeakDetected = false
-      /** Held back until resolveReasoningPeek decides — see looksLikeLeakedReasoningArtifact. */
-      let reasoningAsAnswerPeek: string | null = ''
       const emitThinking = (text: string) => {
         sawReasoning = true
         publishThinking(jobId, text)
@@ -88,35 +97,6 @@ export async function streamWithFallback(
       const emitAnswer = (text: string) => {
         reply += text
         publishToken(jobId, text)
-      }
-      const resolveReasoningPeek = () => {
-        if (reasoningAsAnswerPeek === null) return
-        const peeked = reasoningAsAnswerPeek
-        reasoningAsAnswerPeek = null
-        if (looksLikeLeakedReasoningArtifact(peeked)) {
-          reasoningLeakDetected = true
-        } else {
-          emitAnswer(peeked)
-        }
-      }
-      /**
-       * Effort Off: Featherless may still emit delta.reasoning — treat it as IC prose, not trace,
-       * but hold back the first few characters so looksLikeLeakedReasoningArtifact can screen out
-       * the leaked-channel case before any of it is shown or stored (docs/reasoning-stream-research.md,
-       * 2026-07-05).
-       */
-      const emitReasoningAsAnswer = (text: string) => {
-        if (reasoningLeakDetected) return
-        if (reasoningAsAnswerPeek === null) {
-          emitAnswer(text)
-          return
-        }
-        reasoningAsAnswerPeek += text
-        if (reasoningAsAnswerPeek.length >= REASONING_LEAK_PEEK_CHARS) resolveReasoningPeek()
-      }
-      const emitReasoningDelta = (text: string) => {
-        if (useReasoningTrace) emitThinking(text)
-        else emitReasoningAsAnswer(text)
       }
       try {
         await new Promise<void>((resolve, reject) => {
@@ -126,22 +106,14 @@ export async function streamWithFallback(
             candidateMessages,
             {
               onToken: (text) => {
-                splitter.push(text, emitReasoningDelta, emitAnswer)
+                splitter.push(text, emitThinking, emitAnswer)
               },
-              onReasoningToken: emitReasoningDelta,
+              onReasoningToken: emitThinking,
               onDone: () => {
-                splitter.flush(emitReasoningDelta, emitAnswer)
-                resolveReasoningPeek()
-                if (reasoningLeakDetected) {
-                  reject(
-                    new FeatherlessError(
-                      503,
-                      `${candidate.model} returned a leaked reasoning-channel artifact instead of prose`,
-                    ),
-                  )
-                } else if (reply.trim()) {
+                splitter.flush(emitThinking, emitAnswer)
+                if (reply.trim()) {
                   resolve()
-                } else if (sawReasoning && useReasoningTrace) {
+                } else if (sawReasoning) {
                   reject(
                     new FeatherlessError(
                       503,
@@ -158,8 +130,8 @@ export async function streamWithFallback(
             },
             {
               signal,
-              chatTemplateKwargs,
-              idleTimeoutMs: streamIdleTimeoutMs(candidate.model, chatTemplateKwargs),
+              chatTemplateKwargs: effectiveKwargs,
+              idleTimeoutMs: streamIdleTimeoutMs(candidate.model, effectiveKwargs),
             },
           )
         })
@@ -168,9 +140,7 @@ export async function streamWithFallback(
         if (err instanceof JobCancelledError) throw err
         const isEmptyCompletion =
           err instanceof FeatherlessError &&
-          (err.message.includes('empty completion') ||
-            err.message.includes('no answer content') ||
-            err.message.includes('leaked reasoning-channel'))
+          (err.message.includes('empty completion') || err.message.includes('no answer content'))
         if (!isEmptyCompletion || attempt === EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE) throw err
       }
     }

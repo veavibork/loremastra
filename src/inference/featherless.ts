@@ -4,6 +4,7 @@ import { getGlobalDb } from '../db/global-db.js'
 import { recordModelOutcome } from '../db/model-config-store.js'
 import { logOutboundRequest, logOutboundResponse } from './outbound-telemetry.js'
 import { formatError } from '../lib/errors.js'
+import { stripThinkingTags } from './reasoning-stream.js'
 
 /** Optional sampler params (Config > Agents), omitted entirely rather than sent as null/0 when unset — see docs' completions parameter list. */
 function samplerParams(profile: AgentProfile): Record<string, number> {
@@ -106,9 +107,17 @@ export async function withTransientRetry<T>(fn: () => Promise<T>): Promise<T> {
  * params, intermittent zero-token completions with finish_reason "stop"). Prefilling the
  * assistant turn with an already-open `<think>\n` block (see the trailing message pushed in
  * streamWithFallback) removes that coin-flip — the same "assistant prefill" technique
- * SillyTavern's own reasoning-model presets use. Detected by model id substring since
- * AgentProfile has no explicit reasoning-model flag yet; expand this list as more reasoning
- * families get configured.
+ * SillyTavern's own reasoning-model presets use.
+ *
+ * This is a pre-response heuristic only — used for the prefill trick above and for
+ * `streamIdleTimeoutMs` below, both of which have to be decided before any reply exists, so they
+ * can't be based on what actually comes back. It is deliberately NOT used to decide how to route
+ * reasoning content once a reply arrives — see `docs/providers/model-shape-probe-2026-07-17.md`,
+ * which found real models across several families (Kimi, gpt-oss) emit the same `delta.reasoning`
+ * shape as DeepSeek despite not matching this name check, so `streamWithFallback`'s routing is
+ * shape-based (does `reasoning`/`reasoning_content`/a `<think>` tag actually show up) instead.
+ * Detected by model id substring since AgentProfile has no explicit reasoning-model flag yet;
+ * expand this list as more reasoning families need the prefill trick specifically.
  */
 export function isReasoningModel(model: string): boolean {
   return /deepseek/i.test(model)
@@ -118,40 +127,51 @@ export function isReasoningModel(model: string): boolean {
 export const REASONING_ASSISTANT_PREFILL = '<think>\n'
 
 /**
- * Whether a prose stream should open a thinking block and surface `delta.reasoning` in the UI.
- * Effort Off (`enable_thinking: false`) disables both prefill and the reasoning trace — confirmed
- * live: prefill + enable_thinking false routes IC prose through delta.reasoning only, which
- * triggered false "reasoning but no answer content" retries.
+ * Effort Off (`enable_thinking: false`) skips the prefill — confirmed live: prefill +
+ * enable_thinking false routes IC prose through delta.reasoning only, which triggered false
+ * "reasoning but no answer content" retries.
  */
-export function proseStreamUsesReasoningTrace(
-  model: string,
-  chatTemplateKwargs?: Record<string, unknown>,
-): boolean {
-  if (!isReasoningModel(model)) return false
-  if (chatTemplateKwargs?.enable_thinking === false) return false
-  return true
-}
-
 export function shouldPrefillReasoning(
   model: string,
   chatTemplateKwargs?: Record<string, unknown>,
 ): boolean {
-  return proseStreamUsesReasoningTrace(model, chatTemplateKwargs)
+  if (chatTemplateKwargs?.enable_thinking === false) return false
+  return isReasoningModel(model)
 }
 
 /**
- * Confirmed live 2026-07-05 (docs/reasoning-stream-research.md): when Effort Off routes
- * `delta.reasoning` into the prose channel (see `proseStreamUsesReasoningTrace` above), that
- * channel is unreliable on DeepSeek-V4-Pro — sometimes genuine misrouted prose (the case the
- * routing was built for), but sometimes meta-commentary degrading into multilingual token salad.
- * Every one of 13 confirmed-bad production replies started with this literal artifact, glued
- * directly onto whatever followed with no separating space in several cases (`articleWell,`,
- * `articleCircle`) — consistent with a leaked internal channel/role token, though unconfirmed at
- * the wire level. Not observed leading any known-good reply. Used to reject an attempt outright
- * (treated the same as an empty completion, see streamWithFallback) rather than show or store it.
+ * Expands a caller's `chat_template_kwargs` into the full set Featherless's model families
+ * actually read, rather than a single flat key. Per featherless.ai/docs/chat-template-kwargs,
+ * Qwen/GLM/Gemma read `enable_thinking`; DeepSeek/Kimi read `thinking` instead — two different
+ * keys for the same toggle. Sending both covers whichever one a given family honors without a
+ * per-model registry; an unrecognized key is silently ignored (confirmed empirically in both
+ * directions — GLM ignores `thinking`, and this codebase already relied on DeepSeek honoring
+ * `enable_thinking` despite the docs saying it shouldn't — see
+ * docs/providers/model-shape-probe-2026-07-17.md).
+ *
+ * Defaults to reasoning off unless the caller explicitly asked for it — GLM-4.7-Flash reasons as
+ * unmarked plain text glued into `content` with no `chat_template_kwargs` sent at all, which no
+ * amount of after-the-fact routing can separate back out (same doc).
+ *
+ * When thinking is explicitly on, also asks Featherless to retain reasoning across turns
+ * (`preserve_thinking`/`clear_thinking`, again two keys for one idea depending on family) per the
+ * docs' explicit guidance that agentic/multi-step tool use needs this — irrelevant, and omitted,
+ * when thinking is off, since there's nothing to retain.
  */
-export function looksLikeLeakedReasoningArtifact(text: string): boolean {
-  return /^\s*article/i.test(text)
+export function resolveChatTemplateKwargs(
+  chatTemplateKwargs?: Record<string, unknown>,
+): Record<string, unknown> {
+  const enableThinking = chatTemplateKwargs?.enable_thinking ?? false
+  const resolved: Record<string, unknown> = {
+    ...chatTemplateKwargs,
+    enable_thinking: enableThinking,
+    thinking: enableThinking,
+  }
+  if (enableThinking) {
+    resolved.preserve_thinking = true
+    resolved.clear_thinking = false
+  }
+  return resolved
 }
 
 /**
@@ -247,12 +267,14 @@ const DEFAULT_IDLE_TIMEOUT_MS = 90_000
 /** Reasoning models may sit in a thinking phase with sparse or reasoning-only chunks. */
 export const REASONING_IDLE_TIMEOUT_MS = 300_000
 
+/** Pre-response only (see `isReasoningModel`'s comment) — budgets the idle timeout, doesn't gate trace routing. */
 export function usesThinkingMode(
   model: string,
   chatTemplateKwargs?: Record<string, unknown>,
 ): boolean {
   if (chatTemplateKwargs?.enable_thinking === true) return true
-  return proseStreamUsesReasoningTrace(model, chatTemplateKwargs)
+  if (chatTemplateKwargs?.enable_thinking === false) return false
+  return isReasoningModel(model)
 }
 
 export function streamIdleTimeoutMs(
@@ -501,6 +523,14 @@ export async function completeChat(
   logOutboundRequest({ call: 'completeChat', model: profile.model, messages })
   const startedAt = Date.now()
   const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS, options?.signal)
+  // completeChat has no reasoning/answer split (no streaming, no ReasoningStreamSplitter) — a
+  // model whose default is to reason inline in `content` with no field or tag (confirmed live on
+  // GLM-4.7-Flash with no chat_template_kwargs sent, see docs/providers/model-shape-probe-2026-07-17.md)
+  // would corrupt this call's result outright, since callers here (worldbook compact, story-to-date
+  // summaries, scene/story naming) feed the raw string straight into stored data. Default reasoning
+  // off unless a caller explicitly opts in; stripThinkingTags below covers the tag-in-content shape
+  // (Qwen3) for any caller that does opt in.
+  const chatTemplateKwargs = resolveChatTemplateKwargs(options?.chatTemplateKwargs)
   try {
     const response = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -515,9 +545,7 @@ export async function completeChat(
         max_tokens: options?.maxTokens ?? profile.responseLimit,
         stream: false,
         ...samplerParams(profile),
-        ...(options?.chatTemplateKwargs
-          ? { chat_template_kwargs: options.chatTemplateKwargs }
-          : {}),
+        chat_template_kwargs: chatTemplateKwargs,
       }),
       signal: timeout.signal,
     })
@@ -543,7 +571,8 @@ export async function completeChat(
     const data = (await response.json()) as {
       choices?: Array<{ message?: { content?: string | null } }>
     }
-    const content = data.choices?.[0]?.message?.content
+    const rawContent = data.choices?.[0]?.message?.content
+    const content = rawContent ? stripThinkingTags(rawContent) : rawContent
     if (!content) {
       const latency = Date.now() - startedAt
       logOutboundResponse('completeChat', profile.model, {
@@ -601,7 +630,11 @@ export async function callWithTools(
   apiKey: string,
   messages: ChatMessage[],
   tools: ToolDefinition[],
-  options?: { forceToolName?: string; timeoutMs?: number },
+  options?: {
+    forceToolName?: string
+    timeoutMs?: number
+    chatTemplateKwargs?: Record<string, unknown>
+  },
 ): Promise<ToolCallTurnResult> {
   if (!apiKey) {
     throw new Error('No Featherless API key configured — set one in the Agents tab')
@@ -611,6 +644,10 @@ export async function callWithTools(
   logOutboundRequest({ call: 'callWithTools', model: profile.model, messages })
   const startedAt = Date.now()
   const timeout = armTimeout(options?.timeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS)
+  // Same rationale as completeChat above: no reasoning/answer split here either, so an unmarked-
+  // or tag-shaped reasoning model would otherwise corrupt `content` or a forced tool call's
+  // arguments outright. Default off; stripThinkingTags below covers the tag-in-content shape.
+  const chatTemplateKwargs = resolveChatTemplateKwargs(options?.chatTemplateKwargs)
   let response: Response
   try {
     response = await fetch(`${FEATHERLESS_BASE_URL}/chat/completions`, {
@@ -630,6 +667,7 @@ export async function callWithTools(
           ? { type: 'function', function: { name: options.forceToolName } }
           : 'auto',
         ...samplerParams(profile),
+        chat_template_kwargs: chatTemplateKwargs,
       }),
       signal: timeout.signal,
     })
@@ -664,6 +702,7 @@ export async function callWithTools(
     }>
   }
   const message = data.choices?.[0]?.message
+  const content = message?.content ? stripThinkingTags(message.content) : (message?.content ?? null)
   // Featherless has been observed to return a null id on some of the entries when a model
   // calls several tools in one turn — a real id is required to thread each tool result back
   // to the right call on the next request, so a missing one gets a synthetic fallback rather
@@ -685,7 +724,7 @@ export async function callWithTools(
   })
 
   const outputChars =
-    (message?.content ?? '').length +
+    (content ?? '').length +
     toolCalls.reduce((sum, tc) => sum + JSON.stringify(tc.arguments).length, 0)
   const latency = Date.now() - startedAt
   const outTok = tokensFromChars(outputChars)
@@ -697,5 +736,5 @@ export async function callWithTools(
     retries: 0,
   })
   recordOutcome(profile, { success: true, inputTokens, outputTokens: outTok })
-  return { content: message?.content ?? null, toolCalls }
+  return { content, toolCalls }
 }

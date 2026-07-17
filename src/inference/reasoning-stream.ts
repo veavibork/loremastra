@@ -106,3 +106,18 @@ export function estimatePrefillSeconds(inputTokens: number): number {
   if (inputTokens <= 0) return 30
   return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)))
 }
+
+/**
+ * Strips `<think>...</think>` block(s) from a complete (non-streamed) reply — for `completeChat`/
+ * `callWithTools` callers, which read `message.content` directly with no `ReasoningStreamSplitter`
+ * to separate reasoning from answer live (confirmed live on Featherless: Qwen3 puts reasoning
+ * inline in `content` with no separate field at all, see docs/providers/model-shape-probe-2026-07-17.md).
+ * An unclosed trailing `<think>` (the model spent its whole budget still thinking, never reached a
+ * real answer) drops everything from that point on, same as if the model had produced no content.
+ */
+export function stripThinkingTags(text: string): string {
+  let result = text.replace(/<think>[\s\S]*?<\/think>/gi, '')
+  const openIndex = result.search(/<think>/i)
+  if (openIndex !== -1) result = result.slice(0, openIndex)
+  return result.trim()
+}
