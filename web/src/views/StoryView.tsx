@@ -31,12 +31,10 @@ import './StoryView.css'
 import StoryLog from '../components/StoryLog'
 import StoryFooter from '../components/StoryFooter'
 import { useStoryMode } from '../store'
-import { jobElapsedAnchor } from './StoryViewHelpers'
+import { estimatePrefillSeconds, jobElapsedAnchor } from './StoryViewHelpers'
 import { STREAM_HANDLERS, type StreamHandlerCtx } from './streamHandlers'
 import type { StoryViewAction } from './StoryViewReducer'
 import { initialStoryViewState, storyViewReducer } from './StoryViewReducer'
-
-import { estimatePrefillSeconds } from './syncPendingWaitPhases'
 
 /** Raw entries (both IC and hidden OOC pages) kept loaded at once before "load earlier" is needed. */
 const LOG_PAGE_SIZE = 80

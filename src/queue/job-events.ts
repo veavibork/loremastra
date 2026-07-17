@@ -113,6 +113,14 @@ export function publishJobClaimed(jobId: string): void {
 }
 
 export function publishJobStarted(jobId: string, inputTokenEstimate?: number): void {
+  // A queued-phase progress label ("Waiting for memory update…") is obsolete the moment the job
+  // runs — drop it from the buffer so a client attaching mid-generation doesn't get it replayed
+  // in its catch-up 'sync'. Live clients clear their own label on the 'prefill' event below.
+  const buf = buffers.get(jobId)
+  if (buf?.progress) {
+    buf.progress = undefined
+    buffers.set(jobId, buf)
+  }
   emitter.emit(jobId, { type: 'started', at: new Date().toISOString() })
   emitter.emit(jobId, { type: 'prefill', inputTokenEstimate })
 }

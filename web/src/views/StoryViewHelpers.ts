@@ -6,20 +6,15 @@ export function jobElapsedAnchor(job: ActiveJob): number {
   return new Date(job.startedAt ?? job.createdAt).getTime()
 }
 
-/** Keep the oldest known anchor so reconnect/phase sync never resets the visible timer. */
-export function stableElapsedAnchor(pending: PendingReply, proseJob: ActiveJob): number {
-  return Math.min(pending.startedAt, jobElapsedAnchor(proseJob))
+/** Conservative TTFT guess — intentionally high so early tokens feel like a win. */
+export function estimatePrefillSeconds(inputTokens: number | null | undefined): number {
+  if (!inputTokens || inputTokens <= 0) return 30
+  return Math.max(10, Math.min(120, Math.ceil(inputTokens / 200)))
 }
 
 export function pendingStatusLabel(pending: PendingReply): string {
   if (pending.progress) return pending.progress
   const elapsed = Math.max(0, Math.round((Date.now() - pending.startedAt) / 1000))
-  const queueHint =
-    pending.waitPhase !== 'memory' &&
-    pending.waitPhase !== 'prefill' &&
-    pending.lastProseStatus === 'pending'
-      ? ', queued'
-      : ''
   if (pending.waitPhase === 'prefill') {
     const runAnchor = pending.runningStartedAt ?? pending.startedAt
     const runningElapsed = Math.max(0, Math.round((Date.now() - runAnchor) / 1000))
@@ -28,13 +23,10 @@ export function pendingStatusLabel(pending: PendingReply): string {
     return remaining > 0 ? `Prefilling… (~${remaining}s)` : 'Prefilling…'
   }
   if (pending.waitPhase === 'generating' && !pending.text.trim()) {
-    return `Generating… (${elapsed}s${queueHint})`
+    return `Generating… (${elapsed}s)`
   }
   if (pending.thinking?.trim() && !pending.text.trim()) {
-    return `Reasoning… (${elapsed}s${queueHint})`
+    return `Reasoning… (${elapsed}s)`
   }
-  if (pending.waitPhase === 'memory') {
-    return `Memory update in progress… (${elapsed}s)`
-  }
-  return `Thinking… (${elapsed}s${queueHint})`
+  return `Thinking… (${elapsed}s)`
 }

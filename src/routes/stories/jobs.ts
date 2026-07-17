@@ -122,6 +122,18 @@ jobsRoute.get('/:id/jobs/:jobId/stream', (c) => {
         void sse.writeSSE({ data: JSON.stringify(event) })
       })
 
+      // Client gone (tab closed, EventSource.close(), reconnect superseded this socket): no
+      // terminal job event will ever settle this stream, so tear down here — without this, the
+      // subscription and the 15s heartbeat live until the job ends, and forever for a job that
+      // never reaches a terminal state. One leaked pair per abandoned connection.
+      sse.onAbort(() => {
+        if (settled) return
+        settled = true
+        clearInterval(heartbeat)
+        unsubscribe()
+        resolve()
+      })
+
       const job = getJob(storyDb, jobId)
       if (!job) {
         unsubscribe()
@@ -133,7 +145,16 @@ jobsRoute.get('/:id/jobs/:jobId/stream', (c) => {
         void finish({ type: 'cancelled' }).then(resolve)
         return
       }
-      if (job.status === 'done' || job.status === 'failed') {
+      // A failed job must surface as an error, not a silent 'done' — reporting it as done left a
+      // reattaching client (reopened tab) rendering the dead page as a normal completion with no
+      // error banner. The client's own reconcile path (web/src/api/jobs.ts) already maps
+      // failed → error; this mirrors it.
+      if (job.status === 'failed') {
+        unsubscribe()
+        void finish({ type: 'error', message: job.error ?? 'job failed' }).then(resolve)
+        return
+      }
+      if (job.status === 'done') {
         unsubscribe()
         const text = job.targetTextId ? getText(storyDb, job.targetTextId) : null
         void finish({ type: 'done', fullText: text?.genPackage ?? '' }).then(resolve)

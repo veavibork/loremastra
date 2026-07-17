@@ -20,6 +20,7 @@ import { tryAcquireSlot, releaseSlot } from './slots.js'
 import { canSubmitHorde, recordHordeSubmit } from '../inference/horde-rate-limiter.js'
 import { ensureConcurrencyFeedForUser } from './concurrency-feed.js'
 import {
+  getJobBuffer,
   publishProgress,
   publishDone,
   publishError,
@@ -53,6 +54,8 @@ import { getAgentProfile } from '../services/agent-config.js'
 import type { GenerationOptions } from '../services/settings-space-registry.js'
 
 const SCAN_INTERVAL_MS = 500
+/** Shown on a queued prose post while a story-to-date job blocks it (see dispatchProseJob's gate). */
+const MEMORY_WAIT_LABEL = 'Waiting for memory update…'
 const WORKER_JOB_TYPES: JobType[] = [
   'story-to-date',
   'story-to-date-fold',
@@ -283,8 +286,14 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
 
   // Context-pressure gate: if a story-to-date (forward compression) job is in-flight,
   // the segment isn't ready yet. Block prose until it completes — the user accepts the
-  // 4-5 minute wait since segment construction is the platform's purpose.
+  // 4-5 minute wait since segment construction is the platform's purpose. Tell them WHY
+  // via the job's progress channel (this replaced the client-side wait-phase poller the
+  // polling-elimination refactor removed); the label clears on the 'prefill' event once
+  // the job actually starts. Guarded so the 500ms scan doesn't re-emit an unchanged label.
   if (job.jobType === 'prose' && hasActiveJobByType(db, 'story-to-date')) {
+    if (getJobBuffer(job.id)?.progress !== MEMORY_WAIT_LABEL) {
+      publishProgress(job.id, MEMORY_WAIT_LABEL)
+    }
     unclaimJob(db, job.id)
     return
   }
@@ -399,8 +408,16 @@ async function executeHordeProseSubmit(
 const HORDE_IMPOSSIBLE_TIMEOUT_MS = 5 * 60_000
 const hordeImpossibleSince = new Map<string, number>()
 
+/** Floor between upstream status polls per Horde job — the 500ms scan tick is dispatch cadence,
+ * not a sane rate to hit the AI Horde API with (generations there resolve on a seconds-to-minutes
+ * scale, and aggressive polling burns their rate limit for zero freshness). */
+const HORDE_POLL_MIN_INTERVAL_MS = 2500
+const hordePollInFlight = new Set<string>()
+const hordeLastPollAt = new Map<string, number>()
+
 function hordeJobTerminal(jobId: string): void {
   hordeImpossibleSince.delete(jobId)
+  hordeLastPollAt.delete(jobId)
 }
 
 /**
@@ -408,11 +425,19 @@ function hordeJobTerminal(jobId: string): void {
  * looks at 'pending' rows, so a submitted-but-unresolved Horde job needs its own query
  * (listRunningHordeJobs) to be found again on a later tick. Runs every scan tick alongside
  * scanStory; each job's own poll is fire-and-forget so one slow/stuck poll can't block
- * checking on the others.
+ * checking on the others. The in-flight set stops successive ticks from stacking overlapping
+ * HTTP polls for the same job when one upstream call takes longer than a tick.
  */
 function scanHordeJobs(db: Database.Database, storyId: string, userId: string): void {
+  const now = Date.now()
   for (const job of listRunningHordeJobs(db)) {
-    void resolveHordeJob(db, job, storyId, userId)
+    if (hordePollInFlight.has(job.id)) continue
+    if (now - (hordeLastPollAt.get(job.id) ?? 0) < HORDE_POLL_MIN_INTERVAL_MS) continue
+    hordePollInFlight.add(job.id)
+    hordeLastPollAt.set(job.id, now)
+    void resolveHordeJob(db, job, storyId, userId).finally(() => {
+      hordePollInFlight.delete(job.id)
+    })
   }
 }
 

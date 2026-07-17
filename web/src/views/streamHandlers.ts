@@ -220,7 +220,14 @@ function handlePrefill(
   { dispatch, pageId }: StreamHandlerCtx,
 ): void {
   dispatch({ type: 'PENDING_PROGRESS', pageId, label: undefined })
-  dispatch({ type: 'PENDING_META', pageId, inputTokenEstimate: event.inputTokenEstimate })
+  // 'prefill' fires when the worker actually starts the job — anchor the prefill countdown here,
+  // not at send time, or queue wait eats the whole estimate and the countdown shows 0 immediately.
+  dispatch({
+    type: 'PENDING_META',
+    pageId,
+    inputTokenEstimate: event.inputTokenEstimate,
+    runningStartedAt: Date.now(),
+  })
 }
 
 // ---------------------------------------------------------------------------

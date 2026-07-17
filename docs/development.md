@@ -700,7 +700,8 @@ in favor of a single SSE-only update path. Three-phase refactor per `storyview-r
   `forceTick` state (~40 lines). Extended SSE endpoint to emit `queued`/`prefill` events for
   pending jobs (was: only `running` jobs). Server-side publish points added to `job-events.ts`.
 
-Architecture doc: `docs/refactor/storyview-architecture.md`. 9 commits, deployed to VM.
+9 commits, deployed to VM. (An architecture doc at `docs/refactor/storyview-architecture.md` was
+referenced here but never committed; `docs/refactor/review-findings.md` is what exists.)
 Bundle: 143KB gzipped JS (was 115KB pre-Phase 6). 0 typecheck errors, 0 lint errors, 1 pre-existing
 warning (forceTick exhaustive-deps, intentionally kept). 142 tests (126 Vitest + 16 Playwright).
 
@@ -723,3 +724,36 @@ ratio — 236 words / 56 posts = 4.2 wpp sailed past the 2.5 sprint threshold an
   60–119 / 23k).
 - Planned next: A/B a model-judged coverage-verification pass on top (free tokens on
   Featherless/Horde make the extra call cheap).
+
+### Streaming/refresh review + fixes — ✅ done, 2026-07-17
+
+Full audit of SSE, polling, and timer state after the polling-elimination refactor. Fixed:
+
+- **SSE stream route leak** (`src/routes/stories/jobs.ts`): client disconnect never tore down the
+  per-connection `subscribeJob` listener + 15s heartbeat — they lived until the job ended (forever
+  for a never-terminal job). Now wired to `sse.onAbort`.
+- **Failed job reported as `done` on reattach** (same file): a client reopening a story with a
+  failed job got `{type:'done'}` and rendered it as a normal completion, no error surfaced. Now
+  sends `{type:'error', message}` — mirrors the client's own reconcile mapping.
+- **Dead wait-phase machinery removed**: `syncPendingWaitPhases.ts` (the whole pending/memory/
+  prefill state machine) had zero callers since polling elimination — the `waitPhase: 'memory'`
+  label and queue hint were unreachable. Deleted; `estimatePrefillSeconds` moved to
+  `StoryViewHelpers.ts`. The "why is my post stuck" signal it used to provide is now server-push:
+  dispatch's memory gate publishes a `Waiting for memory update…` progress label over SSE while a
+  story-to-date job blocks prose (cleared on `prefill`; buffer label dropped in
+  `publishJobStarted` so mid-run reattaches don't replay it).
+- **Prefill countdown anchor**: `runningStartedAt` was typed but never set, so queue wait ate the
+  prefill estimate and the countdown often showed 0s. `handlePrefill` now anchors it.
+- **Horde poll overlap/rate**: the 500ms scan tick fired `resolveHordeJob` per running job with no
+  in-flight guard — overlapping upstream polls when one took >500ms. Now deduped + throttled to
+  ≥2.5s per job (Horde resolves on a seconds-to-minutes scale; 500ms polling bought nothing).
+- **WorldbookView crunch loop lifecycle**: the `while(true)`+1.5s poll loop survived unmount
+  (polling + setState on a dead component for up to the job's 10min timeout). Now exits on unmount;
+  the job itself continues server-side and stays visible in the Queue tab.
+
+Known-and-accepted (not bugs): QueueView/LogsView 2s polls and Worldbook/Segments 3s polls are
+tab-scoped; `useNowTick` is client-side only, gated on live work. Flagged for later: Worldbook/
+Segments polls run even when idle (could gate on active jobs), no graceful-shutdown path calls
+`stopPipelineRunner`/`stopHealthSnapshots`/`stopAllConcurrencyFeeds`, `publishJobCreated` emits on
+a channel nobody can be subscribed to yet, and the concurrency feed re-arms its reconnect timer
+forever for users with no Featherless key.

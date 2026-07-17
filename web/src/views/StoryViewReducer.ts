@@ -14,9 +14,8 @@ export interface PendingReply {
   prefillEstimateSec?: number
   /** When the worker claimed the job — prefill countdown starts here, not at send time. */
   runningStartedAt?: number
-  /** Tracks queue wait, prefill, reasoning, and prose for elapsed-time labels. */
-  waitPhase?: 'memory' | 'prefill' | 'reasoning' | 'generating'
-  lastProseStatus?: string
+  /** Tracks prefill, reasoning, and prose for elapsed-time labels. */
+  waitPhase?: 'prefill' | 'reasoning' | 'generating'
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +197,7 @@ export function storyViewReducer(state: StoryViewState, action: StoryViewAction)
             inputTokenEstimate,
             prefillEstimateSec,
             waitPhase,
-            lastProseStatus: 'running' as const,
+            runningStartedAt: action.runningStartedAt ?? cur.runningStartedAt,
           },
         },
       }

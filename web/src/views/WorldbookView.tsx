@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchJob, type WorldbookEntry, type WorldbookEntryType } from '../api'
 import { useWorldbook } from '../hooks/use-worldbook'
 import {
@@ -50,6 +50,17 @@ export default function WorldbookView({ story }: PanelProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [compacting, setCompacting] = useState(false)
   const [compactSummary, setCompactSummary] = useState<string | null>(null)
+  // crunchWorldbook's poll loop is a plain async function, not an effect — without this flag it
+  // would keep polling fetchJob every 1.5s (and setState on an unmounted component) for however
+  // long the job runs after the user navigates away. The job itself continues server-side; the
+  // Queue tab still shows it.
+  const unmountedRef = useRef(false)
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => {
+      unmountedRef.current = true
+    }
+  }, [])
 
   function toggleExpanded(pageId: string) {
     setExpanded((prev) => {
@@ -105,7 +116,9 @@ export default function WorldbookView({ story }: PanelProps) {
       const { jobId } = await compactMutation.mutateAsync(storyId)
       while (true) {
         await sleep(JOB_POLL_MS)
+        if (unmountedRef.current) return
         const job = await fetchJob(storyId, jobId, { background: true })
+        if (unmountedRef.current) return
         if (!job || job.status === 'pending' || job.status === 'running') continue
         if (job.status === 'done') {
           await refetchWorldbook()
