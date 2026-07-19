@@ -1,5 +1,5 @@
 import { apiFetch, getSessionId, API_BASE } from './client.js'
-import type { Job, ActiveJob, JobStreamEvent } from './types.js'
+import type { Job, ActiveJob, JobStreamEvent, SlotsStatus } from './types.js'
 
 export async function fetchJobs(storyId: string, opts?: { background?: boolean }): Promise<Job[]> {
   const res = await apiFetch(`/api/stories/${storyId}/jobs`, {}, opts)
@@ -7,9 +7,7 @@ export async function fetchJobs(storyId: string, opts?: { background?: boolean }
   return data.jobs
 }
 
-export async function fetchSlots(opts?: {
-  background?: boolean
-}): Promise<{ used: number; max: number }> {
+export async function fetchSlots(opts?: { background?: boolean }): Promise<SlotsStatus> {
   const res = await apiFetch(`/api/debug/slots`, {}, opts)
   return res.json()
 }

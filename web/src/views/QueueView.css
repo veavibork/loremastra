@@ -1,0 +1,130 @@
+.queue-view {
+  padding: 0.5rem 0;
+}
+
+/* ── Concurrency header ─────────────────────────────────────────────── */
+
+.queue-slots-bar {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.queue-panic-button {
+  font-size: 0.8rem;
+}
+
+.queue-panic-result {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.queue-slots-holders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.queue-slot-holder {
+  font-size: 0.78rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.2rem 0.5rem;
+  border-left: 2px solid var(--info);
+  opacity: 0.9;
+}
+
+.queue-slot-holder-type {
+  font-weight: 600;
+}
+
+.queue-slot-holder-story {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
+}
+
+.queue-slot-overhang {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  border-left: 2px solid var(--danger-text, #c66);
+  opacity: 0.9;
+}
+
+.queue-slots-idle {
+  font-size: 0.78rem;
+  opacity: 0.6;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Job cards: two lines per job, tablet-friendly ──────────────────── */
+
+.queue-job-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.queue-job {
+  padding: 0.35rem 0.25rem;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.queue-job-line1 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+
+.queue-job-line2 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  opacity: 0.75;
+  margin-top: 0.15rem;
+}
+
+.queue-job-type {
+  font-weight: 600;
+}
+
+.queue-job-agent {
+  opacity: 0.8;
+}
+
+.queue-job-model {
+  font-family: var(--mono, monospace);
+  font-size: 0.7rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 16rem;
+}
+
+.queue-job-response {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.queue-job-pending {
+  opacity: 0.6;
+}
+
+.queue-job-running .queue-job-status {
+  color: var(--info);
+}
+
+.queue-job-failed .queue-job-status,
+.queue-job-response-error {
+  color: var(--danger-text);
+}

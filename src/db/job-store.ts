@@ -16,6 +16,24 @@ export type JobType =
   | 'worldbook-compact'
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
 
+export type AgentRole = 'author' | 'editor' | 'worker'
+
+/** Which Config > Agents profile executes each job type (see the getAgentProfile call in each src/queue/executors/*). Display metadata — dispatch does not route on this. */
+const JOB_AGENT_ROLES: Partial<Record<JobType, AgentRole>> = {
+  prose: 'author',
+  setup: 'editor',
+  'setup-worldbook': 'editor',
+  'story-to-date': 'editor',
+  'story-to-date-fold': 'editor',
+  'worldbook-compact': 'editor',
+  'story-name': 'worker',
+  'segment-name': 'worker',
+}
+
+export function agentRoleForJobType(jobType: JobType): AgentRole | null {
+  return JOB_AGENT_ROLES[jobType] ?? null
+}
+
 export interface JobRow {
   id: string
   createdAt: string

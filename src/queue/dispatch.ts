@@ -8,6 +8,7 @@ import {
   listRunningHordeJobs,
   listActiveJobs,
   hasActiveJobByType,
+  agentRoleForJobType,
   type JobRow,
   type JobType,
 } from '../db/job-store.js'
@@ -16,7 +17,7 @@ import { getPage } from '../db/page-store.js'
 import { getBookByType } from '../db/book-store.js'
 import { getGlobalDb } from '../db/global-db.js'
 import { getStory } from '../db/story-store.js'
-import { tryAcquireSlot, releaseSlot } from './slots.js'
+import { tryAcquireSlot, releaseSlot, type SlotHolderMeta } from './slots.js'
 
 import { canSubmitHorde, recordHordeSubmit } from '../inference/horde-rate-limiter.js'
 import { ensureConcurrencyFeedForUser } from './concurrency-feed.js'
@@ -246,6 +247,16 @@ function unclaimJob(db: Database.Database, jobId: string): void {
   db.prepare(`UPDATE jobs SET status = 'pending', started_at = NULL WHERE id = ?`).run(jobId)
 }
 
+/** Attribution carried on the slot reservation so the Queue tab can show what holds each slot. */
+function slotMeta(job: JobRow, storyId: string): SlotHolderMeta {
+  return {
+    jobType: job.jobType,
+    agentRole: agentRoleForJobType(job.jobType),
+    storyId,
+    storyName: getStory(getGlobalDb(), storyId)?.name ?? '',
+  }
+}
+
 function cancelPendingTagGenJobs(db: Database.Database): void {
   db.prepare(
     `UPDATE jobs SET status = 'cancelled', finished_at = ?, error = ?
@@ -279,7 +290,7 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         story.ownerUserId,
         getDecryptedFeatherlessKey(globalDb, story.ownerUserId) ?? '',
       )
-      if (!tryAcquireSlot(story.ownerUserId, job.id, job.slotCost)) {
+      if (!tryAcquireSlot(story.ownerUserId, job.id, job.slotCost, slotMeta(job, storyId))) {
         unclaimJob(db, job.id)
         continue
       }
@@ -382,7 +393,7 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
   }
 
   ensureConcurrencyFeedForUser(userId, getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? '')
-  if (!tryAcquireSlot(userId, job.id, job.slotCost)) {
+  if (!tryAcquireSlot(userId, job.id, job.slotCost, slotMeta(job, storyId))) {
     unclaimJob(db, job.id)
     return
   }

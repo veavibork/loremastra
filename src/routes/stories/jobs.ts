@@ -1,7 +1,13 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AppVariables } from '../../middleware/session-guard.js'
-import { getJob, listRecentJobs, listActiveJobs, cancelJob } from '../../db/job-store.js'
+import {
+  getJob,
+  listRecentJobs,
+  listActiveJobs,
+  cancelJob,
+  agentRoleForJobType,
+} from '../../db/job-store.js'
 import { getText } from '../../db/text-store.js'
 import { requestJobCancel } from '../../queue/cancel.js'
 import { clearJobEphemeralState } from '../../queue/dispatch.js'
@@ -17,7 +23,9 @@ export const jobsRoute = new Hono<{ Variables: AppVariables }>()
 
 jobsRoute.get('/:id/jobs', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
-  return c.json({ jobs: listRecentJobs(storyDb) })
+  return c.json({
+    jobs: listRecentJobs(storyDb).map((j) => ({ ...j, agentRole: agentRoleForJobType(j.jobType) })),
+  })
 })
 
 /**

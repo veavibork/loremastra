@@ -13,23 +13,6 @@
   opacity: 0.85;
 }
 
-.logs-slots-bar {
-  margin-bottom: 0.75rem;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.logs-panic-button {
-  font-size: 0.8rem;
-}
-
-.logs-panic-result {
-  font-size: 0.8rem;
-  opacity: 0.8;
-}
-
 .logs-table {
   width: 100%;
   border-collapse: collapse;
@@ -80,36 +63,4 @@
 
 .logs-row-hidden {
   opacity: 0.45;
-}
-
-.logs-job-pending {
-  opacity: 0.6;
-}
-
-.logs-job-running {
-  color: var(--info);
-}
-
-.logs-job-failed {
-  color: var(--danger-text);
-}
-
-.logs-job-model {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono, monospace);
-  font-size: 0.75rem;
-}
-
-.logs-job-response {
-  max-width: 300px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.logs-job-response-error {
-  color: var(--danger-text);
 }

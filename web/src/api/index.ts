@@ -98,6 +98,8 @@ export type {
   Job,
   ActiveJob,
   JobStreamEvent,
+  SlotHolder,
+  SlotsStatus,
   ModelConfig,
   ModelConfigPatch,
   CatalogModel,

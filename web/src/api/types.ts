@@ -79,6 +79,28 @@ export interface Job {
   inputTokenEstimate?: number | null
   elapsedMs: number | null
   resultSummary?: string | null
+  agentRole?: 'author' | 'editor' | 'worker' | null
+}
+
+/** One held concurrency slot, attributed (src/queue/slots.ts SlotHolder). */
+export interface SlotHolder {
+  jobId: string
+  cost: number
+  reservedAt: number
+  jobType: string
+  agentRole: 'author' | 'editor' | 'worker' | null
+  storyId: string
+  storyName: string
+}
+
+export interface SlotsStatus {
+  mode: 'live' | 'fallback'
+  used: number
+  max: number
+  /** Featherless's own account-wide count (live mode) — includes lingering post-abort usage and in-job retries no local job row shows. */
+  providerUsedCost: number | null
+  reservedCost: number
+  holders: SlotHolder[]
 }
 
 export interface ActiveJob {
