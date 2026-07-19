@@ -60,7 +60,7 @@ truth.
 
 Each step is roughly one session and leaves the app working.
 
-### 1. Length toggle re-enable (independent, ships first)
+### 1. Length toggle re-enable (independent, ships first) — ✅ done 2026-07-19 (5a8291a)
 
 Re-enable the composer length toggle (`web/src/components/StoryToggles.tsx` — wiring is
 commented out in `generationOptionsFull`) and honor `options.responseLimit` in
@@ -73,12 +73,23 @@ decide". Implementation: send **no override**; the Author agent's configured
 request (runaway-generation risk + unknown provider defaults). Default steps become
 `[0, 100, 300, 500]`, with `0` labeled "Auto".
 
-### 2. Hypothesis corpus
+### 2. Hypothesis corpus — ✅ done 2026-07-19
 
-One checked-in data file (e.g. `src/data/format-hypotheses.json`) distilled from ST/KAI
-presets, the LLM Settings Guide, and our own probe findings: candidate thinking tags, stop
-tokens, kwarg keys (`enable_thinking` / `thinking` / `thinking_budget` /
-`preserve_thinking` / `clear_thinking`), family regexes. Every entry carries its source.
+Shipped as `src/data/format-hypotheses.ts` (typed data module instead of JSON — no
+`resolveJsonModule` churn) with tests in `tests/services/format-hypotheses.test.ts`.
+Mined from: SillyTavern release-branch instruct + reasoning presets, KoboldAI Lite's
+`instructpresets` + `hardcoded_think_closers` (extracted from the single-file app), the
+LLM Settings Guide local snapshot (`Desktop/reference/llm-settings-guide.md`), the
+Featherless kwargs docs, and our probe findings. Contents: 6 thinking-tag candidates
+(incl. Gemma 4's `<|channel>thought`/`<channel|>` with a source spelling conflict noted,
+Harmony channels, Seed/Cohere/Kimi variants), 29 leak tokens (eos + role-marker kinds;
+DeepSeek's fullwidth `<｜end▁of▁sentence｜>` flagged as grep-hostile; `[INST]` flagged
+probe-only due to bracket-note collision), 5 kwarg keys, 5 prompt-level thinking controls
+(`/no_think`, `/nothink`, closed/empty/open `<think>` prefills), and 18 ordered family
+regexes (`familyForModelId`, first-match-wins, Hermes before Llama). Helper
+`allLeakScanTokens()` unions leak tokens + all tag markers for completion scanning.
+Notable extras discovered: KAI's own runtime close-tag list (`</think>`, `<channel|>`,
+`</seed:think>`, `<|END_THINKING|>`) corroborates the tag families.
 
 ### 3. Probe engine (library, not yet a job)
 

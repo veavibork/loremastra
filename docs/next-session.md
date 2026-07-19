@@ -38,13 +38,12 @@ _Last updated: 2026-07-19 (format-probe plan agreed and written up — see Open 
 2026-07-19). Probe = the map, shape-based routing = the safety net, runtime tripwire =
 staleness detection. Build order, each step ~one session, app working after each:
 
-1. **Length toggle re-enable** — composer toggle + `options.responseLimit` honored in the
-   prose executor; `0` = "Auto" = no override (agent `responseLimit` stays as `max_tokens`
-   safety cap — never send uncapped).
-2. **Hypothesis corpus** — checked-in data file mined from ST/KAI presets + LLM Settings
-   Guide + our probe findings (thinking-tag variants, stop-token catalog, kwarg keys,
-   family regexes). Mined as hypotheses, never applied as config.
-3. **Probe engine** — productize `scripts/probe-*.ts` into a library: n≥2 per condition,
+1. ~~**Length toggle re-enable**~~ — ✅ done 2026-07-19 (`5a8291a`); `0` = "Auto". Bonus same
+   day (`61998b4`): "Layout buttons" editor in Settings + toggle.length resurrection via
+   layout defaults.
+2. ~~**Hypothesis corpus**~~ — ✅ done 2026-07-19: `src/data/format-hypotheses.ts` (see plan
+   doc for contents/sources). Mined as hypotheses, never applied as config.
+3. **Probe engine** (next) — productize `scripts/probe-*.ts` into a library: n≥2 per condition,
    reasoning field/tag detection, kwarg honoring both directions, stop-token leaks, broken
    template sanity check, `finish_reason` reliability.
 4. **Profile storage + `model-probe` queue job** — `(provider, model_id)` table in global
