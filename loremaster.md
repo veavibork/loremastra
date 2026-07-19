@@ -220,6 +220,8 @@ This is the core of LM's context management (shipped 2026-07-04). Older history 
 
 **Scene title (optional)** — After a segment fills, a Worker `segment-name` job may assign a short `[NAME]` title. **Segments tab only** — never injected into the Author prompt.
 
+**Coverage audit (optional, manual)** — A `segment-audit` Editor job (Segments tab "Audit coverage" button) judges a ready segment against the verbatim posts in its coverage window: 3 votes, flagged at 2+ fails. Detector only — stores pass/flagged + missing-event lines on the segment (cleared when content changes); it never rewrites or gates anything (judge-as-gate was rejected in the 2026-07-17 verify-ab experiment). Implementation: `src/services/story-to-date/audit.ts`.
+
 ### Trigger and input
 
 - **Trigger:** when the fully assembled Author prompt (system + worldbook + merged story-to-date + verbose tail) reaches **80%** of usable context (context limit minus response reserve).

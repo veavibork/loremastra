@@ -1,46 +1,37 @@
 # Session handoff
 
-_Last updated: 2026-07-19 (fold truncation fix + Queue tab slot attribution, both deployed)._
+_Last updated: 2026-07-19 (all four open items actioned: live-save check, retry visibility, coverage audit, push-driven queue)._
 
 ## State of the world
 
-- **Deployed to VM (e20fb66)**:
-  - **Fold fix (ea6b253)** — every VM fold job had failed "likely truncated at Editor
-    max_tokens": the instructed digest target estimated to more tokens than the rejection
-    threshold, so a compliant model was rejected every time. Now `completeChatWithMeta`
-    exposes `finish_reason` (ground truth for a max_tokens cutoff), the length heuristic is a
-    backstop only, and the target sizing keeps real headroom (~1911 words at 4096).
-    Verified live: fold job `019f7a4c` on story `019f62e5` completed in 3m33s, absorbed
-    segments seq 19–28 into the seq-0 digest, deleted the rest. Total memory still slightly
-    over the 6000-token soft cap — the next natural fold converges further (by design).
-  - **Queue tab (e20fb66)** — slots header now shows the Featherless feed's own count as the
-    headline, lists each held slot with what holds it (job type, agent role, story, cost, age),
-    and calls out provider-side "overhang" (usage with no local job — lingering aborts/retries,
-    previously invisible). Jobs list is two-line cards for tablet use (line 1: created, type,
-    agent, status, turnaround, tokens; line 2 smaller: model, cost, priority, response). Jobs
-    API now includes `agentRole`. Legacy `used/max` (which double-counts feed + reservation)
-    kept for gating; display no longer uses it.
+- **Deployed to VM (333e847)**, on top of the same day's fold fix (ea6b253) and Queue tab
+  slot attribution (e20fb66):
+  - **Live save repair — resolved, no action needed.** The skinwalker-fight gap (old seq 2
+    claiming coverage through post 115) healed in regeneration before the fold; the seq-0
+    deep-past digest now covers the full arc (verified by reading it on the VM). Do NOT
+    delete seq 0 to "repair" anything — post-fold it is the only memory of posts 1–284.
+  - **In-job retry visibility** — `withTransientRetry`/`withModelFallback` emit retry events;
+    executors publish them as job progress labels ("Provider busy (503) — retrying X in 15s",
+    "X unavailable — trying Y"). The jobs API carries a running job's live progress label and
+    the Queue tab shows it in the response slot.
+  - **Coverage audit (judge-as-detector)** — new `segment-audit` job type (jobs CHECK
+    migration included). "Audit coverage" button per ready segment in the Segments tab runs
+    the verify-ab-calibrated judge over the segment's coverage window: 3 votes, flagged at
+    2+ fails, early exit when decided. Detector only — stores pass/flagged + missing-event
+    lines on the segment (badge + list in the tab), never modifies content. Verdict clears
+    automatically when segment content changes. Window capped at 40 posts (fold digests
+    can't be meaningfully audited). Shares the one-Editor-job-at-a-time gate.
+  - **Push-driven queue** — 'jobs' SSE pings now fire on claim/completion/cancel for every
+    job type; the Queue tab polls (2s) only while something is pending/running and otherwise
+    sits at zero polling, woken by SSE.
 - **verify-ab experiment** (`scripts/story-to-date-verify-ab.ts`, findings in development.md):
   judge+rewrite pass rejected; window halved instead; DeepSeek-V4-Flash rejected as Editor.
-  Editor stays on DeepSeek-V4-Pro.
+  Editor stays on DeepSeek-V4-Pro. The judge prompt now lives on in
+  `src/services/story-to-date/audit.ts` as the detector.
 
 ## Open items
 
-1. **Live save repair** — story `019f62e5` ("Default Storeee") still has segment seq 2
-   ("Vulnerability Unveiled") claiming coverage through post 115 while summarizing only the couch
-   scene; the skinwalker fight (posts 60–99) is absent from memory. Fix: delete that segment in
-   the Segments tab — regeneration chains automatically with the new 12-post windows.
-   (Note: seq 0–28 have since folded into one digest — check whether the gap survived the fold
-   before repairing.)
-2. **In-job retry visibility (optional)** — `withTransientRetry`/`withModelFallback` retries
-   still don't surface per-attempt state; publishing a progress label ("retrying, attempt 2")
-   from those wrappers would show it in the running job's row. The slot-holder list narrows the
-   mystery (the job visibly holds its slot) but doesn't show the attempt count.
-3. **Judge-as-detector (optional)** — the coverage judge reliably finds real missing events but
-   is too noisy for unattended gating; if wanted later, run it detector-only to flag segments in
-   the Segments tab, with majority-vote calibration.
-4. **Queue tab push-driven (optional)** — 'jobs' pings fire on creation only; claim/finish still
-   ride the 2s poll. Publishing those transitions would let the poll go entirely.
+_(none — previous four all actioned 2026-07-19)_
 
 ## Deferred frontend items
 
@@ -56,4 +47,4 @@ _Last updated: 2026-07-19 (fold truncation fix + Queue tab slot attribution, bot
 
 - Featherless server-side request cancellation unsupported — aborting the client fetch may not
   free their concurrency slot until the generation finishes server-side. The Queue tab's
-  "overhang" line now makes this visible when it happens.
+  "overhang" line makes this visible when it happens.
