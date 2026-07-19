@@ -154,16 +154,36 @@ an authoritative-looking `none-observed` shape. Fixed: zero successful calls →
 `failed` with the first HTTP error preserved. (The local dev DB's stored Featherless key
 differs from `.env`'s working one — probes on the VM use the real stored key.)
 
-### 5. Consumers
+### 5. Consumers — ✅ done 2026-07-19
 
-- `ReasoningStreamSplitter` tag set and trace routing read confirmed tags from the profile
-  (shape-based routing stays as the fallback for unprofiled models).
-- Prefill decision (`isReasoningModel()` `/deepseek/i` check) replaced by profile data.
-- Effort toggle becomes per-model-aware: hidden or warned when the profile says the model
-  ignores the toggle (Kimi) or cannot think (Gemma); `thinking_budget` offered only when
-  verified honored.
-- Retry rules and idle-timeout budget read the profile where they currently guess.
-- HF metadata (sync-hf-model-tags) folded into the same record.
+All decisions live in `src/services/model-format.ts` as pure `*For(profile, …)` cores
+(unit-tested) with thin global-DB wrappers; unprofiled models fall back to exactly the
+pre-probe heuristics, so behavior only changes where a probe produced evidence.
+
+- **Splitter tags**: `ReasoningStreamSplitter` accepts custom open/close tag lists; the
+  hardcoded `<think>` pair always stays, plus the model's probe-confirmed variant
+  (`splitterTagsForModel`). Shape-based routing unchanged as the safety net.
+- **Prefill decision**: `shouldPrefillThink` — never prefill unless resolved kwargs
+  explicitly enable thinking; deepseek family only (profile `family`, `/deepseek/i`
+  fallback); suppressed when the probe says the model can't think. Expanding beyond
+  deepseek needs its own A/B evidence — the empty-completion coin flip is stochastic, a
+  probe can't measure it. **Bug found & fixed on the way:** prose.ts force-passed prefill
+  for `/deepseek/i` models unconditionally, bypassing the effort-off guard.
+  Live-validated on DeepSeek-V4-Pro (2×3 conditions): off+no-prefill clean, on+prefill
+  reasoning-in-field + full prose; the old off+prefill combo happened to stream clean on
+  V4-Pro, so no live breakage preceded the fix.
+- **Idle timeout**: profile-aware in two directions — thinking requested but model can't
+  think → short budget; thinking off but model ignores the off switch (Kimi-style) → long
+  budget.
+- **Effort toggle per-model-aware**: the composer Effort label itself carries the caveat
+  ("(no effect)" / "(thinks anyway)" / "(budget ignored)") for the primary Author model —
+  label text, not a tooltip, because tablet. Button stays functional (warn, not hide).
+- **HF metadata**: `GET /api/model-profiles` enriches each row with `hfTags` from the
+  offline cache at read time; shown as a muted chip in the Agents card.
+- **Deliberately unchanged**: the empty-completion retry rules stay shape-based (they were
+  already evidence-driven), and `stripThinkingTags` (non-streamed completeChat/callWithTools
+  callers) keeps the hardcoded `<think>` pair — its call sites are Worker/Editor paths where
+  the profile isn't threaded through yet; fold in if a non-`<think>` model ever lands there.
 
 ### 6. Runtime tripwire
 

@@ -138,18 +138,8 @@ export function isReasoningModel(model: string): boolean {
 /** Assistant-turn prefill that prevents empty first-token stops on reasoning-family models. */
 export const REASONING_ASSISTANT_PREFILL = '<think>\n'
 
-/**
- * Effort Off (`enable_thinking: false`) skips the prefill — confirmed live: prefill +
- * enable_thinking false routes IC prose through delta.reasoning only, which triggered false
- * "reasoning but no answer content" retries.
- */
-export function shouldPrefillReasoning(
-  model: string,
-  chatTemplateKwargs?: Record<string, unknown>,
-): boolean {
-  if (chatTemplateKwargs?.enable_thinking === false) return false
-  return isReasoningModel(model)
-}
+// The prefill decision itself lives in src/services/model-format.ts (shouldPrefillThink) —
+// profile-aware, with isReasoningModel above as the unprofiled fallback.
 
 /**
  * Expands a caller's `chat_template_kwargs` into the full set Featherless's model families
@@ -293,7 +283,7 @@ export interface StreamOptions {
   chatTemplateKwargs?: Record<string, unknown>
 }
 
-const DEFAULT_IDLE_TIMEOUT_MS = 90_000
+export const DEFAULT_IDLE_TIMEOUT_MS = 90_000
 /** Reasoning models may sit in a thinking phase with sparse or reasoning-only chunks. */
 export const REASONING_IDLE_TIMEOUT_MS = 300_000
 

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   fetchModelConfigs,
+  fetchModelProfiles,
   fetchSettingsSpace,
   type GenerationOptions,
   type ModelConfig,
+  type ModelProfileRow,
 } from '../api'
 import { getStoryToggles, setStoryToggles, type ToggleIndices } from '../store'
 
@@ -55,12 +57,31 @@ const DEFAULT_EFFORT: EffortPreset[] = [
   { id: 'deep', label: 'Deep', enableThinking: true, thinkingBudget: 16384 },
 ]
 
+/**
+ * Per-model Effort awareness (format-probe-plan.md step 5): when the primary Author model has
+ * a probed format profile that contradicts the selected preset, say so in the button label
+ * itself — tooltips don't exist on a tablet. The probe evidence lives in the Agents tab.
+ */
+function effortLabelFor(effort: EffortPreset, profile: ModelProfileRow | undefined): string {
+  const p = profile?.profile
+  if (!p || (p.callsSucceeded ?? 0) === 0) return effort.label
+  if (effort.enableThinking && p.thinkingOnProduces === false) return `${effort.label} (no effect)`
+  if (!effort.enableThinking && p.thinkingOffSuppresses === false) {
+    return `${effort.label} (thinks anyway)`
+  }
+  if (effort.enableThinking && effort.thinkingBudget != null && p.thinkingBudgetHonored === false) {
+    return `${effort.label} (budget ignored)`
+  }
+  return effort.label
+}
+
 export function useStoryToggles(storyId: string) {
   const [lengthSteps, setLengthSteps] = useState<number[]>(DEFAULT_LENGTH)
   const [moods, setMoods] = useState<MoodPreset[]>(DEFAULT_MOOD)
   const [params, setParams] = useState<ParamPreset[]>(DEFAULT_PARAMS)
   const [efforts, setEfforts] = useState<EffortPreset[]>(DEFAULT_EFFORT)
   const [authorModels, setAuthorModels] = useState<ModelConfig[]>([])
+  const [modelProfiles, setModelProfiles] = useState<ModelProfileRow[]>([])
   const [indices, setIndices] = useState<ToggleIndices>(() => getStoryToggles(storyId))
 
   useEffect(() => {
@@ -74,13 +95,15 @@ export function useStoryToggles(storyId: string) {
       fetchSettingsSpace<ParamPreset[]>(TOGGLE_PARAM_SPACE),
       fetchSettingsSpace<EffortPreset[]>(TOGGLE_EFFORT_SPACE),
       fetchModelConfigs(),
+      fetchModelProfiles().catch(() => [] as ModelProfileRow[]),
     ])
-      .then(([len, mood, param, effort, configs]) => {
+      .then(([len, mood, param, effort, configs, profiles]) => {
         if (len?.length) setLengthSteps(len)
         if (mood?.length) setMoods(mood)
         if (param?.length) setParams(param)
         if (effort?.length) setEfforts(effort)
         setAuthorModels(configs.filter((c) => c.active && c.useAuthor))
+        setModelProfiles(profiles)
       })
       .catch(() => {})
   }, [])
@@ -103,14 +126,22 @@ export function useStoryToggles(storyId: string) {
     const param = params[indices.param % params.length]
     const model = authorModels[indices.model % Math.max(authorModels.length, 1)]
     const effort = efforts[indices.effort % efforts.length]
+    // Model toggle is disabled, so the primary Author config (first in fallback order) is
+    // what generation actually uses — its probe profile drives the effort caveat.
+    const primaryAuthor = authorModels[0]
+    const authorProfile = primaryAuthor
+      ? modelProfiles.find(
+          (p) => p.provider === primaryAuthor.provider && p.modelId === primaryAuthor.model,
+        )
+      : undefined
     return {
       length: len != null ? (len === 0 ? 'Auto' : `${len}t`) : 'Length',
       mood: mood?.label ?? 'Mood',
       param: param?.label ?? 'Param',
       model: model?.model?.split('/').pop() ?? 'Model',
-      effort: effort?.label ?? 'Effort',
+      effort: effort ? effortLabelFor(effort, authorProfile) : 'Effort',
     }
-  }, [indices, lengthSteps, moods, params, efforts, authorModels])
+  }, [indices, lengthSteps, moods, params, efforts, authorModels, modelProfiles])
 
   const generationOptions = useCallback((): GenerationOptions | undefined => {
     // Mood / param / model toggles disabled — Length and Effort are wired.

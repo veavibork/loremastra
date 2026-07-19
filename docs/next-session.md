@@ -53,9 +53,14 @@ staleness detection. Build order, each step ~one session, app working after each
    never-probed model; Probe/Re-probe/Cancel + chip summary per Agents card; active probes
    in the Queue tab; panic button covers probes. Live-smoke-tested (also fixed: all-calls-
    failed probes now land as `failed`, not a garbage `done` profile).
-5. **Consumers** (next) — splitter tags, prefill decision (retire `/deepseek/i`),
-   per-model-aware Effort toggle, retry rules, HF metadata folded in.
-6. **Runtime tripwire** — observed shape contradicts profile → flag model, suggest re-probe.
+5. ~~**Consumers**~~ — ✅ done 2026-07-19: `src/services/model-format.ts` (pure cores +
+   DB wrappers, name-heuristic fallback for unprofiled models) drives splitter tags,
+   prefill, and idle timeout; Effort label carries per-model caveats; hfTags in the
+   profile API. Fixed on the way: prose.ts force-prefilled `/deepseek/i` even with
+   thinking off (bypassing the guard); new decision live-validated on DeepSeek-V4-Pro.
+   Deliberately unchanged: shape-based retry rules, `stripThinkingTags` (see plan doc).
+6. **Runtime tripwire** (next) — observed shape contradicts profile → flag model, suggest
+   re-probe.
 
 **Parked:** cache/persistent-error mystery (no repro; evidence capture is the prerequisite —
 see plan doc), raw `/completions` escape hatch, mood/param/model toggles.

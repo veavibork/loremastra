@@ -5,8 +5,9 @@
  * `reasoning_content` and no close tag (see scripts/probe-deepseek-stream.ts, 2026-07-04).
  */
 
-const OPEN_TAGS = ['<think>']
-const CLOSE_TAGS = ['</think>']
+/** Default tag pair — the fallback for unprofiled models. A probed model's confirmed variant is added on top via ReasoningStreamSplitterOptions (see src/services/model-format.ts). */
+export const DEFAULT_OPEN_TAGS = ['<think>']
+export const DEFAULT_CLOSE_TAGS = ['</think>']
 
 function findFirstTag(
   text: string,
@@ -38,14 +39,22 @@ function partialTagHold(text: string, tags: readonly string[]): number {
 export interface ReasoningStreamSplitterOptions {
   /** Only set true if the stream has already opened a thinking block — never infer from request prefill. */
   startsInThinking?: boolean
+  /** Full open-tag list to watch for; defaults to DEFAULT_OPEN_TAGS. */
+  openTags?: readonly string[]
+  /** Full close-tag list to watch for; defaults to DEFAULT_CLOSE_TAGS. */
+  closeTags?: readonly string[]
 }
 
 export class ReasoningStreamSplitter {
   private mode: 'thinking' | 'answer'
   private carry = ''
+  private readonly openTags: readonly string[]
+  private readonly closeTags: readonly string[]
 
   constructor(options?: ReasoningStreamSplitterOptions) {
     this.mode = options?.startsInThinking ? 'thinking' : 'answer'
+    this.openTags = options?.openTags?.length ? options.openTags : DEFAULT_OPEN_TAGS
+    this.closeTags = options?.closeTags?.length ? options.closeTags : DEFAULT_CLOSE_TAGS
   }
 
   push(
@@ -68,7 +77,7 @@ export class ReasoningStreamSplitter {
   private drain(emitThinking: (text: string) => void, emitAnswer: (text: string) => void): void {
     while (this.carry.length > 0) {
       if (this.mode === 'thinking') {
-        const close = findFirstTag(this.carry, CLOSE_TAGS)
+        const close = findFirstTag(this.carry, this.closeTags)
         if (close) {
           const before = this.carry.slice(0, close.index)
           if (before) emitThinking(before)
@@ -76,7 +85,7 @@ export class ReasoningStreamSplitter {
           this.mode = 'answer'
           continue
         }
-        const hold = partialTagHold(this.carry, CLOSE_TAGS)
+        const hold = partialTagHold(this.carry, this.closeTags)
         const emitLen = this.carry.length - hold
         if (emitLen <= 0) break
         emitThinking(this.carry.slice(0, emitLen))
@@ -84,7 +93,7 @@ export class ReasoningStreamSplitter {
         continue
       }
 
-      const open = findFirstTag(this.carry, OPEN_TAGS)
+      const open = findFirstTag(this.carry, this.openTags)
       if (open) {
         const before = this.carry.slice(0, open.index)
         if (before) emitAnswer(before)
@@ -92,7 +101,7 @@ export class ReasoningStreamSplitter {
         this.mode = 'thinking'
         continue
       }
-      const hold = partialTagHold(this.carry, OPEN_TAGS)
+      const hold = partialTagHold(this.carry, this.openTags)
       const emitLen = this.carry.length - hold
       if (emitLen <= 0) break
       emitAnswer(this.carry.slice(0, emitLen))

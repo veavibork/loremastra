@@ -10,10 +10,11 @@ import { getAgentProfile } from '../../services/agent-config.js'
 import { buildProseHistory } from '../../services/history.js'
 import {
   REASONING_ASSISTANT_PREFILL,
-  isReasoningModel,
+  resolveChatTemplateKwargs,
   estimateMessageTokens,
   JobCancelledError,
 } from '../../inference/featherless.js'
+import { shouldPrefillThink } from '../../services/model-format.js'
 import { releaseSlot } from '../slots.js'
 import { streamingModels, runningControllers, handleStreamingCancel } from '../cancel.js'
 import { streamWithFallback } from '../provider-dispatch.js'
@@ -77,7 +78,15 @@ export async function executeProseJob(
     if (moodFragment) {
       finalHistory = [...history, { role: 'system', content: moodFragment }]
     }
-    const inferenceMessages = isReasoningModel(profile.model)
+    // Mirror streamWithFallback's own prefill decision for the token estimate only — it, not
+    // this executor, owns whether the prefill message is actually sent. (An earlier version
+    // force-passed prefill for /deepseek/i models unconditionally, which applied it even with
+    // thinking off — the exact confirmed-live combo that routes IC prose through
+    // delta.reasoning and triggers false "no answer content" retries.)
+    const inferenceMessages = shouldPrefillThink(
+      profile.model,
+      resolveChatTemplateKwargs(chatTemplateKwargs),
+    )
       ? [...finalHistory, { role: 'assistant' as const, content: REASONING_ASSISTANT_PREFILL }]
       : finalHistory
     setJobInputTokenEstimate(db, jobId, estimateMessageTokens(inferenceMessages))
@@ -89,7 +98,6 @@ export async function executeProseJob(
       jobId,
       signal,
       chatTemplateKwargs,
-      isReasoningModel(profile.model),
     )
 
     // chars/4 is the same rough estimate used for prompt budgeting elsewhere (see history.ts) —

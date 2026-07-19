@@ -11,6 +11,7 @@ import {
   cancelPendingProbe,
 } from '../db/model-format-profile-store.js'
 import { getProbeProgress, abortRunningProbe } from '../queue/probe-runner.js'
+import { getHfTagsForModel } from '../inference/hf-model-tags.js'
 
 export const modelProfilesRoute = new Hono<{ Variables: AppVariables }>()
 
@@ -28,6 +29,9 @@ modelProfilesRoute.get('/', (c) => {
       ...row,
       // Live per-condition progress label while the runner has this probe in flight.
       progress: row.status === 'running' ? getProbeProgress(row.provider, row.modelId) : null,
+      // HF model-card metadata from the offline cache (scripts/sync-hf-model-tags.ts) —
+      // enriched at read time rather than stored, so a cache refresh shows up immediately.
+      hfTags: getHfTagsForModel(row.modelId),
     })),
   })
 })

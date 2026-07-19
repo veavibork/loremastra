@@ -225,6 +225,8 @@ export interface ModelProfileRow {
   updatedAt: string
   /** Live per-condition label while the probe is running ("Probe 3/8: thinking-on run 1…"). */
   progress: string | null
+  /** HF model-card tags from the offline cache — read-time enrichment, empty when unsynced. */
+  hfTags: string[]
 }
 
 export type LayoutJustify = 'left' | 'center' | 'right'

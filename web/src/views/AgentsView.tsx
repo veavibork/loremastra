@@ -92,6 +92,14 @@ function FormatProfileSection({
               {chip.text}
             </span>
           ))}
+          {row.hfTags.length > 0 && (
+            <span
+              className="agent-format-chip agent-format-probed-at"
+              title="HuggingFace model-card tags (offline cache)"
+            >
+              hf: {row.hfTags.join(', ')}
+            </span>
+          )}
           {row.probedAt && (
             <span className="agent-format-chip agent-format-probed-at">
               {new Date(row.probedAt).toLocaleDateString()}

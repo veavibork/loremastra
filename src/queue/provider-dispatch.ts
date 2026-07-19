@@ -11,12 +11,15 @@ import {
   withModelFallback,
   FeatherlessError,
   JobCancelledError,
-  shouldPrefillReasoning,
   resolveChatTemplateKwargs,
   REASONING_ASSISTANT_PREFILL,
-  streamIdleTimeoutMs,
   type ChatMessage,
 } from '../inference/featherless.js'
+import {
+  shouldPrefillThink,
+  profiledStreamIdleTimeoutMs,
+  splitterTagsForModel,
+} from '../services/model-format.js'
 import { ReasoningStreamSplitter } from '../inference/reasoning-stream.js'
 import {
   publishToken,
@@ -61,9 +64,12 @@ const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2
  * own `<think>` block, and under temperature the very first sampled token can land on an immediate
  * close-and-stop instead — confirmed live by replaying an identical failing request repeatedly.
  * Prefilling the assistant turn with an already-open block (see REASONING_ASSISTANT_PREFILL)
- * removes that coin-flip — but only when thinking is enabled; Effort Off sets enable_thinking:
- * false and skips prefill entirely (see shouldPrefillReasoning). EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE
- * retries before handing off to the next fallback candidate (if any).
+ * removes that coin-flip — but only when thinking is enabled; with thinking off the prefill
+ * actively breaks things (see shouldPrefillThink in services/model-format.ts, which owns the
+ * decision — profile-aware, name-regex fallback). The prefill/idle-timeout/splitter-tag
+ * decisions all read the model's probed format profile when one exists.
+ * EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE retries before handing off to the next fallback
+ * candidate (if any).
  */
 export async function streamWithFallback(
   profile: AgentProfile,
@@ -72,7 +78,6 @@ export async function streamWithFallback(
   jobId: string,
   signal?: AbortSignal,
   chatTemplateKwargs?: Record<string, unknown>,
-  prefillAssistant = false,
 ): Promise<{ text: string; model: string }> {
   const effectiveKwargs = resolveChatTemplateKwargs(chatTemplateKwargs)
   let reply = ''
@@ -84,11 +89,11 @@ export async function streamWithFallback(
     async (candidate) => {
       usedModel = candidate.model
       streamingModels.set(jobId, candidate.model)
-      const usePrefill =
-        prefillAssistant || shouldPrefillReasoning(candidate.model, effectiveKwargs)
+      const usePrefill = shouldPrefillThink(candidate.model, effectiveKwargs)
       const candidateMessages = usePrefill
         ? [...messages, { role: 'assistant' as const, content: REASONING_ASSISTANT_PREFILL }]
         : messages
+      const splitterTags = splitterTagsForModel(candidate.model)
 
       for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
         if (!isFirstStream) {
@@ -100,7 +105,7 @@ export async function streamWithFallback(
         }
         isFirstStream = false
 
-        const splitter = new ReasoningStreamSplitter({ startsInThinking: false })
+        const splitter = new ReasoningStreamSplitter({ startsInThinking: false, ...splitterTags })
         reply = ''
         let sawReasoning = false
         const emitThinking = (text: string) => {
@@ -144,7 +149,7 @@ export async function streamWithFallback(
               {
                 signal,
                 chatTemplateKwargs: effectiveKwargs,
-                idleTimeoutMs: streamIdleTimeoutMs(candidate.model, effectiveKwargs),
+                idleTimeoutMs: profiledStreamIdleTimeoutMs(candidate.model, effectiveKwargs),
               },
             )
           })
