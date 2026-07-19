@@ -803,3 +803,32 @@ Segments polls run even when idle (could gate on active jobs), no graceful-shutd
 `stopPipelineRunner`/`stopHealthSnapshots`/`stopAllConcurrencyFeeds`, `publishJobCreated` emits on
 a channel nobody can be subscribed to yet, and the concurrency feed re-arms its reconnect timer
 forever for users with no Featherless key.
+
+### Segment-audit shipped + Worker-model A/B — ✅ done, 2026-07-19
+
+Coverage audit (judge-as-detector) shipped as the `segment-audit` job type: Segments-tab
+"Audit coverage" button, 3 Editor votes, flagged at 2+ fails, detector-only (stores
+pass/flagged + missing lines on the segment; cleared when content changes). Prompt is the
+verify-ab judge verbatim (`src/services/story-to-date/audit.ts`).
+
+#### Can the Worker run the audit? A/B says no
+
+`scripts/segment-audit-model-ab.ts` (kept for future runs): same judge prompt/parse/tally,
+arm E = Editor profile, arm W = Worker profile, over the newest 4 ready segments of the live
+save. Run 2026-07-19 (artifacts: `data/experiments/segment-audit-ab/2026-07-19T12-57-21-482Z/`):
+
+- **Editor (DeepSeek-V4-Pro):** flagged 2/4; fail-vote missing lists were precise and
+  verifiable; pass verdicts on the two clean segments.
+- **Worker (Hermes-3-Llama-3.1-8B):** flagged 4/4 — it defaults to fail. Verdict agreement
+  with Editor only 2/4, and the disagreements were Worker false alarms: it flagged events as
+  missing that are verbatim present in the block (seq 38: Lex's "sit back and take it"
+  anxiety, the cilantro confession — with the participants swapped), flagged scene
+  choreography its own rubric excludes (seq 39: "nestling into Morgan's arms"), and misread
+  the posts (reported Wren's pillow-throwing proposal as an adopted rule; the log has Lex
+  redirecting it). Template garbage (`<|im_end|>`) leaks into output; parse still succeeded
+  10/10. No latency win either (median 9.7s vs Editor's 8.0s).
+- **Conclusion: segment-audit stays on the Editor.** An audit that cries wolf on clean
+  segments — and asserts absence of things that are present — is worse than no audit; the
+  Worker tier (8B) can't hold the consequential-vs-staging distinction or do reliable
+  block-vs-posts lookup. Revisit only if the Worker slot moves to a substantially stronger
+  model.

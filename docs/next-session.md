@@ -28,6 +28,9 @@ _Last updated: 2026-07-19 (all four open items actioned: live-save check, retry 
   judge+rewrite pass rejected; window halved instead; DeepSeek-V4-Flash rejected as Editor.
   Editor stays on DeepSeek-V4-Pro. The judge prompt now lives on in
   `src/services/story-to-date/audit.ts` as the detector.
+- **Worker-as-auditor A/B (2026-07-19, `scripts/segment-audit-model-ab.ts`)**: Hermes-3-8B
+  (Worker) rejected for segment-audit — flags everything, asserts absence of events verbatim
+  present in the block, no latency win. Audit stays Editor-tier. Findings in development.md.
 
 ## Open items
 
