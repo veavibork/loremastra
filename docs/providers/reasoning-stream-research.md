@@ -82,6 +82,9 @@ shape. Forced prefill causes chat-template token leak into IC — do not prefill
 
 ## Future: per-model stream-shape confirmation
 
+> **Superseded 2026-07-19:** this sketch grew into a full agreed design —
+> see [format-probe-plan.md](format-probe-plan.md). Kept below for history.
+
 **Problem:** `isReasoningModel()` is currently a substring check on model id (`/deepseek/i`). New
 models or providers need empirical confirmation before we prefill, show traces, or apply retry rules.
 

@@ -1,6 +1,6 @@
 # Session handoff
 
-_Last updated: 2026-07-19 (all four open items actioned: live-save check, retry visibility, coverage audit, push-driven queue)._
+_Last updated: 2026-07-19 (format-probe plan agreed and written up — see Open items)._
 
 ## State of the world
 
@@ -34,7 +34,28 @@ _Last updated: 2026-07-19 (all four open items actioned: live-save check, retry 
 
 ## Open items
 
-_(none — previous four all actioned 2026-07-19)_
+**Model format probe** — full design in `docs/providers/format-probe-plan.md` (agreed
+2026-07-19). Probe = the map, shape-based routing = the safety net, runtime tripwire =
+staleness detection. Build order, each step ~one session, app working after each:
+
+1. **Length toggle re-enable** — composer toggle + `options.responseLimit` honored in the
+   prose executor; `0` = "Auto" = no override (agent `responseLimit` stays as `max_tokens`
+   safety cap — never send uncapped).
+2. **Hypothesis corpus** — checked-in data file mined from ST/KAI presets + LLM Settings
+   Guide + our probe findings (thinking-tag variants, stop-token catalog, kwarg keys,
+   family regexes). Mined as hypotheses, never applied as config.
+3. **Probe engine** — productize `scripts/probe-*.ts` into a library: n≥2 per condition,
+   reasoning field/tag detection, kwarg honoring both directions, stop-token leaks, broken
+   template sanity check, `finish_reason` reliability.
+4. **Profile storage + `model-probe` queue job** — `(provider, model_id)` table in global
+   DB, auto-probe on agent save with unprofiled model, "Re-probe" button + profile summary
+   in the Agents tab.
+5. **Consumers** — splitter tags, prefill decision (retire `/deepseek/i`), per-model-aware
+   Effort toggle, retry rules, HF metadata folded in.
+6. **Runtime tripwire** — observed shape contradicts profile → flag model, suggest re-probe.
+
+**Parked:** cache/persistent-error mystery (no repro; evidence capture is the prerequisite —
+see plan doc), raw `/completions` escape hatch, mood/param/model toggles.
 
 ## Deferred frontend items
 
