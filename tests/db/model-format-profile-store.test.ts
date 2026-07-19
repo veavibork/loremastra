@@ -10,6 +10,7 @@ import {
   finishProbe,
   recoverStaleProbes,
   cancelPendingProbe,
+  recordFormatDrift,
 } from '../../src/db/model-format-profile-store.js'
 import type { ModelFormatProfile } from '../../src/inference/format-probe.js'
 
@@ -152,5 +153,52 @@ describe('recovery and cancel', () => {
     requestModelProbe(db, 'featherless', MODEL, 'user-1')
     requestModelProbe(db, 'featherless', 'zai-org/GLM-4.7-Flash', 'user-1')
     expect(listModelFormatProfiles(db)).toHaveLength(2)
+  })
+})
+
+describe('drift tripwire lifecycle', () => {
+  function probedRow() {
+    requestModelProbe(db, 'featherless', MODEL, 'user-1')
+    claimNextPendingProbe(db)
+    finishProbe(db, 'featherless', MODEL, {
+      status: 'done',
+      profile: fakeProfile(),
+      artifactDir: null,
+    })
+  }
+
+  it('records drift once; later detections do not overwrite the first evidence', () => {
+    probedRow()
+    expect(recordFormatDrift(db, 'featherless', MODEL, ['reason A'])).toBe(true)
+    expect(recordFormatDrift(db, 'featherless', MODEL, ['reason B'])).toBe(false)
+    const row = getModelFormatProfile(db, 'featherless', MODEL)
+    expect(row?.driftDetectedAt).toBeTruthy()
+    expect(row?.driftReasons).toEqual(['reason A'])
+  })
+
+  it('a successful re-probe clears the drift flag', () => {
+    probedRow()
+    recordFormatDrift(db, 'featherless', MODEL, ['reason A'])
+    requestModelProbe(db, 'featherless', MODEL, 'user-1')
+    claimNextPendingProbe(db)
+    finishProbe(db, 'featherless', MODEL, {
+      status: 'done',
+      profile: fakeProfile(),
+      artifactDir: null,
+    })
+    const row = getModelFormatProfile(db, 'featherless', MODEL)
+    expect(row?.driftDetectedAt).toBeNull()
+    expect(row?.driftReasons).toEqual([])
+  })
+
+  it('a failed re-probe keeps the drift flag', () => {
+    probedRow()
+    recordFormatDrift(db, 'featherless', MODEL, ['reason A'])
+    requestModelProbe(db, 'featherless', MODEL, 'user-1')
+    claimNextPendingProbe(db)
+    finishProbe(db, 'featherless', MODEL, { status: 'failed', error: 'boom' })
+    const row = getModelFormatProfile(db, 'featherless', MODEL)
+    expect(row?.driftDetectedAt).toBeTruthy()
+    expect(row?.driftReasons).toEqual(['reason A'])
   })
 })

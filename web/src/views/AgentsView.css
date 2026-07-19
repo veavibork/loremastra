@@ -158,6 +158,12 @@
   border-color: var(--danger);
 }
 
+/* Drift chips carry a sentence, not a token — let them wrap instead of overflowing the card. */
+.agent-format-drift {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .agents-savebar {
   display: flex;
   gap: 0.5rem;

@@ -119,6 +119,10 @@ CREATE TABLE IF NOT EXISTS model_format_profiles (
   probed_at TEXT,
   artifact_dir TEXT,
   error TEXT,
+  -- Runtime tripwire (plan step 6): set when a live stream contradicted the stored profile;
+  -- cleared by the next successful probe. drift_reasons is a JSON string array.
+  drift_detected_at TEXT,
+  drift_reasons TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (provider, model_id)

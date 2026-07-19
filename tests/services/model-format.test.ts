@@ -3,6 +3,7 @@ import {
   shouldPrefillThinkFor,
   streamIdleTimeoutMsFor,
   splitterTagsFor,
+  detectFormatDriftFor,
 } from '../../src/services/model-format.js'
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
@@ -128,6 +129,62 @@ describe('splitterTagsFor', () => {
     )
     expect(tags.openTags).toEqual(['<think>'])
     expect(tags.closeTags).toEqual(['</think>'])
+  })
+})
+
+describe('detectFormatDriftFor', () => {
+  const clean = { sawReasoningField: false, sawInlineThinking: false, answerText: 'Prose.' }
+
+  it('never flags without a profile, and silence never flags', () => {
+    expect(detectFormatDriftFor(null, OFF, { ...clean, sawReasoningField: true })).toEqual([])
+    expect(
+      detectFormatDriftFor(
+        profile({ thinkingOnProduces: true, reasoningFieldName: null }),
+        ON,
+        clean,
+      ),
+    ).toEqual([])
+  })
+
+  it('flags reasoning that appears despite a working off switch', () => {
+    const p = profile({ thinkingOffSuppresses: true, reasoningFieldName: 'reasoning' })
+    const reasons = detectFormatDriftFor(p, OFF, { ...clean, sawReasoningField: true })
+    expect(reasons.some((r) => r.includes('thinking off'))).toBe(true)
+  })
+
+  it('does not flag off-mode reasoning when the profile already says the switch is ignored', () => {
+    const p = profile({ thinkingOffSuppresses: false, reasoningFieldName: 'reasoning' })
+    expect(detectFormatDriftFor(p, OFF, { ...clean, sawReasoningField: true })).toEqual([])
+  })
+
+  it('flags a reasoning field / inline tag the probe never observed', () => {
+    const noField = profile({ thinkingOffSuppresses: null, reasoningFieldName: null })
+    expect(
+      detectFormatDriftFor(noField, ON, { ...clean, sawReasoningField: true }).some((r) =>
+        r.includes('delta field'),
+      ),
+    ).toBe(true)
+    const noTag = profile({ inlineThinkingTag: null })
+    expect(
+      detectFormatDriftFor(noTag, ON, { ...clean, sawInlineThinking: true }).some((r) =>
+        r.includes('inline thinking tags'),
+      ),
+    ).toBe(true)
+  })
+
+  it('flags a new template-token leak but tolerates known ones', () => {
+    const p = profile({ leakTokensSeen: ['<|im_end|>'] })
+    expect(detectFormatDriftFor(p, ON, { ...clean, answerText: 'Prose.<|im_end|>' })).toEqual([])
+    const reasons = detectFormatDriftFor(p, ON, { ...clean, answerText: 'Prose.<|eot_id|>' })
+    expect(reasons.some((r) => r.includes('<|eot_id|>'))).toBe(true)
+  })
+
+  it('ignores probe-only tokens in live prose ([INST] bracket-note collision)', () => {
+    const reasons = detectFormatDriftFor(profile({}), ON, {
+      ...clean,
+      answerText: 'The sign reads [INST]ANT SOUP[/INST] in crooked letters.',
+    })
+    expect(reasons.filter((r) => r.includes('[INST]'))).toEqual([])
   })
 })
 

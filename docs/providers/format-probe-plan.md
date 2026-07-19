@@ -185,12 +185,33 @@ pre-probe heuristics, so behavior only changes where a probe produced evidence.
   callers) keeps the hardcoded `<think>` pair — its call sites are Worker/Editor paths where
   the profile isn't threaded through yet; fold in if a non-`<think>` model ever lands there.
 
-### 6. Runtime tripwire
+### 6. Runtime tripwire — ✅ done 2026-07-19
 
-During normal generation, if the observed stream shape contradicts the stored profile
-(reasoning field appears that shouldn't, unknown tag variant, stop-token leak), flag the
-model in the Agents tab ("format drift detected — re-probe suggested") and log the evidence.
-This is the staleness answer to silent redeploys. Optionally auto-enqueue a re-probe.
+After every successful `streamWithFallback` stream, `reportFormatDrift`
+(src/services/model-format.ts) compares what actually happened against the stored profile.
+Deliberately one-sided: only "something appeared that the profile says shouldn't" flags —
+the absence of reasoning proves nothing (models legitimately skip thinking on easy turns).
+Checks:
+
+- reasoning appeared (field or inline) with thinking off, when the profile says the off
+  switch suppresses it;
+- a separate reasoning delta field the probe never observed;
+- inline thinking tags the probe never observed;
+- a template-token leak not already in `profile.leakTokensSeen` — scanned with
+  `runtimeLeakScanTokens()`, which excludes probe-only tokens (`[INST]` collides with
+  bracket-note prose; the corpus now carries a `runtimeScan: false` flag).
+
+First detection wins: drift columns on the profile row store the timestamp + reasons, later
+contradictions only log (telemetry `jobType: 'format-drift'`, with evidence). A successful
+re-probe clears the flag; a failed one keeps it. Agents tab shows a red wrapping chip
+("drift <date>: <reason> — re-probe suggested") next to the existing Re-probe button. The
+tripwire is wrapped so it can never fail a generation that already succeeded.
+
+**Deliberately not auto-enqueueing a re-probe on drift** — a probe holds concurrency slots
+for minutes and drift is detected mid-play; flag + one-tap Re-probe keeps the user in
+control. Revisit if drift turns out to be frequent. Non-streamed Worker/Editor calls
+(completeChat/callWithTools) are outside the tripwire for now, same boundary as the other
+step-5 consumers.
 
 ## Parked (explicitly out of scope)
 

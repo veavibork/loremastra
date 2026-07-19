@@ -102,6 +102,8 @@ export interface LeakTokenHypothesis {
   families: string[]
   sources: HypothesisSource[]
   notes?: string
+  /** False = probe-time scan only; too false-positive-prone against real prose (see [INST]). */
+  runtimeScan?: boolean
 }
 
 /**
@@ -160,6 +162,7 @@ export const LEAK_TOKEN_HYPOTHESES: LeakTokenHypothesis[] = [
     kind: 'role-marker',
     families: ['mistral', 'llama2'],
     sources: ['kai'],
+    runtimeScan: false,
     notes:
       'Plain-bracket token — collides with legit bracketed prose and our own bracket-note ' +
       'guidance convention. Probe-time scan only; too false-positive-prone for runtime.',
@@ -328,4 +331,12 @@ export function allLeakScanTokens(): string[] {
     out.add(t.close)
   }
   return [...out]
+}
+
+/** Same union minus tokens marked runtimeScan: false — what the drift tripwire scans live prose with. */
+export function runtimeLeakScanTokens(): string[] {
+  const excluded = new Set(
+    LEAK_TOKEN_HYPOTHESES.filter((t) => t.runtimeScan === false).map((t) => t.token),
+  )
+  return allLeakScanTokens().filter((t) => !excluded.has(t))
 }

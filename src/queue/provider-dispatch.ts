@@ -19,6 +19,7 @@ import {
   shouldPrefillThink,
   profiledStreamIdleTimeoutMs,
   splitterTagsForModel,
+  reportFormatDrift,
 } from '../services/model-format.js'
 import { ReasoningStreamSplitter } from '../inference/reasoning-stream.js'
 import {
@@ -107,9 +108,16 @@ export async function streamWithFallback(
 
         const splitter = new ReasoningStreamSplitter({ startsInThinking: false, ...splitterTags })
         reply = ''
-        let sawReasoning = false
-        const emitThinking = (text: string) => {
-          sawReasoning = true
+        // Field vs inline tracked separately — the drift tripwire below needs to know HOW
+        // reasoning arrived, not just that it did.
+        let sawReasoningField = false
+        let sawInlineThinking = false
+        const emitInlineThinking = (text: string) => {
+          sawInlineThinking = true
+          publishThinking(jobId, text)
+        }
+        const emitFieldThinking = (text: string) => {
+          sawReasoningField = true
           publishThinking(jobId, text)
         }
         const emitAnswer = (text: string) => {
@@ -124,14 +132,14 @@ export async function streamWithFallback(
               candidateMessages,
               {
                 onToken: (text) => {
-                  splitter.push(text, emitThinking, emitAnswer)
+                  splitter.push(text, emitInlineThinking, emitAnswer)
                 },
-                onReasoningToken: emitThinking,
+                onReasoningToken: emitFieldThinking,
                 onDone: () => {
-                  splitter.flush(emitThinking, emitAnswer)
+                  splitter.flush(emitInlineThinking, emitAnswer)
                   if (reply.trim()) {
                     resolve()
-                  } else if (sawReasoning) {
+                  } else if (sawReasoningField || sawInlineThinking) {
                     reject(
                       new FeatherlessError(
                         503,
@@ -153,6 +161,18 @@ export async function streamWithFallback(
               },
             )
           })
+          // Runtime drift tripwire (plan step 6) — a successful stream that contradicts the
+          // stored profile flags the model for re-probe. Best-effort: the tripwire must never
+          // be able to fail a generation that already succeeded.
+          try {
+            reportFormatDrift(candidate.model, effectiveKwargs, {
+              sawReasoningField,
+              sawInlineThinking,
+              answerText: reply,
+            })
+          } catch {
+            /* tripwire is diagnostics only */
+          }
           return
         } catch (err) {
           if (err instanceof JobCancelledError) throw err

@@ -82,6 +82,16 @@ function FormatProfileSection({
         </span>
       )}
       {row?.status === 'cancelled' && <span className="agent-format-status">probe cancelled</span>}
+      {row?.driftDetectedAt && !busy && (
+        <span
+          className="agent-format-chip agent-format-warn agent-format-drift"
+          title={row.driftReasons.join('\n')}
+        >
+          drift {new Date(row.driftDetectedAt).toLocaleDateString()}: {row.driftReasons[0]}
+          {row.driftReasons.length > 1 ? ` (+${row.driftReasons.length - 1})` : ''} — re-probe
+          suggested
+        </span>
+      )}
       {row?.profile && !busy && (
         <span className="agent-format-chips">
           {profileChips(row.profile).map((chip) => (

@@ -14,6 +14,9 @@ export interface ModelFormatProfileRow {
   probedAt: string | null
   artifactDir: string | null
   error: string | null
+  /** Runtime tripwire: when a live stream first contradicted this profile. Cleared by the next successful probe. */
+  driftDetectedAt: string | null
+  driftReasons: string[]
   createdAt: string
   updatedAt: string
 }
@@ -27,6 +30,8 @@ interface RawRow {
   probed_at: string | null
   artifact_dir: string | null
   error: string | null
+  drift_detected_at: string | null
+  drift_reasons: string | null
   created_at: string
   updated_at: string
 }
@@ -40,6 +45,15 @@ function mapRow(row: RawRow): ModelFormatProfileRow {
       profile = null
     }
   }
+  let driftReasons: string[] = []
+  if (row.drift_reasons) {
+    try {
+      const parsed = JSON.parse(row.drift_reasons) as unknown
+      if (Array.isArray(parsed)) driftReasons = parsed.filter((r) => typeof r === 'string')
+    } catch {
+      /* malformed — treated as no recorded reasons */
+    }
+  }
   return {
     provider: row.provider,
     modelId: row.model_id,
@@ -49,6 +63,8 @@ function mapRow(row: RawRow): ModelFormatProfileRow {
     probedAt: row.probed_at,
     artifactDir: row.artifact_dir,
     error: row.error,
+    driftDetectedAt: row.drift_detected_at,
+    driftReasons,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -133,8 +149,10 @@ export function finishProbe(
 ): void {
   const now = nowIso()
   if (outcome.status === 'done') {
+    // A fresh profile supersedes any recorded drift — the re-probe is the drift's resolution.
     db.prepare(
-      `UPDATE model_format_profiles SET status = 'done', profile_json = ?, probed_at = ?, artifact_dir = ?, error = NULL, updated_at = ?
+      `UPDATE model_format_profiles SET status = 'done', profile_json = ?, probed_at = ?, artifact_dir = ?, error = NULL,
+         drift_detected_at = NULL, drift_reasons = NULL, updated_at = ?
        WHERE provider = ? AND model_id = ?`,
     ).run(
       JSON.stringify(outcome.profile),
@@ -160,6 +178,26 @@ export function finishProbe(
  */
 export function recoverStaleProbes(db: Database.Database): void {
   db.prepare(`UPDATE model_format_profiles SET status = 'pending' WHERE status = 'running'`).run()
+}
+
+/**
+ * Runtime tripwire write (plan step 6): first detection wins — an already-flagged model keeps
+ * its original evidence until a successful probe clears it, so a drifting model doesn't
+ * rewrite this row on every subsequent generation.
+ */
+export function recordFormatDrift(
+  db: Database.Database,
+  provider: string,
+  modelId: string,
+  reasons: string[],
+): boolean {
+  const result = db
+    .prepare(
+      `UPDATE model_format_profiles SET drift_detected_at = ?, drift_reasons = ?, updated_at = ?
+       WHERE provider = ? AND model_id = ? AND drift_detected_at IS NULL`,
+    )
+    .run(nowIso(), JSON.stringify(reasons.slice(0, 10)), nowIso(), provider, modelId)
+  return result.changes > 0
 }
 
 /** Cancel a pending probe directly (a running one must be aborted via the runner instead). */

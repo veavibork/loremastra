@@ -59,8 +59,14 @@ staleness detection. Build order, each step ~one session, app working after each
    profile API. Fixed on the way: prose.ts force-prefilled `/deepseek/i` even with
    thinking off (bypassing the guard); new decision live-validated on DeepSeek-V4-Pro.
    Deliberately unchanged: shape-based retry rules, `stripThinkingTags` (see plan doc).
-6. **Runtime tripwire** (next) — observed shape contradicts profile → flag model, suggest
-   re-probe.
+6. ~~**Runtime tripwire**~~ — ✅ done 2026-07-19: `reportFormatDrift` after every successful
+   stream; one-sided checks (appearance contradicts profile → flag; silence never flags);
+   first-detection-wins drift columns, cleared by successful re-probe; red chip in Agents
+   tab. No auto-re-probe on drift (slots mid-play) — deliberate, see plan doc.
+
+**All six steps done.** Remaining follow-ups live in the plan doc: non-streamed
+Worker/Editor calls are outside profile consumers + tripwire; prefill stays
+deepseek-family-gated pending A/B evidence.
 
 **Parked:** cache/persistent-error mystery (no repro; evidence capture is the prerequisite —
 see plan doc), raw `/completions` escape hatch, mood/param/model toggles.

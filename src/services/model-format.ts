@@ -7,7 +7,9 @@
  * behavior only changes where a probe has produced evidence.
  */
 import { getGlobalDb } from '../db/global-db.js'
-import { getModelFormatProfile } from '../db/model-format-profile-store.js'
+import { getModelFormatProfile, recordFormatDrift } from '../db/model-format-profile-store.js'
+import { runtimeLeakScanTokens } from '../data/format-hypotheses.js'
+import { createLogger } from '../inference/outbound-telemetry.js'
 import type { ModelFormatProfile } from '../inference/format-probe.js'
 import {
   isReasoningModel,
@@ -106,4 +108,80 @@ export function splitterTagsFor(profile: ModelFormatProfile | null): {
 
 export function splitterTagsForModel(model: string): { openTags: string[]; closeTags: string[] } {
   return splitterTagsFor(getProbedProfile(model))
+}
+
+// ---------------------------------------------------------------------------
+// Runtime drift tripwire (plan step 6)
+
+/** What one successful stream actually did — collected in streamWithFallback. */
+export interface StreamFormatObservation {
+  /** Reasoning arrived via a separate delta field (onReasoningToken fired). */
+  sawReasoningField: boolean
+  /** Reasoning arrived via inline tags the splitter recognized. */
+  sawInlineThinking: boolean
+  /** Final answer text after splitting. */
+  answerText: string
+}
+
+/**
+ * Compares a live stream against the stored profile and returns human-readable
+ * contradictions (empty = no drift). This is the staleness answer to silent Featherless
+ * redeploys: the probe is a snapshot, and this notices when reality stops matching it.
+ * Deliberately one-sided — only "something appeared that the profile says shouldn't" counts.
+ * The absence of reasoning proves nothing (models legitimately skip thinking on easy turns),
+ * so silence never flags.
+ */
+export function detectFormatDriftFor(
+  profile: ModelFormatProfile | null,
+  resolvedKwargs: Record<string, unknown> | undefined,
+  observed: StreamFormatObservation,
+): string[] {
+  if (!profile) return []
+  const reasons: string[] = []
+  const thinkingOn = resolvedKwargs?.enable_thinking === true
+
+  if (
+    !thinkingOn &&
+    profile.thinkingOffSuppresses === true &&
+    (observed.sawReasoningField || observed.sawInlineThinking)
+  ) {
+    reasons.push(
+      'reasoning appeared with thinking off, but the profile says the off switch suppresses it',
+    )
+  }
+  if (observed.sawReasoningField && profile.reasoningFieldName === null) {
+    reasons.push('a separate reasoning delta field appeared that the probe never observed')
+  }
+  if (observed.sawInlineThinking && profile.inlineThinkingTag === null) {
+    reasons.push('inline thinking tags appeared that the probe never observed')
+  }
+
+  const knownLeaks = new Set(profile.leakTokensSeen)
+  for (const token of runtimeLeakScanTokens()) {
+    if (!knownLeaks.has(token) && observed.answerText.includes(token)) {
+      reasons.push(`template token leaked into the answer: ${token}`)
+    }
+  }
+  return reasons
+}
+
+/**
+ * Evaluate + persist drift for one finished stream. First detection wins (recordFormatDrift);
+ * evidence is logged either way so a repeat offender still shows up in telemetry.
+ */
+export function reportFormatDrift(
+  model: string,
+  resolvedKwargs: Record<string, unknown> | undefined,
+  observed: StreamFormatObservation,
+): void {
+  const profile = getProbedProfile(model)
+  const reasons = detectFormatDriftFor(profile, resolvedKwargs, observed)
+  if (!reasons.length) return
+  const firstDetection = recordFormatDrift(getGlobalDb(), 'featherless', model, reasons)
+  createLogger({ jobType: 'format-drift' }).warn('stream contradicted stored format profile', {
+    model,
+    reasons,
+    firstDetection,
+    answerHead: observed.answerText.slice(0, 200),
+  })
 }

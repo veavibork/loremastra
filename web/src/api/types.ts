@@ -227,6 +227,9 @@ export interface ModelProfileRow {
   progress: string | null
   /** HF model-card tags from the offline cache — read-time enrichment, empty when unsynced. */
   hfTags: string[]
+  /** Runtime tripwire: when a live stream first contradicted this profile (null = no drift). */
+  driftDetectedAt: string | null
+  driftReasons: string[]
 }
 
 export type LayoutJustify = 'left' | 'center' | 'right'
