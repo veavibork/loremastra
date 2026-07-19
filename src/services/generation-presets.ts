@@ -29,7 +29,8 @@ export interface EffortPreset {
   thinkingBudget?: number
 }
 
-export const DEFAULT_TOGGLE_LENGTH = [100, 300, 500]
+/** 0 = "Auto": no per-post override, the Author agent's configured responseLimit applies. */
+export const DEFAULT_TOGGLE_LENGTH = [0, 100, 300, 500]
 
 export const DEFAULT_TOGGLE_MOOD: MoodPreset[] = [
   { id: 'neutral', label: 'Neutral', promptFragment: '' },

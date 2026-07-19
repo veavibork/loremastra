@@ -189,7 +189,7 @@ export default function SettingsView() {
         parentKey: 'length',
         title: 'Length steps',
         description:
-          'Token counts cycled by the input bar Length toggle (Author responseLimit override).',
+          'Token counts cycled by the input bar Length toggle (Author responseLimit override). 0 = Auto: no override, the agent default applies.',
         value: toggleLength as unknown as JsonData,
         onSave: async (value) => {
           const saved = await saveSettingsSpace(TOGGLE_LENGTH_SPACE, value)

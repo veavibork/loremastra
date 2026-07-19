@@ -35,9 +35,20 @@ function applyGenerationOptions(
   if (options.effort?.thinkingBudget !== undefined) {
     chatTemplateKwargs.thinking_budget = options.effort.thinkingBudget
   }
-  // Length / mood / param / model toggles disabled — Author uses agent-config defaults only.
+  // Length toggle: 0/absent = "Auto" (no override, agent default). Clamped to the agent's
+  // configured responseLimit because the story-to-date window is budgeted against
+  // contextLimit - responseLimit using the configured value — a larger per-post override
+  // could overflow the context window on long stories.
+  let effectiveProfile = profile
+  if (options.responseLimit && options.responseLimit > 0) {
+    effectiveProfile = {
+      ...profile,
+      responseLimit: Math.min(options.responseLimit, profile.responseLimit),
+    }
+  }
+  // Mood / param / model toggles still disabled — Author uses agent-config defaults for those.
   return {
-    profile,
+    profile: effectiveProfile,
     chatTemplateKwargs: Object.keys(chatTemplateKwargs).length ? chatTemplateKwargs : undefined,
   }
 }

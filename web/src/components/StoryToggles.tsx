@@ -37,7 +37,8 @@ export interface EffortPreset {
   thinkingBudget?: number
 }
 
-const DEFAULT_LENGTH = [100, 300, 500]
+/** 0 = "Auto": no per-post override, the Author agent's configured responseLimit applies. */
+const DEFAULT_LENGTH = [0, 100, 300, 500]
 const DEFAULT_MOOD: MoodPreset[] = [
   { id: 'neutral', label: 'Neutral', promptFragment: '' },
   { id: 'tense', label: 'Tense', promptFragment: 'The atmosphere is tense and urgent.' },
@@ -103,7 +104,7 @@ export function useStoryToggles(storyId: string) {
     const model = authorModels[indices.model % Math.max(authorModels.length, 1)]
     const effort = efforts[indices.effort % efforts.length]
     return {
-      length: len != null ? `${len}t` : 'Length',
+      length: len != null ? (len === 0 ? 'Auto' : `${len}t`) : 'Length',
       mood: mood?.label ?? 'Mood',
       param: param?.label ?? 'Param',
       model: model?.model?.split('/').pop() ?? 'Model',
@@ -112,26 +113,27 @@ export function useStoryToggles(storyId: string) {
   }, [indices, lengthSteps, moods, params, efforts, authorModels])
 
   const generationOptions = useCallback((): GenerationOptions | undefined => {
-    // Length / mood / param / model toggles disabled — only Effort is wired for now.
+    // Mood / param / model toggles disabled — Length and Effort are wired.
+    const options: GenerationOptions = {}
+    const len = lengthSteps[indices.length % lengthSteps.length]
+    // 0 = "Auto": send no override, the Author agent's configured responseLimit applies.
+    if (len != null && len > 0) options.responseLimit = len
     const effort = efforts[indices.effort % efforts.length]
-    if (!effort) return undefined
-    return {
-      effort: {
+    if (effort) {
+      options.effort = {
         enableThinking: effort.enableThinking,
         thinkingBudget: effort.thinkingBudget,
-      },
+      }
     }
-  }, [indices.effort, efforts])
+    return Object.keys(options).length ? options : undefined
+  }, [indices.length, indices.effort, lengthSteps, efforts])
 
-  /* Disabled toggle wiring — re-enable when presets are tuned.
+  /* Disabled toggle wiring (mood/param/model) — re-enable when presets are tuned.
   const generationOptionsFull = useCallback((): GenerationOptions | undefined => {
-    const len = lengthSteps[indices.length % lengthSteps.length];
     const mood = moods[indices.mood % moods.length];
     const param = params[indices.param % params.length];
     const model = authorModels[indices.model % Math.max(authorModels.length, 1)];
-    const effort = efforts[indices.effort % efforts.length];
     const options: GenerationOptions = {};
-    if (len != null) options.responseLimit = len;
     if (mood?.promptFragment?.trim()) options.moodFragment = mood.promptFragment.trim();
     if (param && param.id !== "default") {
       options.paramOverrides = { temperature: param.temperature, topP: param.topP, ... };
