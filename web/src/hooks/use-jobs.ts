@@ -3,13 +3,22 @@ import { fetchJobs, fetchSlots, fetchActiveJobs, cancelJob, panicStopAllJobs } f
 
 export function useJobs(
   storyId: string | null,
-  opts?: { background?: boolean; refetchInterval?: number },
+  opts?: { background?: boolean; refetchInterval?: number; pollOnlyWhileActive?: boolean },
 ) {
   return useQuery({
     queryKey: ['jobs', storyId],
     queryFn: () => fetchJobs(storyId!, opts),
     enabled: !!storyId,
-    refetchInterval: opts?.refetchInterval,
+    // pollOnlyWhileActive: interval polling runs only while something is pending/running (it
+    // keeps in-flight progress labels and the turnaround clock fresh); once the queue drains,
+    // polling stops entirely and the story SSE channel's 'jobs' pings (create/claim/finish/
+    // cancel — see src/queue/dispatch.ts publishJobDataChanged) wake the query back up.
+    refetchInterval: opts?.pollOnlyWhileActive
+      ? (query) =>
+          (query.state.data ?? []).some((j) => j.status === 'running' || j.status === 'pending')
+            ? (opts.refetchInterval ?? 2000)
+            : false
+      : opts?.refetchInterval,
   })
 }
 

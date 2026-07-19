@@ -42,6 +42,7 @@ import { executeStoryNameJob } from './executors/story-name.js'
 import { executeWorldbookCompactJob } from './executors/worldbook-compact.js'
 import { executeStoryToDateJobWrapper } from './executors/story-to-date.js'
 import { executeStoryToDateFoldJobWrapper } from './executors/story-to-date-fold.js'
+import { executeSegmentAuditJobWrapper } from './executors/segment-audit.js'
 import { executeProseJob } from './executors/prose.js'
 import { executeSetupJob } from './executors/setup.js'
 import { executeSetupWorldbookJob } from './executors/setup-worldbook.js'
@@ -66,6 +67,7 @@ const WORKER_JOB_TYPES: JobType[] = [
   'story-name',
   'segment-name',
   'worldbook-compact',
+  'segment-audit',
 ]
 const PROSE_JOB_TYPES: JobType[] = ['prose', 'setup', 'setup-worldbook']
 
@@ -80,6 +82,7 @@ const JOB_DATA_KINDS: Partial<Record<JobType, StoryDataKind>> = {
   'story-to-date': 'segments',
   'story-to-date-fold': 'segments',
   'segment-name': 'segments',
+  'segment-audit': 'segments',
   'worldbook-compact': 'worldbook',
   setup: 'worldbook',
   'setup-worldbook': 'worldbook',
@@ -88,6 +91,9 @@ const JOB_DATA_KINDS: Partial<Record<JobType, StoryDataKind>> = {
 function publishJobDataChanged(storyId: string, jobType: JobType): void {
   const kind = JOB_DATA_KINDS[jobType]
   if (kind) publishStoryDataChanged(storyId, kind)
+  // Every dispatch-start/completion is also a jobs-list change — this is what lets the Queue
+  // tab ride SSE invalidation for status transitions instead of pure interval polling.
+  publishStoryDataChanged(storyId, 'jobs')
 }
 
 /**
@@ -277,9 +283,11 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
       if (!job) continue
       publishJobClaimed(job.id)
 
-      // Editor archives (forward compression and folding alike) cost the full account limit — only one in flight per user.
+      // Editor archives (forward compression, folding, and coverage audits alike) cost the full account limit — only one in flight per user.
       if (
-        (job.jobType === 'story-to-date' || job.jobType === 'story-to-date-fold') &&
+        (job.jobType === 'story-to-date' ||
+          job.jobType === 'story-to-date-fold' ||
+          job.jobType === 'segment-audit') &&
         countRunningStoryToDateJobsForUser(globalDb, story.ownerUserId, trackedDbs) > 1
       ) {
         unclaimJob(db, job.id)
@@ -332,7 +340,9 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         ).finally(() => publishJobDataChanged(storyId, job.jobType))
       } else if (job.jobType === 'story-name' && job.targetTextId) {
         publishJobStarted(job.id)
-        void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId)
+        void executeStoryNameJob(db, story.ownerUserId, job.id, job.targetTextId, storyId).finally(
+          () => publishJobDataChanged(storyId, job.jobType),
+        )
       } else if (job.jobType === 'segment-name' && job.targetStoryToDateId) {
         publishJobStarted(job.id)
         void executeStoryToDateNameJob(
@@ -346,6 +356,22 @@ function dispatchWorkerJobs(globalDb: ReturnType<typeof getGlobalDb>): void {
         void executeWorldbookCompactJob(db, story.ownerUserId, job.id).finally(() =>
           publishJobDataChanged(storyId, job.jobType),
         )
+      } else if (job.jobType === 'segment-audit' && job.targetStoryToDateId) {
+        const logbook = getBookByType(db, 'logbook')
+        if (!logbook) {
+          finishJob(db, job.id, 'failed', 'logbook not found')
+          releaseSlot(story.ownerUserId, job.id)
+          continue
+        }
+        publishJobStarted(job.id)
+        void executeSegmentAuditJobWrapper(
+          db,
+          story.ownerUserId,
+          storyId,
+          logbook.id,
+          job.id,
+          job.targetStoryToDateId,
+        ).finally(() => publishJobDataChanged(storyId, job.jobType))
       } else {
         finishJob(db, job.id, 'failed', `job ${job.id} (${job.jobType}) has no valid target`)
         releaseSlot(story.ownerUserId, job.id)
@@ -388,6 +414,7 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
       return
     }
     recordHordeSubmit()
+    publishJobDataChanged(storyId, job.jobType)
     void executeHordeProseSubmit(db, userId, job.id, job.targetTextId)
     return
   }
@@ -397,6 +424,9 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
     unclaimJob(db, job.id)
     return
   }
+
+  // pending→running just happened for whichever branch below dispatches — ping the jobs list.
+  publishJobDataChanged(storyId, job.jobType)
 
   if (job.jobType === 'prose' && job.targetTextId) {
     const controller = new AbortController()
@@ -415,7 +445,7 @@ function dispatchProseJob(db: Database.Database, userId: string, storyId: string
       storyId,
       guidance,
       genOptions,
-    )
+    ).finally(() => publishJobDataChanged(storyId, job.jobType))
   } else if (job.jobType === 'setup' && job.targetTextId) {
     const controller = new AbortController()
     runningControllers.set(job.id, controller)

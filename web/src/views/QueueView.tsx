@@ -17,6 +17,7 @@ function jobResponse(job: Job): string {
   if (job.status === 'done' && job.resultSummary) return job.resultSummary
   if (job.status === 'done') return '200 OK'
   if (job.status === 'cancelled') return 'cancelled'
+  if (job.status === 'running' && job.progress) return job.progress
   return '—'
 }
 
@@ -25,7 +26,11 @@ function holderAge(holder: SlotHolder): string {
 }
 
 export default function QueueView({ story }: PanelProps) {
-  const { data: jobs } = useJobs(story?.id ?? null, { background: true, refetchInterval: 2000 })
+  const { data: jobs } = useJobs(story?.id ?? null, {
+    background: true,
+    refetchInterval: 2000,
+    pollOnlyWhileActive: true,
+  })
   const { data: slots } = useSlots({ background: true, refetchInterval: 2000 })
   const panic = usePanicStopAllJobs()
 

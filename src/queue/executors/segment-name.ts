@@ -14,6 +14,7 @@ import {
 } from '../../inference/featherless.js'
 import { releaseSlot } from '../slots.js'
 import { beginCancellableWorkerJob, endCancellableWorkerJob } from '../cancel.js'
+import { retryProgressPublisher } from '../job-events.js'
 import { extractStoryName, NAMING_MAX_TOKENS, SEGMENT_NAME_MAX_ATTEMPTS } from './naming.js'
 
 export async function executeStoryToDateNameJob(
@@ -40,13 +41,17 @@ export async function executeStoryToDateNameJob(
     const workerProfile = getAgentProfile(userId, 'worker')
     for (let attempt = 1; attempt <= SEGMENT_NAME_MAX_ATTEMPTS && !name; attempt++) {
       try {
-        const rawText = await withModelFallback(workerProfile, (profile) => {
-          usedModel = profile.model
-          return completeChat(profile, featherlessKey, nameMessages, {
-            maxTokens: NAMING_MAX_TOKENS,
-            signal: controller.signal,
-          })
-        })
+        const rawText = await withModelFallback(
+          workerProfile,
+          (profile) => {
+            usedModel = profile.model
+            return completeChat(profile, featherlessKey, nameMessages, {
+              maxTokens: NAMING_MAX_TOKENS,
+              signal: controller.signal,
+            })
+          },
+          retryProgressPublisher(jobId),
+        )
         name = extractStoryName(rawText)
         if (!name?.trim()) {
           lastError = `no usable [NAME] block on attempt ${attempt}: "${rawText.trim().slice(0, 80)}"`

@@ -10,7 +10,12 @@ import { estimateTokens, countIcPosts, sanitizeStoryBlockContent } from './engin
 
 export type StoryToDateViewStatus = 'ready' | 'pending' | 'broken'
 
-const MEMORY_JOB_TYPES = new Set<JobType>(['story-to-date', 'story-to-date-fold', 'segment-name'])
+const MEMORY_JOB_TYPES = new Set<JobType>([
+  'story-to-date',
+  'story-to-date-fold',
+  'segment-name',
+  'segment-audit',
+])
 
 export interface ActiveMemoryJobView {
   id: string
@@ -37,6 +42,10 @@ export interface StoryToDateViewEntry {
   jobActive: boolean
   foldJobActive: boolean
   nameJobActive: boolean
+  auditJobActive: boolean
+  auditVerdict: 'pass' | 'flagged' | null
+  auditMissing: string[] | null
+  auditAt: string | null
 }
 
 export interface StoryToDateView {
@@ -74,6 +83,10 @@ export function buildStoryToDateView(db: Database.Database, logbookId: string): 
       jobActive: hasActiveJobForStoryToDate(db, s.id, 'story-to-date'),
       foldJobActive: hasActiveJobForStoryToDate(db, s.id, 'story-to-date-fold'),
       nameJobActive: hasActiveJobForStoryToDate(db, s.id, 'segment-name'),
+      auditJobActive: hasActiveJobForStoryToDate(db, s.id, 'segment-audit'),
+      auditVerdict: s.auditVerdict,
+      auditMissing: s.auditMissing,
+      auditAt: s.auditAt,
     }
   })
 

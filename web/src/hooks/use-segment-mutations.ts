@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  auditStoryToDateSegment,
   backfillStoryToDateNames,
   deleteStoryToDateSegment,
   enqueueStoryToDate,
@@ -67,5 +68,18 @@ export function useRequeueStoryToDateSegment() {
     mutationFn: ({ storyId, segmentId }: { storyId: string; segmentId: string }) =>
       requeueStoryToDateSegment(storyId, segmentId),
     onSuccess: (page, { storyId }) => setPage(qc, storyId, page),
+  })
+}
+
+export function useAuditStoryToDateSegment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ storyId, segmentId }: { storyId: string; segmentId: string }) =>
+      auditStoryToDateSegment(storyId, segmentId),
+    // The endpoint just enqueues ({ok:true}) — refetch to pick up the new active job row.
+    onSuccess: (_page, { storyId }) => {
+      void qc.invalidateQueries({ queryKey: ['story-to-date', storyId] })
+      void qc.invalidateQueries({ queryKey: ['jobs', storyId] })
+    },
   })
 }

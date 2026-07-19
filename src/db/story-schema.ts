@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   created_at TEXT NOT NULL,
   target_text_id TEXT REFERENCES text(id),
   target_story_to_date_id TEXT REFERENCES story_to_date_segment(id),
-  job_type TEXT NOT NULL CHECK (job_type IN ('continuity','prose','setup','setup-worldbook','tag-gen','story-name','segment-name','story-to-date','story-to-date-fold','worldbook-compact')),
+  job_type TEXT NOT NULL CHECK (job_type IN ('continuity','prose','setup','setup-worldbook','tag-gen','story-name','segment-name','story-to-date','story-to-date-fold','worldbook-compact','segment-audit')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
   priority INTEGER NOT NULL DEFAULT 0,
   slot_cost INTEGER NOT NULL DEFAULT 1,

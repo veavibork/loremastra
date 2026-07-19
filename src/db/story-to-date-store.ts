@@ -18,6 +18,11 @@ export interface StoryToDateSegmentRow {
   name: string | null
   hidden: boolean
   broken: boolean
+  /** Coverage-audit result (segment-audit job): 'pass' | 'flagged', null = never audited (or stale — cleared whenever content changes). */
+  auditVerdict: 'pass' | 'flagged' | null
+  /** Missing-event lines from the audit's failing votes (JSON array in storage). */
+  auditMissing: string[] | null
+  auditAt: string | null
 }
 
 interface RawSegmentRow {
@@ -34,6 +39,9 @@ interface RawSegmentRow {
   name: string | null
   hidden: number
   broken: number
+  audit_verdict: string | null
+  audit_missing: string | null
+  audit_at: string | null
 }
 
 function mapRow(row: RawSegmentRow): StoryToDateSegmentRow {
@@ -51,6 +59,20 @@ function mapRow(row: RawSegmentRow): StoryToDateSegmentRow {
     name: row.name ?? null,
     hidden: !!row.hidden,
     broken: !!row.broken,
+    auditVerdict:
+      row.audit_verdict === 'pass' || row.audit_verdict === 'flagged' ? row.audit_verdict : null,
+    auditMissing: parseAuditMissing(row.audit_missing),
+    auditAt: row.audit_at ?? null,
+  }
+}
+
+function parseAuditMissing(raw: string | null): string[] | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : null
+  } catch {
+    return null
   }
 }
 
@@ -146,7 +168,22 @@ export function setStoryToDateSegmentContent(
   id: string,
   content: string,
 ): void {
-  db.prepare(`UPDATE story_to_date_segment SET content = ? WHERE id = ?`).run(content.trim(), id)
+  // Content changed — any stored audit verdict judged the OLD content, so it's stale now.
+  db.prepare(
+    `UPDATE story_to_date_segment
+     SET content = ?, audit_verdict = NULL, audit_missing = NULL, audit_at = NULL
+     WHERE id = ?`,
+  ).run(content.trim(), id)
+}
+
+export function setStoryToDateSegmentAudit(
+  db: Database.Database,
+  id: string,
+  input: { verdict: 'pass' | 'flagged'; missing: string[] },
+): void {
+  db.prepare(
+    `UPDATE story_to_date_segment SET audit_verdict = ?, audit_missing = ?, audit_at = ? WHERE id = ?`,
+  ).run(input.verdict, JSON.stringify(input.missing), nowIso(), id)
 }
 
 export function setStoryToDateSegmentCoverage(

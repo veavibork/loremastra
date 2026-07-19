@@ -17,6 +17,7 @@ import {
   publishCancelled,
   type JobEvent,
 } from '../../queue/job-events.js'
+import { publishStoryDataChanged } from '../../queue/story-events.js'
 import { openTrackedStoryDb } from '../../services/story-ops.js'
 
 export const jobsRoute = new Hono<{ Variables: AppVariables }>()
@@ -24,7 +25,14 @@ export const jobsRoute = new Hono<{ Variables: AppVariables }>()
 jobsRoute.get('/:id/jobs', (c) => {
   const storyDb = openTrackedStoryDb(c.req.param('id'))
   return c.json({
-    jobs: listRecentJobs(storyDb).map((j) => ({ ...j, agentRole: agentRoleForJobType(j.jobType) })),
+    jobs: listRecentJobs(storyDb).map((j) => ({
+      ...j,
+      agentRole: agentRoleForJobType(j.jobType),
+      // Live wait/retry label for an in-flight job (memory-wait, provider-busy backoff, model
+      // fallback) — same buffer the story view's SSE label reads, so the Queue tab shows WHY
+      // a running job is sitting there instead of a bare "running".
+      progress: j.status === 'running' ? (getJobBuffer(j.id)?.progress ?? null) : null,
+    })),
   })
 })
 
@@ -52,7 +60,8 @@ jobsRoute.get('/:id/jobs/:jobId', (c) => {
  * abort propagates, so this route doesn't race it by also writing the cancelled status itself.
  */
 jobsRoute.post('/:id/jobs/:jobId/cancel', (c) => {
-  const storyDb = openTrackedStoryDb(c.req.param('id'))
+  const storyId = c.req.param('id')
+  const storyDb = openTrackedStoryDb(storyId)
   const jobId = c.req.param('jobId')
   const job = getJob(storyDb, jobId)
   if (!job) return c.json({ error: 'job not found' }, 404)
@@ -65,6 +74,7 @@ jobsRoute.post('/:id/jobs/:jobId/cancel', (c) => {
     // so clear their ephemeral in-memory state here or it leaks for the process lifetime.
     clearJobEphemeralState(jobId)
     publishCancelled(jobId)
+    publishStoryDataChanged(storyId, 'jobs')
     return c.json({ ok: true })
   }
   const aborted = requestJobCancel(jobId)
@@ -79,6 +89,7 @@ jobsRoute.post('/:id/jobs/:jobId/cancel', (c) => {
     }
     cancelJob(storyDb, jobId)
     publishCancelled(jobId)
+    publishStoryDataChanged(storyId, 'jobs')
     return c.json({ ok: true, reaped: true })
   }
   return c.json({ ok: true })

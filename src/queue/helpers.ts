@@ -51,8 +51,9 @@ export function maybeEnqueueStoryToDateJob(
   enqueueEligibleStoryToDateJob(db, userId, logbookId, storyId)
 }
 
-/** Counts BOTH forward story-to-date and fold jobs — each is a full-cost Editor call, and the
- * account concurrency limit only permits one at a time, so they share the single-in-flight cap.
+/** Counts forward story-to-date, fold, AND coverage-audit jobs — each is a full-cost Editor
+ * call, and the account concurrency limit only permits one at a time, so they share the
+ * single-in-flight cap.
  */
 export function countRunningStoryToDateJobsForUser(
   globalDb: ReturnType<typeof getGlobalDb>,
@@ -65,7 +66,7 @@ export function countRunningStoryToDateJobsForUser(
     if (!story || story.ownerUserId !== userId) continue
     const row = db
       .prepare(
-        `SELECT COUNT(*) AS n FROM jobs WHERE job_type IN ('story-to-date', 'story-to-date-fold') AND status = 'running'`,
+        `SELECT COUNT(*) AS n FROM jobs WHERE job_type IN ('story-to-date', 'story-to-date-fold', 'segment-audit') AND status = 'running'`,
       )
       .get() as { n: number }
     count += row.n

@@ -15,6 +15,7 @@ import { getAgentProfile } from '../../services/agent-config.js'
 import { NAMING_PROMPT } from '../../prompts.js'
 import { completeChat, withModelFallback, type ChatMessage } from '../../inference/featherless.js'
 import { releaseSlot } from '../slots.js'
+import { retryProgressPublisher } from '../job-events.js'
 import { extractStoryName, NAMING_MAX_TOKENS, STORY_NAME_MAX_ATTEMPTS } from './naming.js'
 
 export async function executeStoryNameJob(
@@ -40,12 +41,16 @@ export async function executeStoryNameJob(
     const featherlessKey = getDecryptedFeatherlessKey(getGlobalDb(), userId) ?? ''
     for (let attempt = 1; attempt <= STORY_NAME_MAX_ATTEMPTS && !name; attempt++) {
       try {
-        const rawText = await withModelFallback(getAgentProfile(userId, 'worker'), (profile) => {
-          usedModel = profile.model
-          return completeChat(profile, featherlessKey, nameMessages, {
-            maxTokens: NAMING_MAX_TOKENS,
-          })
-        })
+        const rawText = await withModelFallback(
+          getAgentProfile(userId, 'worker'),
+          (profile) => {
+            usedModel = profile.model
+            return completeChat(profile, featherlessKey, nameMessages, {
+              maxTokens: NAMING_MAX_TOKENS,
+            })
+          },
+          retryProgressPublisher(jobId),
+        )
         const candidate = extractStoryName(rawText)
         if (candidate) name = candidate
         else lastError = `no usable [NAME] block on attempt ${attempt}: "${rawText.slice(0, 80)}"`

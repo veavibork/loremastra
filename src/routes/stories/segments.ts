@@ -13,10 +13,12 @@ import {
   enqueueEligibleStoryToDateJob,
   enqueuePendingStoryToDateJobs,
   enqueuePendingStoryToDateNameJobs,
+  enqueueSegmentAuditJob,
   requeueStoryToDateSegment,
   removeStoryToDateSegment,
   updateStoryToDateCoverageThroughPost,
 } from '../../services/story-to-date/index.js'
+import { publishStoryDataChanged } from '../../queue/story-events.js'
 import { buildStoryToDateView } from '../../services/story-to-date/view.js'
 import { openTrackedStoryDb } from '../../services/story-ops.js'
 
@@ -51,6 +53,21 @@ segmentsRoute.post('/:id/story-to-date/:segmentId/requeue', (c) => {
   if (!segment) return c.json({ error: 'segment not found' }, 404)
   try {
     requeueStoryToDateSegment(storyDb, c.get('userId'), segment.id)
+    return c.json({ ok: true })
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+  }
+})
+
+segmentsRoute.post('/:id/story-to-date/:segmentId/audit', (c) => {
+  const storyId = c.req.param('id')!
+  const storyDb = openTrackedStoryDb(storyId)
+  const segment = getStoryToDateSegment(storyDb, c.req.param('segmentId')!)
+  if (!segment) return c.json({ error: 'segment not found' }, 404)
+  try {
+    enqueueSegmentAuditJob(storyDb, c.get('userId'), segment.id)
+    publishStoryDataChanged(storyId, 'jobs')
+    publishStoryDataChanged(storyId, 'segments')
     return c.json({ ok: true })
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)

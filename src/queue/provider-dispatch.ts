@@ -18,7 +18,12 @@ import {
   type ChatMessage,
 } from '../inference/featherless.js'
 import { ReasoningStreamSplitter } from '../inference/reasoning-stream.js'
-import { publishToken, publishThinking, publishStreamReset } from './job-events.js'
+import {
+  publishToken,
+  publishThinking,
+  publishStreamReset,
+  retryProgressPublisher,
+} from './job-events.js'
 import { streamingModels } from './cancel.js'
 
 const EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE = 2
@@ -73,77 +78,87 @@ export async function streamWithFallback(
   let reply = ''
   let usedModel = profile.model
   let isFirstStream = true
-  await withModelFallback(profile, async (candidate) => {
-    usedModel = candidate.model
-    streamingModels.set(jobId, candidate.model)
-    const usePrefill = prefillAssistant || shouldPrefillReasoning(candidate.model, effectiveKwargs)
-    const candidateMessages = usePrefill
-      ? [...messages, { role: 'assistant' as const, content: REASONING_ASSISTANT_PREFILL }]
-      : messages
+  const onRetryEvent = retryProgressPublisher(jobId)
+  await withModelFallback(
+    profile,
+    async (candidate) => {
+      usedModel = candidate.model
+      streamingModels.set(jobId, candidate.model)
+      const usePrefill =
+        prefillAssistant || shouldPrefillReasoning(candidate.model, effectiveKwargs)
+      const candidateMessages = usePrefill
+        ? [...messages, { role: 'assistant' as const, content: REASONING_ASSISTANT_PREFILL }]
+        : messages
 
-    for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
-      if (!isFirstStream) {
-        publishStreamReset(jobId, { thinking: true, text: true }, `Retrying… (attempt ${attempt})`)
-      }
-      isFirstStream = false
-
-      const splitter = new ReasoningStreamSplitter({ startsInThinking: false })
-      reply = ''
-      let sawReasoning = false
-      const emitThinking = (text: string) => {
-        sawReasoning = true
-        publishThinking(jobId, text)
-      }
-      const emitAnswer = (text: string) => {
-        reply += text
-        publishToken(jobId, text)
-      }
-      try {
-        await new Promise<void>((resolve, reject) => {
-          void streamInference(
-            candidate,
-            apiKey,
-            candidateMessages,
-            {
-              onToken: (text) => {
-                splitter.push(text, emitThinking, emitAnswer)
-              },
-              onReasoningToken: emitThinking,
-              onDone: () => {
-                splitter.flush(emitThinking, emitAnswer)
-                if (reply.trim()) {
-                  resolve()
-                } else if (sawReasoning) {
-                  reject(
-                    new FeatherlessError(
-                      503,
-                      `${candidate.model} returned reasoning but no answer content`,
-                    ),
-                  )
-                } else {
-                  reject(
-                    new FeatherlessError(503, `${candidate.model} returned an empty completion`),
-                  )
-                }
-              },
-              onError: reject,
-            },
-            {
-              signal,
-              chatTemplateKwargs: effectiveKwargs,
-              idleTimeoutMs: streamIdleTimeoutMs(candidate.model, effectiveKwargs),
-            },
+      for (let attempt = 1; attempt <= EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE; attempt++) {
+        if (!isFirstStream) {
+          publishStreamReset(
+            jobId,
+            { thinking: true, text: true },
+            `Retrying… (attempt ${attempt})`,
           )
-        })
-        return
-      } catch (err) {
-        if (err instanceof JobCancelledError) throw err
-        const isEmptyCompletion =
-          err instanceof FeatherlessError &&
-          (err.message.includes('empty completion') || err.message.includes('no answer content'))
-        if (!isEmptyCompletion || attempt === EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE) throw err
+        }
+        isFirstStream = false
+
+        const splitter = new ReasoningStreamSplitter({ startsInThinking: false })
+        reply = ''
+        let sawReasoning = false
+        const emitThinking = (text: string) => {
+          sawReasoning = true
+          publishThinking(jobId, text)
+        }
+        const emitAnswer = (text: string) => {
+          reply += text
+          publishToken(jobId, text)
+        }
+        try {
+          await new Promise<void>((resolve, reject) => {
+            void streamInference(
+              candidate,
+              apiKey,
+              candidateMessages,
+              {
+                onToken: (text) => {
+                  splitter.push(text, emitThinking, emitAnswer)
+                },
+                onReasoningToken: emitThinking,
+                onDone: () => {
+                  splitter.flush(emitThinking, emitAnswer)
+                  if (reply.trim()) {
+                    resolve()
+                  } else if (sawReasoning) {
+                    reject(
+                      new FeatherlessError(
+                        503,
+                        `${candidate.model} returned reasoning but no answer content`,
+                      ),
+                    )
+                  } else {
+                    reject(
+                      new FeatherlessError(503, `${candidate.model} returned an empty completion`),
+                    )
+                  }
+                },
+                onError: reject,
+              },
+              {
+                signal,
+                chatTemplateKwargs: effectiveKwargs,
+                idleTimeoutMs: streamIdleTimeoutMs(candidate.model, effectiveKwargs),
+              },
+            )
+          })
+          return
+        } catch (err) {
+          if (err instanceof JobCancelledError) throw err
+          const isEmptyCompletion =
+            err instanceof FeatherlessError &&
+            (err.message.includes('empty completion') || err.message.includes('no answer content'))
+          if (!isEmptyCompletion || attempt === EMPTY_COMPLETION_ATTEMPTS_PER_CANDIDATE) throw err
+        }
       }
-    }
-  })
+    },
+    onRetryEvent,
+  )
   return { text: reply, model: usedModel }
 }

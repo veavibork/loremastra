@@ -80,6 +80,8 @@ export interface Job {
   elapsedMs: number | null
   resultSummary?: string | null
   agentRole?: 'author' | 'editor' | 'worker' | null
+  /** Live wait/retry label while running (memory-wait, provider-busy backoff, model fallback). */
+  progress?: string | null
 }
 
 /** One held concurrency slot, attributed (src/queue/slots.ts SlotHolder). */
@@ -276,6 +278,11 @@ export interface StoryToDateSegment {
   jobActive: boolean
   foldJobActive: boolean
   nameJobActive: boolean
+  auditJobActive: boolean
+  /** Coverage-audit verdict — null: never audited (or content changed since). */
+  auditVerdict: 'pass' | 'flagged' | null
+  auditMissing: string[] | null
+  auditAt: string | null
 }
 
 export interface ActiveMemoryJob {

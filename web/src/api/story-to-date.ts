@@ -70,4 +70,17 @@ export async function requeueStoryToDateSegment(
   return data.view
 }
 
+/** Enqueue a coverage audit (judge-as-detector, majority vote) for one segment. */
+export async function auditStoryToDateSegment(
+  storyId: string,
+  segmentId: string,
+): Promise<StoryToDatePage> {
+  const res = await apiFetch(`/api/stories/${storyId}/story-to-date/${segmentId}/audit`, {
+    method: 'POST',
+  })
+  const data = (await res.json()) as { view: StoryToDatePage; error?: string }
+  if (data.error) throw new Error(data.error)
+  return data.view
+}
+
 export type { StoryToDatePage, StoryToDateSegment, ActiveMemoryJob } from './types.js'

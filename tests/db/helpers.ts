@@ -14,6 +14,9 @@ export function createStoryDb(): Database.Database {
   db.exec(`ALTER TABLE page ADD COLUMN content_hash TEXT`)
   db.exec(`ALTER TABLE story_state ADD COLUMN history_cursor_seq INTEGER NOT NULL DEFAULT 0`)
   db.exec(`ALTER TABLE story_state ADD COLUMN ooc_session_start_page_id TEXT`)
+  db.exec(`ALTER TABLE story_to_date_segment ADD COLUMN audit_verdict TEXT`)
+  db.exec(`ALTER TABLE story_to_date_segment ADD COLUMN audit_missing TEXT`)
+  db.exec(`ALTER TABLE story_to_date_segment ADD COLUMN audit_at TEXT`)
   return db
 }
 

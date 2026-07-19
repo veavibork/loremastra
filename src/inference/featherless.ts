@@ -81,8 +81,18 @@ function sleep(ms: number): Promise<void> {
 
 const TRANSIENT_RETRY_DELAYS_MS = [5000, 15000]
 
+/** Progress notifications from the retry/fallback wrappers — lets an executor surface "retrying…" states that otherwise happen invisibly inside a running job (Queue tab showed nothing while a rejected response was silently retried). */
+export type RetryEvent =
+  | { kind: 'transient-retry'; model: string; attempt: number; delayMs: number; status: number }
+  | { kind: 'fallback'; fromModel: string; toModel: string; candidateIndex: number }
+
+export type OnRetryEvent = (event: RetryEvent) => void
+
 /** Same-model backoff for Featherless 500/503 before cross-model fallback kicks in. */
-export async function withTransientRetry<T>(fn: () => Promise<T>): Promise<T> {
+export async function withTransientRetry<T>(
+  fn: () => Promise<T>,
+  onEvent?: (attempt: number, delayMs: number, status: number) => void,
+): Promise<T> {
   let lastError: unknown
   for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt++) {
     try {
@@ -93,7 +103,9 @@ export async function withTransientRetry<T>(fn: () => Promise<T>): Promise<T> {
         throw err
       }
       if (attempt >= TRANSIENT_RETRY_DELAYS_MS.length) throw err
-      await sleep(TRANSIENT_RETRY_DELAYS_MS[attempt]!)
+      const delayMs = TRANSIENT_RETRY_DELAYS_MS[attempt]!
+      onEvent?.(attempt + 1, delayMs, err.status)
+      await sleep(delayMs)
     }
   }
   throw lastError
@@ -183,6 +195,7 @@ export function resolveChatTemplateKwargs(
 export async function withModelFallback<T>(
   profile: AgentProfile,
   attempt: (profile: AgentProfile) => Promise<T>,
+  onEvent?: OnRetryEvent,
 ): Promise<T> {
   // Build the candidate list: primary first, then fallbacks. When fallbackProfiles is
   // populated (getAgentProfile from model_configs), each candidate carries its own
@@ -215,8 +228,19 @@ export async function withModelFallback<T>(
   let lastError: unknown
 
   for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]!
     try {
-      return await withTransientRetry(() => attempt({ ...profile, ...candidates[i]! }))
+      return await withTransientRetry(
+        () => attempt({ ...profile, ...candidate }),
+        (retryAttempt, delayMs, status) =>
+          onEvent?.({
+            kind: 'transient-retry',
+            model: candidate.model,
+            attempt: retryAttempt,
+            delayMs,
+            status,
+          }),
+      )
     } catch (err) {
       lastError = err
       const isLast = i === candidates.length - 1
@@ -227,7 +251,13 @@ export async function withModelFallback<T>(
       ) {
         throw err
       }
-      // else: fall through to the next candidate
+      onEvent?.({
+        kind: 'fallback',
+        fromModel: candidate.model,
+        toModel: candidates[i + 1]!.model,
+        candidateIndex: i + 1,
+      })
+      // fall through to the next candidate
     }
   }
   throw lastError

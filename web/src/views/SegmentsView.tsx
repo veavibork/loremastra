@@ -9,6 +9,7 @@ import {
   useUpdateStoryToDateSegment,
   useDeleteStoryToDateSegment,
   useRequeueStoryToDateSegment,
+  useAuditStoryToDateSegment,
 } from '../hooks/use-segment-mutations'
 import type { PanelProps } from '../lib/panel-types'
 import './SegmentsView.css'
@@ -26,6 +27,7 @@ function memoryJobLabel(job: ActiveMemoryJob): string {
   if (job.jobType === 'story-to-date-fold') return 'Folding older memory'
   if (job.jobType === 'story-to-date') return 'Compressing story memory'
   if (job.jobType === 'archive-name') return 'Naming segment'
+  if (job.jobType === 'segment-audit') return 'Auditing coverage'
   return job.jobType
 }
 
@@ -47,6 +49,7 @@ export default function ArchivesView({ story }: PanelProps) {
   const updateMutation = useUpdateStoryToDateSegment()
   const deleteMutation = useDeleteStoryToDateSegment()
   const requeueMutation = useRequeueStoryToDateSegment()
+  const auditMutation = useAuditStoryToDateSegment()
   const cancelJobMutation = useCancelJob()
   const [includeHidden, setIncludeHidden] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -250,9 +253,22 @@ export default function ArchivesView({ story }: PanelProps) {
                     {seg.nameJobActive && ' · naming…'}
                     {seg.foldJobActive && ' · folding…'}
                     {seg.jobActive && ' · generating…'}
+                    {seg.auditJobActive && ' · auditing…'}
                     {seg.hidden && ' · hidden'}
                   </span>
                 </button>
+                {seg.auditVerdict && !seg.auditJobActive && (
+                  <span
+                    className={`archive-audit-badge archive-audit-${seg.auditVerdict}`}
+                    title={
+                      seg.auditAt ? `audited ${new Date(seg.auditAt).toLocaleString()}` : undefined
+                    }
+                  >
+                    {seg.auditVerdict === 'flagged'
+                      ? `⚠ ${seg.auditMissing?.length ?? 0} missing`
+                      : '✓ audited'}
+                  </span>
+                )}
                 <span className={`archive-status archive-status-${seg.status}`}>{statusLabel}</span>
               </header>
 
@@ -277,6 +293,20 @@ export default function ArchivesView({ story }: PanelProps) {
                     onClick={() => startEdit(seg)}
                   >
                     Edit
+                  </button>
+                )}
+                {seg.status === 'ready' && !seg.auditJobActive && (
+                  <button
+                    type="button"
+                    disabled={busyKey === `audit-${seg.id}`}
+                    title="Judge this segment against the verbatim posts it claims to cover (3 Editor calls, majority vote) — flags dropped events, never modifies anything"
+                    onClick={() =>
+                      void runAction(`audit-${seg.id}`, () =>
+                        auditMutation.mutateAsync({ storyId: story.id, segmentId: seg.id }),
+                      )
+                    }
+                  >
+                    Audit coverage
                   </button>
                 )}
                 {seg.status === 'ready' && (
@@ -367,6 +397,21 @@ export default function ArchivesView({ story }: PanelProps) {
                       {seg.content ?? '— pending story-to-date job —'}
                     </p>
                   )}
+                  {seg.auditVerdict === 'flagged' &&
+                    seg.auditMissing &&
+                    seg.auditMissing.length > 0 && (
+                      <div className="archive-audit-missing">
+                        <p className="archive-audit-missing-title">
+                          Coverage audit flagged events absent from this segment (detector only —
+                          re-audit after editing):
+                        </p>
+                        <ul>
+                          {seg.auditMissing.map((line, i) => (
+                            <li key={i}>{line.replace(/^-\s*/, '')}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   {seg.coveragePageId && (
                     <p className="archive-ids">
                       <span>Coverage page {seg.coveragePageId.slice(0, 8)}…</span>

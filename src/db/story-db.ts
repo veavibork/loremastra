@@ -158,6 +158,42 @@ function finishJobTypeWorldbookCompactMigration(db: Database.Database): void {
   `)
 }
 
+/** Same table-rename technique as migrateJobTypeCheck — adds 'segment-audit' to jobs.job_type CHECK. */
+function migrateJobTypeSegmentAudit(db: Database.Database): void {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'`)
+    .get() as { sql: string } | undefined
+  if (!row || row.sql.includes("'segment-audit'")) return
+  db.exec(`ALTER TABLE jobs RENAME TO jobs_pre_segment_audit_migration`)
+  ensureColumn(db, 'jobs_pre_segment_audit_migration', 'model', 'TEXT')
+  ensureColumn(db, 'jobs_pre_segment_audit_migration', 'token_estimate', 'INTEGER')
+  ensureColumn(db, 'jobs_pre_segment_audit_migration', 'input_token_estimate', 'INTEGER')
+  ensureColumn(db, 'jobs_pre_segment_audit_migration', 'horde_request_id', 'TEXT')
+  ensureColumn(db, 'jobs_pre_segment_audit_migration', 'elapsed_ms', 'INTEGER')
+  ensureColumn(db, 'jobs_pre_segment_audit_migration', 'result_summary', 'TEXT')
+  ensureColumn(
+    db,
+    'jobs_pre_segment_audit_migration',
+    'target_story_to_date_id',
+    'TEXT REFERENCES story_to_date_segment(id)',
+  )
+}
+
+function finishJobTypeSegmentAuditMigration(db: Database.Database): void {
+  const exists = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'jobs_pre_segment_audit_migration'`,
+    )
+    .get()
+  if (!exists) return
+  db.exec(`
+    INSERT INTO jobs (id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, input_token_estimate, horde_request_id, elapsed_ms, result_summary)
+    SELECT id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, input_token_estimate, horde_request_id, elapsed_ms, result_summary
+    FROM jobs_pre_segment_audit_migration;
+    DROP TABLE jobs_pre_segment_audit_migration;
+  `)
+}
+
 function dropTagTablesIfExist(db: Database.Database): void {
   db.exec(`DROP TABLE IF EXISTS tag_index; DROP TABLE IF EXISTS tags;`)
 }
@@ -197,6 +233,7 @@ export function getStoryDb(
     migrateWorldbookEntryShape(db)
     migrateJobTypeCheck(db)
     migrateJobTypeWorldbookCompact(db)
+    migrateJobTypeSegmentAudit(db)
     dropTagTablesIfExist(db)
     db.exec(STORY_SCHEMA_SQL)
     ensureColumn(db, 'story_state', 'current_page_id', 'TEXT REFERENCES page(id)')
@@ -211,8 +248,12 @@ export function getStoryDb(
     ensureColumn(db, 'page', 'content_hash', 'TEXT')
     ensureColumn(db, 'jobs', 'target_story_to_date_id', 'TEXT REFERENCES story_to_date_segment(id)')
     ensureColumn(db, 'story_to_date_segment', 'name', 'TEXT')
+    ensureColumn(db, 'story_to_date_segment', 'audit_verdict', 'TEXT')
+    ensureColumn(db, 'story_to_date_segment', 'audit_missing', 'TEXT')
+    ensureColumn(db, 'story_to_date_segment', 'audit_at', 'TEXT')
     finishJobTypeCheckMigration(db)
     finishJobTypeWorldbookCompactMigration(db)
+    finishJobTypeSegmentAuditMigration(db)
     backfillSelectedForks(db)
     if (!options?.skipRecovery) recoverStaleJobs(db)
   } catch (err) {

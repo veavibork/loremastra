@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import type { RetryEvent } from '../inference/featherless.js'
 
 /**
  * Bridges the background pipeline runner (which calls Featherless) to any SSE
@@ -72,6 +73,32 @@ export function publishProgress(jobId: string, label: string): void {
   buf.progress = label
   buffers.set(jobId, buf)
   emitter.emit(jobId, { type: 'progress', label })
+}
+
+/** Model ids read like "deepseek-ai/DeepSeek-V4-Pro" — the org prefix is noise in a progress label. */
+function shortModel(model: string): string {
+  return model.split('/').pop() ?? model
+}
+
+/**
+ * Adapter from withModelFallback/withTransientRetry's retry events to this job's progress
+ * label — makes in-job retries (provider 500/503 backoff, cross-model fallback) visible in
+ * the story view's wait label and the Queue tab instead of happening silently.
+ */
+export function retryProgressPublisher(jobId: string): (event: RetryEvent) => void {
+  return (event) => {
+    if (event.kind === 'transient-retry') {
+      publishProgress(
+        jobId,
+        `Provider busy (${event.status}) — retrying ${shortModel(event.model)} in ${Math.round(event.delayMs / 1000)}s (retry ${event.attempt})…`,
+      )
+    } else {
+      publishProgress(
+        jobId,
+        `${shortModel(event.fromModel)} unavailable — trying ${shortModel(event.toModel)}…`,
+      )
+    }
+  }
 }
 
 /** Snapshot of whatever's accumulated for a job so far — read by the stream route when a client connects, to replay it as a single "sync" event ahead of live tokens. */

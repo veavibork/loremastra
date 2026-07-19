@@ -48,6 +48,7 @@ export {
   deleteStoryToDateSegment,
   enqueueStoryToDate,
   requeueStoryToDateSegment,
+  auditStoryToDateSegment,
 } from './story-to-date.js'
 
 export {

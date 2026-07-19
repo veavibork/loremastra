@@ -199,6 +199,29 @@ export function requeueStoryToDateSegment(
   })
 }
 
+/**
+ * Queue a coverage-audit job (judge-as-detector, majority vote — see audit.ts). Manual-only
+ * by design: each audit is up to 3 full Editor calls, and the 2026-07-17 verify-ab experiment
+ * rejected the judge for unattended gating — it flags, a human decides.
+ */
+export function enqueueSegmentAuditJob(
+  db: Database.Database,
+  userId: string,
+  segmentId: string,
+): void {
+  const seg = getStoryToDateSegment(db, segmentId)
+  if (!seg?.content?.trim() || seg.broken) throw new Error('segment not ready to audit')
+  if (seg.coverageThroughIcPost == null) throw new Error('segment has no coverage to audit')
+  if (hasActiveJobForStoryToDate(db, segmentId, 'segment-audit')) return
+  const editor = getAgentProfile(userId, 'editor')
+  createJob(db, {
+    targetStoryToDateId: segmentId,
+    jobType: 'segment-audit',
+    priority: 3, // below fold (4): diagnostics never outrank real memory work
+    slotCost: editor.concurrencyCost,
+  })
+}
+
 /** Queue a Worker naming job for a segment that has content but no title yet. */
 export function enqueueStoryToDateNameJob(
   db: Database.Database,

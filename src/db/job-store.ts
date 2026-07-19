@@ -14,6 +14,7 @@ export type JobType =
   | 'story-to-date'
   | 'story-to-date-fold'
   | 'worldbook-compact'
+  | 'segment-audit'
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
 
 export type AgentRole = 'author' | 'editor' | 'worker'
@@ -26,6 +27,7 @@ const JOB_AGENT_ROLES: Partial<Record<JobType, AgentRole>> = {
   'story-to-date': 'editor',
   'story-to-date-fold': 'editor',
   'worldbook-compact': 'editor',
+  'segment-audit': 'editor',
   'story-name': 'worker',
   'segment-name': 'worker',
 }
