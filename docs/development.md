@@ -403,6 +403,9 @@ trace (trace reset shipped in `21d33d7`; root cause fixed same day). `proseStrea
 Off vs On. Horde prose path unchanged (no reasoning-channel handling). Horde smoke test re-run after
 changes: OK. **2026-07-17:** `proseStreamUsesReasoningTrace` removed — trace routing is shape-based
 now, not gated by Effort/name; see [docs/providers/model-shape-probe-2026-07-17.md](providers/model-shape-probe-2026-07-17.md).
+**2026-07-19:** `shouldPrefillReasoning` retired in turn — the prefill decision moved to
+`shouldPrefillThink` (`src/services/model-format.ts`), profile-aware and thinking-on-only; see the
+format-probe entry below.
 
 **Additional, post-Phase-1: silent OOC session boundary + Story tab mode persistence** — ✅ done,
 2026-07-03. The post-kickoff OOC "update session" boundary (`ooc_session_start_page_id`) used to be
@@ -832,3 +835,23 @@ save. Run 2026-07-19 (artifacts: `data/experiments/segment-audit-ab/2026-07-19T1
   Worker tier (8B) can't hold the consequential-vs-staging distinction or do reliable
   block-vs-posts lookup. Revisit only if the Worker slot moves to a substantially stronger
   model.
+
+### Model format probe: storage, runner, consumers, tripwire — ✅ done + deployed, 2026-07-19
+
+Steps 4–6 of [docs/providers/format-probe-plan.md](providers/format-probe-plan.md) (steps 1–3
+same day, earlier session). Commits `3117611`, `cc5d0c9`, `2f0f0e3`; deployed to the VM and
+probes run over the live lineup the same day.
+
+- **Storage + runner (`3117611`):** global `model_format_profiles` table doubles as probe
+  queue (jobs are story-scoped and can't host a global probe — plan deviation documented);
+  `src/queue/probe-runner.ts` drains it single-flight through the slots.ts gate. Smoke test
+  caught a real bug: an all-calls-failed probe stored a `done` profile with an
+  authoritative-looking `none-observed` shape — now `failed` with the first HTTP error.
+- **Consumers (`cc5d0c9`):** `src/services/model-format.ts` (pure cores + DB wrappers,
+  pre-probe heuristics as unprofiled fallback) drives prefill, idle timeout, splitter tags;
+  Effort label carries per-model caveats; hfTags in the profile API. Fixed on the way:
+  prose.ts force-prefilled `/deepseek/i` unconditionally, bypassing the effort-off guard.
+  New decision table live-validated on DeepSeek-V4-Pro (2×3 kwargs×prefill matrix).
+- **Tripwire (`2f0f0e3`):** `reportFormatDrift` after every successful stream; one-sided
+  (only appearances contradicting the profile flag — silence never does); first detection
+  wins, successful re-probe clears; red chip in Agents tab. No auto-re-probe on drift.

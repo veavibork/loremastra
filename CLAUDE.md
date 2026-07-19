@@ -38,7 +38,7 @@ sessions.
 - **Validation:** `zod` + `@hono/standard-validator` · **Auth:** `bcryptjs` · **IDs:** UUID v7 (`uuid`)
 - **MCP SDK:** `@modelcontextprotocol/sdk`
 - **Run/dev:** `tsx` · **Compile:** `tsc`
-- **Test:** Vitest (136 tests, `tests/db/`, `tests/lib/`, `tests/services/`) + Playwright (16 tests: 9 contract + 7 critical path, `e2e/`)
+- **Test:** Vitest (235 tests, `tests/db/`, `tests/lib/`, `tests/services/`) + Playwright (16 tests: 9 contract + 7 critical path, `e2e/`)
 - **Formatter:** Prettier (`.prettierrc`) · **Linting:** `oxlint` for backend (`src`, `scripts`) and frontend (`web/`)
 
 ## Commands

@@ -223,7 +223,9 @@ etc.) — wired to the Author **Effort** toggle (`src/services/toggle-presets.ts
 
 **Effort Off** (`enable_thinking: false`): confirmed 2026-07-04 — prefill + false routes the full IC
 answer through **`delta.reasoning` only**, triggering false retries. Production now **skips prefill**
-(`shouldPrefillReasoning` in `featherless.ts`) when Effort is Off.
+when Effort is Off — the decision lives in `shouldPrefillThink`
+(`src/services/model-format.ts`, 2026-07-19: profile-aware, prefill only when thinking is
+explicitly on, deepseek family only; `shouldPrefillReasoning` in featherless.ts is retired).
 
 **Effort On** (`enable_thinking: true`): prefill + reasoning trace; meta planning in `delta.reasoning`,
 IC in `delta.content` when the model cooperates (non-deterministic at temp 1).
