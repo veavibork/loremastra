@@ -67,6 +67,8 @@ export {
   reorderModelConfigs,
 } from './agents.js'
 
+export { fetchModelProfiles, requestModelProbe, cancelModelProbe } from './model-profiles.js'
+
 export { fetchLayout, updateLayout } from './layout.js'
 
 export { fetchSettingsSpace, saveSettingsSpace, revertSettingsSpace } from './settings.js'
@@ -104,6 +106,10 @@ export type {
   ModelConfig,
   ModelConfigPatch,
   CatalogModel,
+  ProbeShape,
+  ProbeStatus,
+  ModelFormatProfile,
+  ModelProfileRow,
   LayoutJustify,
   LayoutButton,
   LayoutContainer,

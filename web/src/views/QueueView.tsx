@@ -1,4 +1,5 @@
 import { useJobs, useSlots, usePanicStopAllJobs } from '../hooks/use-jobs'
+import { useModelProfiles, useCancelModelProbe } from '../hooks/use-model-profiles'
 import { useNowTick } from '../hooks/use-now-tick'
 import type { Job, SlotHolder } from '../api'
 import type { PanelProps } from '../lib/panel-types'
@@ -32,7 +33,15 @@ export default function QueueView({ story }: PanelProps) {
     pollOnlyWhileActive: true,
   })
   const { data: slots } = useSlots({ background: true, refetchInterval: 2000 })
+  const { data: modelProfiles } = useModelProfiles()
+  const cancelProbe = useCancelModelProbe()
   const panic = usePanicStopAllJobs()
+
+  // Model probes are global (not story jobs) — surface active ones here so a minutes-long
+  // probe holding slots is never invisible. Settled rows live in the Agents tab instead.
+  const activeProbes = (modelProfiles ?? []).filter(
+    (p) => p.status === 'pending' || p.status === 'running',
+  )
 
   const holders = slots?.holders ?? []
   // Featherless usage no local reservation accounts for — a just-aborted call its side still
@@ -87,6 +96,7 @@ export default function QueueView({ story }: PanelProps) {
         {panic.data && (
           <span className="queue-panic-result">
             Aborted {panic.data.aborted}, reaped {panic.data.reaped}
+            {panic.data.probesAborted > 0 ? `, probes ${panic.data.probesAborted}` : ''}
           </span>
         )}
       </div>
@@ -112,6 +122,29 @@ export default function QueueView({ story }: PanelProps) {
         </div>
       ) : (
         slots && <div className="queue-slots-idle">No slots held.</div>
+      )}
+      {activeProbes.length > 0 && (
+        <div className="queue-probe-list">
+          {activeProbes.map((p) => (
+            <div key={`${p.provider}:${p.modelId}`} className="queue-probe">
+              <div className="queue-probe-line1">
+                <span className="queue-job-type">model-probe</span>
+                <span className="queue-job-model">{p.modelId}</span>
+                <span className="queue-job-status">{p.status}</span>
+                <button
+                  type="button"
+                  onClick={() => cancelProbe.mutate({ provider: p.provider, model: p.modelId })}
+                  disabled={cancelProbe.isPending}
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="queue-probe-line2">
+                {p.status === 'running' ? (p.progress ?? 'probing…') : 'waiting for a free slot'}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
       <div className="queue-job-list">
         {(jobs ?? []).map((job) => (

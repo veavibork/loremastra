@@ -12,8 +12,12 @@ export async function fetchSlots(opts?: { background?: boolean }): Promise<Slots
   return res.json()
 }
 
-/** Panic button: stops every pending/running job across every story this user owns. */
-export async function panicStopAllJobs(): Promise<{ aborted: number; reaped: number }> {
+/** Panic button: stops every pending/running job across every story this user owns, plus any running model probe. */
+export async function panicStopAllJobs(): Promise<{
+  aborted: number
+  reaped: number
+  probesAborted: number
+}> {
   const res = await apiFetch(`/api/debug/slots/panic`, { method: 'POST' })
   return res.json()
 }

@@ -124,14 +124,35 @@ Original scope, all implemented:
 Output: a `ModelFormatProfile` object + raw artifacts (same evidence discipline as
 `data/experiments/`).
 
-### 4. Profile storage + queue job
+### 4. Profile storage + probe runner — ✅ done 2026-07-19
 
-- Global-DB table keyed `(provider, model_id)` with profile JSON, `probedAt`, artifact path.
-- New `model-probe` job type (jobs CHECK migration, established rename-aside pattern),
-  visible in the Queue tab with per-condition progress labels.
-- Triggers: agent saved with a model that has no profile → auto-enqueue; manual "Re-probe"
-  button in the Agents tab. Probe holds concurrency slots for a while — accepted cost.
-- Agents tab surfaces the profile summary (shape, toggles honored, leaks, probedAt).
+**Design deviation from the original sketch:** no `model-probe` job type in the jobs table.
+Jobs are story-scoped (each story DB has its own `jobs` table and every job must target a
+text/segment in that story) — a model probe is global and has neither. Instead:
+
+- `model_format_profiles` table in the **global** DB keyed `(provider, model_id)`, which is
+  both the stored profile AND its own probe queue (status pending/running/done/failed/
+  cancelled). Store: `src/db/model-format-profile-store.ts`. Re-probing keeps the last good
+  `profile_json` until the new probe succeeds; failure/cancel also keeps it (stale truth
+  beats no truth). Startup re-pends rows a dead process left 'running'.
+- `src/queue/probe-runner.ts` — the global counterpart to dispatch.ts: 2s scan, single
+  probe in flight process-wide, reserves Featherless slots through the same `slots.ts`
+  gate (holder shows as `model-probe` in the Queue tab), slot cost from the model's
+  `model_configs.concurrency_cost` when known. Abort path releases the slot immediately;
+  the Queue tab panic button also aborts running probes.
+- Routes: `GET /api/model-profiles` (list + live per-condition progress label),
+  `POST /probe`, `POST /cancel` — POST bodies, not path params (model ids contain `/`).
+- Triggers: Featherless config PATCHed with a never-probed model → auto-enqueue (refreshing
+  a stale profile stays the explicit Re-probe button's job); "Probe format"/"Re-probe"/
+  "Cancel" per card in the Agents tab, with a chip summary (shape, field/tag, kwargs
+  honored, leaks, sanity, probed date). Active probes also render in the Queue tab.
+
+**Smoke-tested live** against the dev server via a direct-DB enqueue: full loop ran
+(claim → slot hold → 8 sequential calls → artifacts → finish). The run also caught a real
+bug — all calls failing (stale local API key, HTTP 401) still stored a `done` profile with
+an authoritative-looking `none-observed` shape. Fixed: zero successful calls → status
+`failed` with the first HTTP error preserved. (The local dev DB's stored Featherless key
+differs from `.env`'s working one — probes on the VM use the real stored key.)
 
 ### 5. Consumers
 

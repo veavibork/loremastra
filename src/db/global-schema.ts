@@ -103,6 +103,27 @@ CREATE TABLE IF NOT EXISTS model_configs (
 );
 CREATE INDEX IF NOT EXISTS idx_model_configs_user ON model_configs(user_id);
 
+-- One row per (provider, model) = the model's probed format profile AND its probe-queue
+-- entry (status column). Model format is a property of the model, not the user, so the key
+-- is global; requested_by records whose API key the probe runner should use. Jobs proper
+-- live per-story (story-schema.ts) and require a story-scoped target, which a model probe
+-- doesn't have — hence this separate global mechanism (src/queue/probe-runner.ts).
+-- Re-probing resets status to 'pending' while keeping the last good profile_json until a
+-- new probe succeeds, so consumers never lose data mid-probe.
+CREATE TABLE IF NOT EXISTS model_format_profiles (
+  provider TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  requested_by TEXT NOT NULL REFERENCES users(id),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
+  profile_json TEXT,
+  probed_at TEXT,
+  artifact_dir TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (provider, model_id)
+);
+
 CREATE TABLE IF NOT EXISTS stories (
   id TEXT PRIMARY KEY,
   owner_user_id TEXT NOT NULL REFERENCES users(id),

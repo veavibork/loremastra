@@ -184,6 +184,49 @@ export interface CatalogModel {
   toolUse?: boolean
 }
 
+export type ProbeShape = 'separate-field' | 'inline-tagged' | 'none-observed'
+export type ProbeStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+
+/** Mirror of the backend's ModelFormatProfile (src/inference/format-probe.ts). */
+export interface ModelFormatProfile {
+  provider: string
+  modelId: string
+  probedAt: string
+  family: string | null
+  reasoningFieldName: string | null
+  inlineThinkingTag: { open: string; close: string } | null
+  shape: ProbeShape
+  /** Shape per probe condition — kwargs change the wire format on some models (Qwen3-8B). */
+  shapeByCondition: Partial<Record<string, ProbeShape>>
+  unmarkedReasoningSuspected: boolean
+  thinkingOffSuppresses: boolean | null
+  thinkingOnProduces: boolean | null
+  thinkingBudgetHonored: boolean | null
+  leakTokensSeen: string[]
+  finishReasonReliable: boolean
+  sane: boolean
+  saneReasons: string[]
+  callsAttempted: number
+  callsSucceeded: number
+  notes: string[]
+}
+
+/** One row of GET /api/model-profiles — probe-queue state plus the last good profile. */
+export interface ModelProfileRow {
+  provider: string
+  modelId: string
+  requestedBy: string
+  status: ProbeStatus
+  profile: ModelFormatProfile | null
+  probedAt: string | null
+  artifactDir: string | null
+  error: string | null
+  createdAt: string
+  updatedAt: string
+  /** Live per-condition label while the probe is running ("Probe 3/8: thinking-on run 1…"). */
+  progress: string | null
+}
+
 export type LayoutJustify = 'left' | 'center' | 'right'
 
 export interface LayoutButton {

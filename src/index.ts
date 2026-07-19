@@ -25,6 +25,9 @@ import {
   panicStopAllJobs,
 } from './queue/dispatch.js'
 import { getQueueStatus } from './queue/slots.js'
+import { startProbeRunner, stopProbeRunner, panicStopProbes } from './queue/probe-runner.js'
+import { modelProfilesRoute } from './routes/model-profiles.js'
+import { recoverStaleProbes } from './db/model-format-profile-store.js'
 import { getGlobalDb } from './db/global-db.js'
 import { listAllStories } from './db/story-store.js'
 import { getStoryDb } from './db/story-db.js'
@@ -58,8 +61,13 @@ app.route('/api/prompts', promptsRoute)
 app.route('/api/settings', settingsSpacesRoute)
 app.route('/api/client-errors', clientErrorsRoute)
 app.route('/api/preference-profiles', preferenceProfilesRoute)
+app.route('/api/model-profiles', modelProfilesRoute)
 app.get('/api/debug/slots', (c) => c.json(getQueueStatus(c.get('userId'))))
-app.post('/api/debug/slots/panic', (c) => c.json(panicStopAllJobs(c.get('userId'))))
+app.post('/api/debug/slots/panic', (c) => {
+  const userId = c.get('userId')
+  const result = panicStopAllJobs(userId)
+  return c.json({ ...result, probesAborted: panicStopProbes(userId) })
+})
 // Exempt from session-guard (GET only) — the profile picker needs this before any session exists.
 app.get('/api/users', (c) => c.json(listUsers(getGlobalDb())))
 
@@ -89,7 +97,10 @@ function trackAllStoriesAtStartup(): void {
 }
 
 trackAllStoriesAtStartup()
+// Probe rows left 'running' by a dead process have no live call to reattach to — re-pend them.
+recoverStaleProbes(getGlobalDb())
 startPipelineRunner()
+startProbeRunner()
 const server = serve({ fetch: app.fetch, port }, (info) => {
   console.log(`Loremaster listening on http://localhost:${info.port}`)
 })
@@ -108,6 +119,7 @@ function shutdown(signal: string): void {
   shuttingDown = true
   console.log(`[shutdown] ${signal} received — stopping pipeline, feeds, and HTTP listener`)
   stopPipelineRunner()
+  stopProbeRunner()
   stopHealthSnapshots()
   stopAllConcurrencyFeeds()
   server.close(() => process.exit(0))

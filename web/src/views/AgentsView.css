@@ -110,6 +110,54 @@
   margin-top: 0.25rem;
 }
 
+.agent-format-profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+}
+
+.agent-format-profile button {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  margin-left: auto;
+}
+
+.agent-format-label {
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.agent-format-status {
+  opacity: 0.75;
+}
+
+.agent-format-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.agent-format-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.agent-format-probed-at {
+  opacity: 0.6;
+}
+
+.agent-format-warn {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 .agents-savebar {
   display: flex;
   gap: 0.5rem;

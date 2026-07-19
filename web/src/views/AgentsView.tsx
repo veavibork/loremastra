@@ -8,8 +8,15 @@ import {
   type CatalogModel,
   type ModelConfig,
   type ModelConfigPatch,
+  type ModelFormatProfile,
+  type ModelProfileRow,
 } from '../api'
 import { useModelConfigs } from '../hooks/use-agents'
+import {
+  useModelProfiles,
+  useRequestModelProbe,
+  useCancelModelProbe,
+} from '../hooks/use-model-profiles'
 import { useQueryClient } from '@tanstack/react-query'
 import ApiKeysSection from './ApiKeysSection'
 import NumberField from '../components/fields/NumberField.js'
@@ -18,8 +25,106 @@ import SelectField from '../components/fields/SelectField.js'
 import '../components/fields/fields.css'
 import './AgentsView.css'
 
+function honored(value: boolean | null, yes: string, no: string): string {
+  return value === null ? 'untested' : value ? yes : no
+}
+
+/** Compact chip list for a probed profile — full detail lives in the artifact files. */
+function profileChips(p: ModelFormatProfile): { text: string; warn?: boolean }[] {
+  const chips: { text: string; warn?: boolean }[] = []
+  chips.push({ text: `shape: ${p.shape}` })
+  if (p.reasoningFieldName) chips.push({ text: `field: ${p.reasoningFieldName}` })
+  if (p.inlineThinkingTag) chips.push({ text: `tag: ${p.inlineThinkingTag.open}` })
+  chips.push({ text: `thinking off: ${honored(p.thinkingOffSuppresses, 'honored', 'IGNORED')}` })
+  chips.push({ text: `thinking on: ${honored(p.thinkingOnProduces, 'honored', 'IGNORED')}` })
+  chips.push({ text: `budget: ${honored(p.thinkingBudgetHonored, 'honored', 'ignored')}` })
+  if (p.leakTokensSeen.length) {
+    chips.push({ text: `leaks: ${p.leakTokensSeen.join(' ')}`, warn: true })
+  }
+  if (p.unmarkedReasoningSuspected) chips.push({ text: 'unmarked reasoning suspected', warn: true })
+  if (!p.sane) chips.push({ text: 'template broken', warn: true })
+  if (p.callsSucceeded < p.callsAttempted) {
+    chips.push({ text: `${p.callsSucceeded}/${p.callsAttempted} calls ok`, warn: true })
+  }
+  return chips
+}
+
+/**
+ * Format-probe status line for one Featherless card (format-probe-plan.md step 4). Reads the
+ * SAVED model id — a draft edit hasn't been probed yet, and saving it auto-enqueues a probe
+ * for never-probed models anyway.
+ */
+function FormatProfileSection({
+  cfg,
+  row,
+}: {
+  cfg: ModelConfig
+  row: ModelProfileRow | undefined
+}) {
+  const request = useRequestModelProbe()
+  const cancel = useCancelModelProbe()
+  if (!cfg.model) return null
+
+  const target = { provider: 'featherless', model: cfg.model }
+  const busy = row?.status === 'pending' || row?.status === 'running'
+
+  return (
+    <div className="agent-format-profile">
+      <span className="agent-format-label">Format</span>
+      {!row && <span className="agent-format-status">not probed</span>}
+      {row?.status === 'pending' && <span className="agent-format-status">probe queued…</span>}
+      {row?.status === 'running' && (
+        <span className="agent-format-status">{row.progress ?? 'probing…'}</span>
+      )}
+      {row?.status === 'failed' && (
+        <span className="agent-format-status agent-format-warn">
+          probe failed{row.error ? ` — ${row.error}` : ''}
+        </span>
+      )}
+      {row?.status === 'cancelled' && <span className="agent-format-status">probe cancelled</span>}
+      {row?.profile && !busy && (
+        <span className="agent-format-chips">
+          {profileChips(row.profile).map((chip) => (
+            <span
+              key={chip.text}
+              className={`agent-format-chip ${chip.warn ? 'agent-format-warn' : ''}`}
+            >
+              {chip.text}
+            </span>
+          ))}
+          {row.probedAt && (
+            <span className="agent-format-chip agent-format-probed-at">
+              {new Date(row.probedAt).toLocaleDateString()}
+            </span>
+          )}
+        </span>
+      )}
+      {busy ? (
+        <button
+          type="button"
+          onClick={() => cancel.mutate(target)}
+          disabled={cancel.isPending}
+          title="Stop this format probe"
+        >
+          Cancel
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => request.mutate(target)}
+          disabled={request.isPending}
+          title="Run the format probe: 8 sequential calls measuring reasoning shape, kwarg honoring, and token leaks. Holds concurrency slots for a few minutes."
+        >
+          {row?.profile ? 'Re-probe' : 'Probe format'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function AgentsView() {
   const { data: configs, isLoading } = useModelConfigs()
+  const { data: modelProfiles } = useModelProfiles()
   const qc = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const [featherlessCatalog, setFeatherlessCatalog] = useState<CatalogModel[] | null>(null)
@@ -403,6 +508,15 @@ export default function AgentsView() {
                   {cfg.successCount}✓ / {cfg.failCount}✗ · {cfg.inputTokens}in / {cfg.outputTokens}
                   out
                 </div>
+
+                {cfg.provider === 'featherless' && (
+                  <FormatProfileSection
+                    cfg={cfg}
+                    row={(modelProfiles ?? []).find(
+                      (p) => p.provider === 'featherless' && p.modelId === cfg.model,
+                    )}
+                  />
+                )}
               </div>
             </div>
           )

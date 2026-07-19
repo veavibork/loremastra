@@ -47,11 +47,14 @@ staleness detection. Build order, each step ~one session, app working after each
    `scripts/format-probe.ts`. Live-validated on Qwen3-8B: shape is per-condition
    (`shapeByCondition` — no kwargs → inline `<think>`, explicit kwargs → `reasoning` field)
    and `thinking_budget` is ignored there. See plan doc.
-4. **Profile storage + `model-probe` queue job** (next) — `(provider, model_id)` table in global
-   DB, auto-probe on agent save with unprofiled model, "Re-probe" button + profile summary
-   in the Agents tab.
-5. **Consumers** — splitter tags, prefill decision (retire `/deepseek/i`), per-model-aware
-   Effort toggle, retry rules, HF metadata folded in.
+4. ~~**Profile storage + probe runner**~~ — ✅ done 2026-07-19: global `model_format_profiles`
+   table doubling as the probe queue + `src/queue/probe-runner.ts` (NOT a story-job — jobs
+   are story-scoped; see plan doc for the deviation). Auto-probe on agent save with a
+   never-probed model; Probe/Re-probe/Cancel + chip summary per Agents card; active probes
+   in the Queue tab; panic button covers probes. Live-smoke-tested (also fixed: all-calls-
+   failed probes now land as `failed`, not a garbage `done` profile).
+5. **Consumers** (next) — splitter tags, prefill decision (retire `/deepseek/i`),
+   per-model-aware Effort toggle, retry rules, HF metadata folded in.
 6. **Runtime tripwire** — observed shape contradicts profile → flag model, suggest re-probe.
 
 **Parked:** cache/persistent-error mystery (no repro; evidence capture is the prerequisite —

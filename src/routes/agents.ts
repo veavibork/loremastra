@@ -18,6 +18,7 @@ import { listModels, getModel } from '../inference/featherless-models.js'
 import { getHfTagsForModel } from '../inference/hf-model-tags.js'
 import { listTextModels } from '../inference/horde.js'
 import { getDecryptedFeatherlessKey, getDecryptedHordeKey } from '../db/user-store.js'
+import { getModelFormatProfile, requestModelProbe } from '../db/model-format-profile-store.js'
 
 export const agentsRoute = new Hono<{ Variables: AppVariables }>()
 
@@ -157,6 +158,18 @@ agentsRoute.patch('/:id', sValidator('json', patchSchema, validationHook), async
 
   const updated = updateModelConfig(db, id, patch)
   if (!updated) return c.json({ error: 'model config not found' }, 404)
+
+  // Format-probe auto-enqueue (format-probe-plan.md step 4): a Featherless config saved with
+  // a model that has never been probed gets one queued. Only never-probed models — refreshing
+  // a stale profile is the explicit "Re-probe" button's job, not every save's.
+  if (
+    updated.provider === 'featherless' &&
+    updated.model &&
+    !getModelFormatProfile(db, 'featherless', updated.model)
+  ) {
+    requestModelProbe(db, 'featherless', updated.model, userId)
+  }
+
   return c.json({ config: updated })
 })
 
