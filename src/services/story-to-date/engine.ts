@@ -306,8 +306,12 @@ export const STORY_TO_DATE_SOFT_CAP_TOKENS = 6000
 export const FOLD_KEEP_RECENT_TOKENS = 3000
 /** Fold output aims for this fraction of the folded input's word count (the model routinely beats it). */
 export const FOLD_TARGET_RATIO = 0.5
-/** Stay below Editor max_tokens — outputs near this fraction are treated as truncated. */
+/** The instructed digest target aims at this fraction of Editor max_tokens (in chars/4 estimate terms), leaving real headroom for a model that writes exactly to target. */
+export const FOLD_TARGET_OUTPUT_TOKEN_RATIO = 0.7
+/** Backstop rejection line when the provider omits finish_reason — outputs estimated at or above this fraction of max_tokens are treated as truncated. MUST sit above FOLD_TARGET_OUTPUT_TOKEN_RATIO, or a model that obeys the instructed target gets rejected every time (this exact bug shipped: target 0.85·0.7 words/token vs reject 0.85·0.92 chars/4 overlapped, and every VM fold failed "likely truncated"). The primary truncation signal is finish_reason === "length" from the API, not this estimate. */
 export const FOLD_MAX_OUTPUT_TOKEN_RATIO = 0.85
+/** English prose averages ~6 chars per word including the space — pairs with CHARS_PER_TOKEN_ESTIMATE so word targets and token estimates stay on one scale. */
+export const FOLD_PROSE_CHARS_PER_WORD = 6
 
 export function foldWordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
@@ -315,13 +319,16 @@ export function foldWordCount(text: string): number {
 
 /** Cap fold digest length so a single Editor response can finish without hitting max_tokens. */
 export function foldDigestTargetWords(mergedWords: number, responseLimit: number): number {
-  const maxOutTokens = Math.floor(responseLimit * FOLD_MAX_OUTPUT_TOKEN_RATIO)
-  const maxWords = Math.floor(maxOutTokens * 0.7)
+  const targetOutTokens = Math.floor(responseLimit * FOLD_TARGET_OUTPUT_TOKEN_RATIO)
+  const maxWords = Math.floor(
+    (targetOutTokens * CHARS_PER_TOKEN_ESTIMATE) / FOLD_PROSE_CHARS_PER_WORD,
+  )
   return Math.min(Math.max(200, Math.round(mergedWords * FOLD_TARGET_RATIO)), maxWords)
 }
 
+/** Backstop only — used when completeChatWithMeta got no finish_reason back. */
 export function looksFoldDigestTruncated(digest: string, responseLimit: number): boolean {
-  return estimateTokens(digest) >= Math.floor(responseLimit * FOLD_MAX_OUTPUT_TOKEN_RATIO * 0.92)
+  return estimateTokens(digest) >= Math.floor(responseLimit * FOLD_MAX_OUTPUT_TOKEN_RATIO)
 }
 
 /**

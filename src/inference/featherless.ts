@@ -498,13 +498,22 @@ function toWireMessage(m: ChatMessage): Record<string, unknown> {
   return { role: m.role, content: m.content }
 }
 
+export interface CompletionWithMeta {
+  content: string
+  /** `choices[0].finish_reason` verbatim ("stop", "length", …) — null when the provider omits it. "length" is the ground-truth truncation signal; prefer it over any length heuristic. */
+  finishReason: string | null
+}
+
 /**
  * A single plain non-streaming completion — no tools, no forced structure. For a short
  * background task whose output shape is enforced by a bracket-tag convention in the prompt
  * (see extractSummary in dispatch.ts) rather than by the API's tool-calling machinery,
  * so the request itself stays as simple as streamInference's non-streaming twin.
+ *
+ * Most callers only need the text — use completeChat. Callers that must detect a
+ * max_tokens cutoff (fold digests) use this variant for the finish_reason.
  */
-export async function completeChat(
+export async function completeChatWithMeta(
   profile: AgentProfile,
   apiKey: string,
   messages: ChatMessage[],
@@ -514,7 +523,7 @@ export async function completeChat(
     chatTemplateKwargs?: Record<string, unknown>
     maxTokens?: number
   },
-): Promise<string> {
+): Promise<CompletionWithMeta> {
   if (!apiKey) {
     throw new Error('No Featherless API key configured — set one in the Agents tab')
   }
@@ -569,9 +578,10 @@ export async function completeChat(
     }
 
     const data = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>
+      choices?: Array<{ message?: { content?: string | null }; finish_reason?: string | null }>
     }
     const rawContent = data.choices?.[0]?.message?.content
+    const finishReason = data.choices?.[0]?.finish_reason ?? null
     const content = rawContent ? stripThinkingTags(rawContent) : rawContent
     if (!content) {
       const latency = Date.now() - startedAt
@@ -597,10 +607,25 @@ export async function completeChat(
       retries: 0,
     })
     recordOutcome(profile, { success: true, inputTokens, outputTokens: outTok })
-    return content
+    return { content, finishReason }
   } finally {
     timeout.cleanup()
   }
+}
+
+/** completeChatWithMeta minus the metadata — the common case. */
+export async function completeChat(
+  profile: AgentProfile,
+  apiKey: string,
+  messages: ChatMessage[],
+  options?: {
+    timeoutMs?: number
+    signal?: AbortSignal
+    chatTemplateKwargs?: Record<string, unknown>
+    maxTokens?: number
+  },
+): Promise<string> {
+  return (await completeChatWithMeta(profile, apiKey, messages, options)).content
 }
 
 export interface ToolDefinition {

@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3'
-import { completeChat } from '../../inference/featherless.js'
+import { completeChatWithMeta } from '../../inference/featherless.js'
 
 /** Large merged segments can legitimately take several minutes — still bounded. */
 export const STORY_TO_DATE_FOLD_TIMEOUT_MS = 10 * 60_000
@@ -68,15 +68,21 @@ export async function executeStoryToDateFoldJob(
     { role: 'user' as const, content: `Older memory to condense (chronological):\n\n${merged}` },
   ]
 
-  const digest = (
-    await completeChat(editor, apiKey, messages, {
-      maxTokens: editor.responseLimit,
-      timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
-      signal,
-    })
-  ).trim()
+  const { content, finishReason } = await completeChatWithMeta(editor, apiKey, messages, {
+    maxTokens: editor.responseLimit,
+    timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
+    signal,
+  })
+  const digest = content.trim()
   if (!digest) throw new Error('fold produced empty digest')
-  if (looksFoldDigestTruncated(digest, editor.responseLimit)) {
+  // finish_reason is ground truth for a max_tokens cutoff; the length estimate is only a
+  // backstop for providers that omit it (a compliant target-length digest sits well under it).
+  if (finishReason === 'length') {
+    throw new Error(
+      `fold digest truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`,
+    )
+  }
+  if (finishReason === null && looksFoldDigestTruncated(digest, editor.responseLimit)) {
     throw new Error(
       `fold digest likely truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`,
     )
