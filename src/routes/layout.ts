@@ -11,7 +11,11 @@ import {
   updateLayoutConfigJson,
   setActiveLayoutConfig,
 } from '../db/layout-config-store.js'
-import { DEFAULT_LAYOUT_CONFIG, normalizeLayoutConfig } from '../services/layout.js'
+import {
+  DEFAULT_LAYOUT_CONFIG,
+  LAYOUT_BUTTON_CATALOG,
+  normalizeLayoutConfig,
+} from '../services/layout.js'
 
 export const layoutRoute = new Hono<{ Variables: AppVariables }>()
 
@@ -26,9 +30,14 @@ layoutRoute.get('/', (c) => {
   const active = getActiveLayoutConfig(db, c.get('userId'))
   if (active) {
     const config = normalizeLayoutConfig(JSON.parse(active.configJson))
-    return c.json({ id: active.id, name: active.name, config })
+    return c.json({ id: active.id, name: active.name, config, catalog: LAYOUT_BUTTON_CATALOG })
   }
-  return c.json({ id: null, name: 'Default', config: DEFAULT_LAYOUT_CONFIG })
+  return c.json({
+    id: null,
+    name: 'Default',
+    config: DEFAULT_LAYOUT_CONFIG,
+    catalog: LAYOUT_BUTTON_CATALOG,
+  })
 })
 
 layoutRoute.get('/all', (c) => {

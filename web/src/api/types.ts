@@ -212,10 +212,23 @@ export interface LayoutConfigData {
   inputBar: LayoutRegion
 }
 
+export interface LayoutCatalogEntry {
+  id: string
+  label: string
+}
+
+/** Every button the layout editor offers, per region — server-provided so ids never go stale. */
+export interface LayoutCatalog {
+  nav: LayoutCatalogEntry[]
+  inputBar: LayoutCatalogEntry[]
+}
+
 export interface LayoutConfigResponse {
   id: string | null
   name: string
   config: LayoutConfigData
+  /** Present on GET; PATCH responses omit it. */
+  catalog?: LayoutCatalog
 }
 
 export interface PromptCatalogEntry {

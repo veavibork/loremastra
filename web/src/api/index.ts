@@ -110,6 +110,8 @@ export type {
   LayoutRegion,
   LayoutConfigData,
   LayoutConfigResponse,
+  LayoutCatalog,
+  LayoutCatalogEntry,
   PromptCatalogEntry,
   PromptMessage,
   PromptPreview,

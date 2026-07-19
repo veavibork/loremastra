@@ -24,4 +24,6 @@ export type {
   LayoutRegion,
   LayoutButton,
   LayoutJustify,
+  LayoutCatalog,
+  LayoutCatalogEntry,
 } from './types.js'

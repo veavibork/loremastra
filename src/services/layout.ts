@@ -66,6 +66,7 @@ export const INPUT_BAR_BUTTON_LABELS: Record<string, string> = {
   'action.redo': '↷ Redo',
   'action.retry': 'Retry',
   'action.continue': 'Continue',
+  'action.kickoff': 'Kickoff →',
   'toggle.length': 'Length',
   'toggle.mood': 'Mood',
   'toggle.param': 'Param',
@@ -73,6 +74,43 @@ export const INPUT_BAR_BUTTON_LABELS: Record<string, string> = {
   'toggle.effort': 'Effort',
   'toggle.reasoning.show': 'Trace',
   'toggle.reasoning.expand': 'Trace open',
+}
+
+export interface LayoutCatalogEntry {
+  id: string
+  label: string
+}
+
+export interface LayoutCatalog {
+  nav: LayoutCatalogEntry[]
+  inputBar: LayoutCatalogEntry[]
+}
+
+/**
+ * Every button the Settings layout editor offers. Mood/param/model toggles are deliberately
+ * absent: they cycle their labels but their generation options aren't wired yet
+ * (web StoryToggles.generationOptions) — offering them would place do-nothing buttons.
+ */
+const CATALOG_INPUT_BAR_IDS = [
+  'mode.ooc',
+  'mode.ic',
+  'action.undo',
+  'action.redo',
+  'action.retry',
+  'action.continue',
+  'action.kickoff',
+  'toggle.length',
+  'toggle.effort',
+  'toggle.reasoning.show',
+  'toggle.reasoning.expand',
+]
+
+export const LAYOUT_BUTTON_CATALOG: LayoutCatalog = {
+  nav: Object.entries(TAB_LABELS).map(([id, label]) => ({ id, label })),
+  inputBar: CATALOG_INPUT_BAR_IDS.map((id) => ({
+    id,
+    label: INPUT_BAR_BUTTON_LABELS[id] ?? id,
+  })),
 }
 
 export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
@@ -141,6 +179,9 @@ export const DEFAULT_LAYOUT_CONFIG: LayoutConfigData = {
         showLabel: false,
         justify: 'center',
         buttons: [
+          // toggle.length lives in the defaults so mergeInputBarButtons resurrects it in
+          // saved layouts that predate the toggle being wired up (2026-07-19).
+          { id: 'toggle.length', label: 'Length', visible: true },
           { id: 'toggle.effort', label: 'Effort', visible: true },
           { id: 'toggle.reasoning.show', label: 'Trace', visible: true },
           { id: 'toggle.reasoning.expand', label: 'Trace open', visible: true },

@@ -5,8 +5,10 @@ import {
   fetchSettingsSpace,
   saveSettingsSpace,
   revertSettingsSpace,
+  type LayoutCatalog,
   type LayoutConfigData,
 } from '../api'
+import LayoutEditor from '../components/LayoutEditor'
 import SettingsTreeEditor, {
   type JsonData,
   type SettingsSection,
@@ -47,6 +49,7 @@ const SETTINGS_SPACES = [
 
 export default function SettingsView() {
   const [layout, setLayout] = useState<LayoutConfigData | null>(null)
+  const [layoutCatalog, setLayoutCatalog] = useState<LayoutCatalog | null>(null)
   const [bannedPhrases, setBannedPhrases] = useState<string[] | null>(null)
   const [globalCss, setGlobalCss] = useState<GlobalCssSettings | null>(null)
   const [playTab, setPlayTab] = useState<PlayTabSettings | null>(null)
@@ -68,7 +71,10 @@ export default function SettingsView() {
       }))
     }
     void fetchLayout()
-      .then((res) => setLayout(res.config))
+      .then((res) => {
+        setLayout(res.config)
+        setLayoutCatalog(res.catalog ?? null)
+      })
       .catch(reportError('layout'))
     void fetchSettingsSpace<string[]>(BANNED_PHRASES_SPACE)
       .then(setBannedPhrases)
@@ -272,10 +278,10 @@ export default function SettingsView() {
     if (layout) {
       out.push({
         key: 'layout',
-        title: 'Layout',
+        title: 'Layout (advanced)',
         description:
-          'Nav tab bar and story input bar layout (v2): nested button containers with visibility, ' +
-          'justify, and optional collapse controls. Each button has id, label, and visible. JSON edit only — drag-and-drop deferred.',
+          'Raw JSON for the nav tab bar and story input bar layout (v2). Prefer the "Layout buttons" ' +
+          'editor above — this escape hatch edits the same config directly.',
         value: layout as unknown as JsonData,
         onSave: async (value) => {
           const res = await updateLayout(value as unknown as LayoutConfigData)
@@ -317,6 +323,17 @@ export default function SettingsView() {
         </div>
       )}
       <AccountSettings />
+      {layout && layoutCatalog && (
+        <LayoutEditor
+          layout={layout}
+          catalog={layoutCatalog}
+          onSave={async (config) => {
+            const res = await updateLayout(config)
+            setLayout(res.config)
+            return res.config
+          }}
+        />
+      )}
       {loadedCount > 0 && <SettingsTreeEditor sections={sections} />}
     </div>
   )

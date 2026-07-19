@@ -1,0 +1,124 @@
+.layout-editor {
+  margin-bottom: 1.5rem;
+}
+
+.layout-editor-region {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.layout-editor-region > summary {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-h);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.layout-editor-count {
+  margin-left: 0.5rem;
+  font-size: 0.8em;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.layout-editor-container {
+  margin: 0 0.5rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+
+.layout-editor-container > summary {
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  color: var(--text-h);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.layout-editor-container-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  padding: 0.3rem 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85em;
+}
+
+.layout-editor-container-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text);
+}
+
+.layout-editor-button-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  min-height: 2rem;
+}
+
+.layout-editor-button-shown {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem; /* enlarge the tap target around the checkbox */
+}
+
+.layout-editor-button-label {
+  flex: 1 1 8rem;
+  min-width: 0;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 0.9em;
+}
+
+span.layout-editor-button-label {
+  border: none;
+  background: none;
+  color: var(--text-h);
+}
+
+.layout-editor-button-id {
+  font-family: var(--mono);
+  font-size: 0.75em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.layout-editor-available {
+  margin: 0.25rem 0.5rem 0.5rem;
+  border: 1px dashed var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-bg);
+}
+
+.layout-editor-available-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85em;
+  color: var(--text-h);
+}
+
+.layout-editor-available-header label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 400;
+  color: var(--text);
+}
+
+.layout-editor-add {
+  font-size: 0.85em;
+  padding: 0.2rem 0.5rem;
+}
