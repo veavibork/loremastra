@@ -91,11 +91,26 @@ regexes (`familyForModelId`, first-match-wins, Hermes before Llama). Helper
 Notable extras discovered: KAI's own runtime close-tag list (`</think>`, `<channel|>`,
 `</seed:think>`, `<|END_THINKING|>`) corroborates the tag families.
 
-### 3. Probe engine (library, not yet a job)
+### 3. Probe engine (library, not yet a job) — ✅ done 2026-07-19
 
-Productize the probe scripts into `src/inference/format-probe.ts`. Per (provider, model),
-run a small matrix of cheap streaming calls — n≥2 per condition, sequential (concurrency
-courtesy), each condition with a control:
+Shipped as `src/inference/format-probe.ts` (pure analysis functions unit-tested in
+`tests/services/format-probe.test.ts`; manual harness `scripts/format-probe.ts`).
+Condition matrix: baseline (no kwargs), thinking-off, thinking-on, thinking-budget(64) —
+n≥2 each, sequential, with 429/500/503 status-aware retry (429 waits 45s per the test-kit
+gotcha). Artifacts (raw SSE, truncated observations, profile) written when an artifact dir
+is given.
+
+**Validation run (Qwen/Qwen3-8B, live, 8/8 calls):** matched the 2026-07-17 ground truth
+AND found two new things. (1) **Shape is per-condition, not per-model** — with no kwargs
+Qwen3-8B streams inline `<think>` in `content` (shape B, what the 7/17 probe saw), but
+with explicit `enable_thinking: true` the reasoning moves to the separate `reasoning`
+field (shape A). The profile now records `shapeByCondition`; consumers must read the
+condition matching how they call (production always sends kwargs via
+resolveChatTemplateKwargs). (2) **`thinking_budget` is ignored on Qwen3-8B via
+Featherless** — budget=64 produced MORE reasoning than unbounded and one run burned the
+whole max_tokens still thinking (`finish_reason: length`).
+
+Original scope, all implemented:
 
 - Which delta field carries reasoning (`reasoning` vs `reasoning_content` vs none).
 - Inline thinking-tag variant, if any (checked against the corpus, not just `<think>`).

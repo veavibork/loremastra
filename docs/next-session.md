@@ -43,10 +43,11 @@ staleness detection. Build order, each step ~one session, app working after each
    layout defaults.
 2. ~~**Hypothesis corpus**~~ — ✅ done 2026-07-19: `src/data/format-hypotheses.ts` (see plan
    doc for contents/sources). Mined as hypotheses, never applied as config.
-3. **Probe engine** (next) — productize `scripts/probe-*.ts` into a library: n≥2 per condition,
-   reasoning field/tag detection, kwarg honoring both directions, stop-token leaks, broken
-   template sanity check, `finish_reason` reliability.
-4. **Profile storage + `model-probe` queue job** — `(provider, model_id)` table in global
+3. ~~**Probe engine**~~ — ✅ done 2026-07-19: `src/inference/format-probe.ts` + harness
+   `scripts/format-probe.ts`. Live-validated on Qwen3-8B: shape is per-condition
+   (`shapeByCondition` — no kwargs → inline `<think>`, explicit kwargs → `reasoning` field)
+   and `thinking_budget` is ignored there. See plan doc.
+4. **Profile storage + `model-probe` queue job** (next) — `(provider, model_id)` table in global
    DB, auto-probe on agent save with unprofiled model, "Re-probe" button + profile summary
    in the Agents tab.
 5. **Consumers** — splitter tags, prefill decision (retire `/deepseek/i`), per-model-aware
