@@ -5,7 +5,10 @@ import { getStoryToDateSegment } from '../../db/story-to-date-store.js'
 import { getGlobalDb } from '../../db/global-db.js'
 import { getDecryptedFeatherlessKey } from '../../db/user-store.js'
 import { getAgentProfile } from '../../services/agent-config.js'
-import { executeStoryToDateJob } from '../../services/story-to-date/worker.js'
+import {
+  executeStoryToDateJob,
+  InsufficientCoverageMaterialError,
+} from '../../services/story-to-date/worker.js'
 import {
   enqueueEligibleStoryToDateJob,
   enqueueStoryToDateNameJob,
@@ -59,6 +62,12 @@ export async function executeStoryToDateJobWrapper(
     } else {
       const message = err instanceof Error ? err.message : String(err)
       finishJob(db, jobId, 'failed', message)
+      if (err instanceof InsufficientCoverageMaterialError) {
+        // The window had no valid scene seam to land on — not enough new material yet, not a
+        // quality problem. Relieve Author-prompt pressure via fold instead of leaving the story
+        // stuck retrying the same undersized window on every later invalidation.
+        enqueueEligibleFoldJob(db, userId, logbookId, { ignoreSoftCap: true })
+      }
     }
   } finally {
     endCancellableWorkerJob(jobId)

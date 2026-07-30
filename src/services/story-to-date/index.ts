@@ -72,11 +72,21 @@ export function enqueueEligibleFoldJob(
   db: Database.Database,
   userId: string,
   logbookId: string,
+  opts: {
+    /**
+     * Skip the total-tokens soft cap. Used when a story-to-date segment failed for lack of new
+     * material to cover (see InsufficientCoverageMaterialError) — the goal there is relieving
+     * Author-prompt pressure right away, not waiting for STORY TO DATE's own independent size
+     * cap to trip, which may sit well under 6000 tokens while the assembled prompt (worldbook +
+     * STORY TO DATE + the always-verbatim recent-post tail) is already over budget.
+     */
+    ignoreSoftCap?: boolean
+  } = {},
 ): string | null {
   if (hasActiveJobByType(db, 'story-to-date-fold')) return null
   const rows = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken)
   const totalTokens = rows.reduce((sum, s) => sum + estimateTokens(s.content!), 0)
-  if (totalTokens <= STORY_TO_DATE_SOFT_CAP_TOKENS) return null
+  if (!opts.ignoreSoftCap && totalTokens <= STORY_TO_DATE_SOFT_CAP_TOKENS) return null
 
   const segments: FoldableSegment[] = rows.map((s) => ({
     id: s.id,

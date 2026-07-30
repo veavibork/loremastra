@@ -36,6 +36,28 @@ import { buildChainPostIndex } from '../post-index.js'
 
 const MAX_ATTEMPTS = 2
 
+/**
+ * Thrown when every attempt's best coverage claim landed outside this segment's own input
+ * window (rolled back below where the window starts, or failed to advance past prior coverage
+ * at all) — the structural signature of a window too narrow to contain a complete scene, not a
+ * quality problem with the response. The dispatcher treats this as "not enough new material
+ * yet" and reaches for a fold instead of leaving the story stuck retrying the same undersized
+ * window. Deliberately not keyed on post/token counts (see engine.ts's window sizing comments):
+ * verbosity varies wildly by model, so the only reliable signal is the model itself finding no
+ * valid seam inside the window.
+ */
+export class InsufficientCoverageMaterialError extends Error {}
+
+/** True for the two failure modes that mean "no valid coverage point exists inside this
+ * segment's window" — as opposed to quality rejections (duplicate content, coverage sprint,
+ * leaked markers) that reflect a real answer needing a retry, not an empty window. */
+function isInsufficientMaterialError(message: string): boolean {
+  return (
+    /^coverage post \d+ not in input/.test(message) ||
+    /^coverage must advance beyond \d+/.test(message)
+  )
+}
+
 function findPostByIcNumber(posts: VerbosePost[], icPostNumber: number): VerbosePost | undefined {
   return posts.find((p) => p.icPostNumber === icPostNumber)
 }
@@ -287,5 +309,10 @@ export async function executeStoryToDateJob(
     }
   }
 
-  if (!parsed) throw new Error(`story-to-date failed: ${lastError}`)
+  if (!parsed) {
+    if (isInsufficientMaterialError(lastError)) {
+      throw new InsufficientCoverageMaterialError(`story-to-date failed: ${lastError}`)
+    }
+    throw new Error(`story-to-date failed: ${lastError}`)
+  }
 }
