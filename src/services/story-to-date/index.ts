@@ -18,6 +18,7 @@ import {
   buildStoryCorpus,
   estimateTokens,
   mergeStoryToDate,
+  MIN_VERBOSE_IC_POSTS,
   NEXT_SCENE_INPUT_WINDOW_POSTS,
   selectFoldSet,
   STORY_TO_DATE_SOFT_CAP_TOKENS,
@@ -25,7 +26,7 @@ import {
   type StoryToDateSegment,
   type FoldableSegment,
 } from './engine.js'
-import { resolvePageIdForChainPost } from '../post-index.js'
+import { countChainPosts, resolvePageIdForChainPost } from '../post-index.js'
 
 export const STORY_TO_DATE_TRIGGER = 0.8
 export const STORY_TO_DATE_INPUT_CUTOFF = 0.8
@@ -152,8 +153,18 @@ export function enqueueEligibleStoryToDateJob(
       afterPageId: last.coveragePageId,
       priorStoryToDate,
       maxIncludedPosts: NEXT_SCENE_INPUT_WINDOW_POSTS,
+      // Never let a segment reach into the always-verbatim tail (see maxPostNumberCap doc) —
+      // those posts show up in the Author prompt regardless of coverage, so there's nothing to
+      // gain by summarizing them yet, and "is this scene complete" is least reliable while it's
+      // still the live, most-recent material.
+      maxPostNumberCap: countChainPosts(db, logbookId) - MIN_VERBOSE_IC_POSTS,
     })
-    if (!corpus.includedPosts.length) return null
+    if (!corpus.includedPosts.length) {
+      // Nothing eligible to segment right now, but the trigger fired because the assembled
+      // prompt is still over budget — fold is the only remaining pressure-relief option.
+      enqueueEligibleFoldJob(db, userId, logbookId, { ignoreSoftCap: true })
+      return null
+    }
   }
 
   const segment = createStoryToDateSegment(db, { bookId: logbookId, kind, seq })

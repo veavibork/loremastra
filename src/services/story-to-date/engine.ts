@@ -104,6 +104,16 @@ export interface CorpusOptions {
    * Ignored when throughPost is set (explicit experiment override).
    */
   maxIncludedPosts?: number | null
+  /**
+   * Highest IC post number a 'continues' segment may claim coverage through. Callers pass
+   * `total chain posts - MIN_VERBOSE_IC_POSTS` so a segment never attempts (or "completes") a
+   * scene still inside the Author prompt's always-verbatim tail — those posts show up in full
+   * regardless of segment coverage, so summarizing them yields no context-budget benefit yet,
+   * and they're often still-being-written material where "this scene is done" judgments are
+   * least reliable. Applied like fromPageId (bounds maxPostNumber) but expressed as a post
+   * number, since the caller is reasoning about the verbatim-tail floor, not a specific page.
+   */
+  maxPostNumberCap?: number | null
 }
 
 /** Build worldbook + full verbose history stats and a truncated corpus for Editor input. */
@@ -122,6 +132,9 @@ export function buildStoryCorpus(
   if (options.fromPageId) {
     const fromPost = resolveChainPostNumber(db, logbookId, options.fromPageId)
     if (fromPost != null) maxPostNumber = fromPost
+  }
+  if (options.maxPostNumberCap != null) {
+    maxPostNumber = Math.min(maxPostNumber, options.maxPostNumberCap)
   }
 
   const icStartPageId = resolveIcStartPageId(db, logbookId)

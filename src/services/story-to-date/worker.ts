@@ -20,6 +20,7 @@ import {
   mergeStoryToDate,
   hasLeakedStoryMarkers,
   looksNextSceneCoverageSprint,
+  MIN_VERBOSE_IC_POSTS,
   NEXT_SCENE_INPUT_WINDOW_POSTS,
   sanitizeStoryBlockContent,
   shouldRetrySeamGate,
@@ -32,7 +33,7 @@ import {
   type VerbosePost,
 } from './engine.js'
 import { STORY_TO_DATE_INPUT_CUTOFF } from './index.js'
-import { buildChainPostIndex } from '../post-index.js'
+import { buildChainPostIndex, countChainPosts } from '../post-index.js'
 
 const MAX_ATTEMPTS = 2
 
@@ -86,6 +87,10 @@ function buildMessages(
     afterPageId: kind === 'continues' ? lastCoverage : null,
     priorStoryToDate,
     maxIncludedPosts: kind === 'continues' ? NEXT_SCENE_INPUT_WINDOW_POSTS : null,
+    // Must match enqueueEligibleStoryToDateJob's eligibility check — otherwise a job created
+    // when the window looked valid could still try to claim coverage inside the verbatim tail.
+    maxPostNumberCap:
+      kind === 'continues' ? countChainPosts(db, logbookId) - MIN_VERBOSE_IC_POSTS : null,
   })
 
   const corpusText = formatCorpusForEditor(corpus, corpus.includedPosts, true)
@@ -146,6 +151,11 @@ export async function executeStoryToDateJob(
   }))
 
   const { messages, corpus } = buildMessages(db, storyId, logbookId, kind, userId, priorSegments)
+  if (!corpus.includedPosts.length) {
+    throw new InsufficientCoverageMaterialError(
+      'story-to-date failed: no log prose in editor input',
+    )
+  }
   const editor = getAgentProfile(userId, 'editor')
 
   let parsed: ParsedResponse | null = null
@@ -256,10 +266,6 @@ export async function executeStoryToDateJob(
         }
       }
 
-      if (corpus.includedPosts.length === 0) {
-        lastError = 'no log prose in editor input'
-        continue
-      }
       if (
         corpus.inputCeilingPost != null &&
         candidate.coverageThroughPost > corpus.inputCeilingPost
