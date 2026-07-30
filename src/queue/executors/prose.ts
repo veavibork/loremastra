@@ -40,11 +40,21 @@ function applyGenerationOptions(
   // configured responseLimit because the story-to-date window is budgeted against
   // contextLimit - responseLimit using the configured value — a larger per-post override
   // could overflow the context window on long stories.
+  //
+  // Exception: while thinking is on, don't shrink to the user's shorter override at all. Reasoning
+  // shares one max_tokens budget with the visible reply, so a tight override risks reasoning
+  // eating the whole thing and truncating the prose mid-sentence — confirmed live on
+  // moonshotai/Kimi-K3, whose stored format profile also shows it doesn't honor thinking_budget,
+  // so there's no separate lever to cap reasoning instead. Using the agent's full configured
+  // ceiling trades "replies stay short" for "replies don't get cut off" whenever thinking is on.
   let effectiveProfile = profile
   if (options.responseLimit && options.responseLimit > 0) {
+    const thinkingOn = options.effort?.enableThinking === true
     effectiveProfile = {
       ...profile,
-      responseLimit: Math.min(options.responseLimit, profile.responseLimit),
+      responseLimit: thinkingOn
+        ? profile.responseLimit
+        : Math.min(options.responseLimit, profile.responseLimit),
     }
   }
   // Mood / param / model toggles still disabled — Author uses agent-config defaults for those.
