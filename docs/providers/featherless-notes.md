@@ -143,7 +143,7 @@ words/phrases feature, `src/services/stop-list.ts`, uses `stop` only for this re
 Featherless ships a real tokenize response — don't re-attempt `stop_token_ids` without new evidence
 this changed.
 
-## `logit_bias`, `bad_words_ids`, and `logprobs` on `/v1/chat/completions` — all silent no-ops
+## `logit_bias`, `bad_words_ids`, and `logprobs` on `/v1/chat/completions` — 2026-07-02 finding, **superseded 2026-08-01 — see correction below before relying on this section**
 
 **Tested live 2026-07-02.** These three OpenAI/HF-standard params are accepted in the request body
 (no validation error, even with deliberately malformed types — a string where `logit_bias` expects
@@ -186,6 +186,56 @@ feed memory silently, so a refusal masquerading as a recap needs to fail the job
 stored lore. Deliberately _not_ applied to Author prose or the Editor's setup replies, which
 stay untouched and visible to the user via the existing manual Stop/Retry controls — watching a
 refusal play out there is itself useful signal for judging a model's prudishness.
+
+## Correction (2026-08-01): `logit_bias` **is** honored — the 2026-07-02 conclusion doesn't generalize
+
+Triggered by a live user report: `logit_bias` visibly changed `moonshotai/Kimi-K2.7-Code` output on
+the plain `/v1/completions` endpoint (banning token 318 changed a completion from "in progress..."
+to unrelated text; forcing it with `+100` produced "of of of of..." repeatedly — textbook
+OpenAI-spec behavior). Reproduced directly, then re-tested against this project's actual editor
+candidates rather than assuming it was Kimi-specific.
+
+**`/v1/completions` (non-chat):** confirmed working on both `moonshotai/Kimi-K2.7-Code` and
+`zai-org/GLM-5.2`. Re-ran the exact 2026-07-02 methodology (ban tokens 0–49,999 at max magnitude)
+against a real story-summarization prompt built from actual production corpus text: unbiased output
+was a coherent, accurate summary; biased output collapsed into a single garbage token followed by an
+infinite ` ```markdown ``` ` loop. Not a no-op.
+
+**`/v1/chat/completions` — also real, just noisier.** Re-ran the identical wide-range test on
+`zai-org/GLM-5.2`'s `/v1/chat/completions` (production-shaped: system + user messages,
+`chat_template_kwargs: { enable_thinking: false }`, matching what `completeChatWithMeta` actually
+sends). Banning tokens 0–49,999 did **not** reproduce the 2026-07-02 "byte-for-byte identical
+coherent English" result — instead the model rerouted around the banned low-id (mostly-English)
+tokens by switching its `reasoning` field and most of `content` into **Chinese**; a wider ban
+(0–99,999) degenerated into a repetitive Chinese loop ("总结段落总结段落..."). This is unambiguous:
+`logit_bias` has a real effect on chat completions too, at least for this model.
+
+**Open question — model-specific, or was 2026-07-02 simply wrong/stale?** Not yet re-tested against
+whichever model the original 2026-07-02 note used (not recorded which). Worth a quick re-check on
+DeepSeek-V4-Pro/Flash specifically before assuming this generalizes to every model on the account —
+don't assume it's universal off one model's confirmation.
+
+**Getting a _specific_ word's token id remains unsolved.** `/v1/tokenize` still only returns
+`{count}`, no ids (re-confirmed 2026-08-01 with several payload shapes — `text`, `input`, chat-shaped
+`messages` — only `text` is accepted at all, and even that returns a count only). Tried an empirical
+workaround: force a model to output a fixed phrase ("Lex slaps Patricia with a fish") at
+`temperature: 0`, then binary-search a `logit_bias` ban range to find where "Patricia" specifically
+drops out. Did not cleanly converge — a wide-range ban triggered a _different_ confound (the whole
+sentence flipping to lowercase) partway through the search, which a case-sensitive substring check
+misread as "the word is gone" when it was really "capitalization broke," desyncing the bisection.
+Real word-to-token-id lookup needs either (a) the actual tokenizer for the exact model — HF repo
+lookups for these Featherless model ids 404'd (`moonshotai/Kimi-K2.5`, `moonshotai/Kimi-K2.7-Code`
+both tried; likely a private/gated repo or a Featherless-internal naming convention that doesn't map
+1:1 to a public HF repo) — or (b) a more surgical single-id probe within the identified
+~48,000–51,563 range for GLM-5.2 specifically, case-insensitive this time, rather than blind range
+bisection.
+
+**Status: mechanism confirmed on both endpoints for GLM-5.2; not yet productionized.** Precise
+per-word token-id discovery, confirming this isn't GLM-specific, and deciding how to package it
+(a per-role banned-token list? re-derive ids if the model changes?) are still open — see
+[editor-model-eval-methodology-2026-08-01.md](editor-model-eval-methodology-2026-08-01.md) for the
+harness this was tested alongside. **Do not re-cite the 2026-07-02 "no path — direct or indirect —
+to token-level control" conclusion as current fact; it's superseded by this section.**
 
 ## DeepSeek V4-Pro stream shape on Featherless (empirical, 2026-07-04)
 

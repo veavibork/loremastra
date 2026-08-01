@@ -105,6 +105,14 @@ export interface CorpusOptions {
    */
   maxIncludedPosts?: number | null
   /**
+   * Cap on cumulative token count of included posts, independent of maxIncludedPosts — whichever
+   * bounds first wins. A flat post count is a poor proxy for how much an Editor call actually has
+   * to digest: a terse dialogue exchange and a dense action scene both count as "one post" but
+   * differ by 5-10x in tokens. Experiment-only as of 2026-08-01 (story-to-date-guidance-ab.ts);
+   * not yet wired into production windowing.
+   */
+  maxIncludedTokens?: number | null
+  /**
    * Highest IC post number a 'continues' segment may claim coverage through. Callers pass
    * `total chain posts - MIN_VERBOSE_IC_POSTS` so a segment never attempts (or "completes") a
    * scene still inside the Author prompt's always-verbatim tail — those posts show up in full
@@ -194,11 +202,15 @@ export function buildStoryCorpus(
     }
   } else {
     const maxPosts = options.maxIncludedPosts ?? Infinity
+    const maxTokens = options.maxIncludedTokens ?? Infinity
+    let windowTokens = 0
     for (const post of posts) {
       if (includedPosts.length >= maxPosts) break
+      if (windowTokens + post.tokens > maxTokens) break
       if (spent + post.tokens > inputBudget) break
       includedPosts.push(post)
       spent += post.tokens
+      windowTokens += post.tokens
       inputCeilingPost = post.icPostNumber
       inputCeilingPageId = post.pageId
     }
@@ -634,12 +646,12 @@ export function buildCoverageSprintRetryUserMessage(
 Rewrite ${block} covering only the FIRST complete scene after post ${priorCoveragePost}. Roll [COVERAGE] back to that scene's closing seam (typically well under ${NEXT_SCENE_MAX_COVERAGE_DELTA} posts). One scene only — 80–200 words. Same Register, telling-only memory. Do not echo bracket labels inside the prose.`
 }
 
-const NEXT_SCENE_LENGTH_INSTRUCTION =
+export const NEXT_SCENE_LENGTH_INSTRUCTION =
   'Length: one scene only — typically 80–200 words (one or two paragraphs). Do not scale length to how many posts remain in the input; quiet scenes stay short.'
 
-const NEXT_SCENE_CONTINUES_ADDENDUM = `SCOPE: Summarize only the next scene — the first self-contained beat after prior coverage ends. Do not batch multiple scenes. Do not re-state the closing beat already in [STORY TO DATE]; open on the first new consequential state change. Never echo bracket labels like [STORY CONTINUES] inside the prose.`
+export const NEXT_SCENE_CONTINUES_ADDENDUM = `SCOPE: Summarize only the next scene — the first self-contained beat after prior coverage ends. Do not batch multiple scenes. Do not re-state the closing beat already in [STORY TO DATE]; open on the first new consequential state change. Never echo bracket labels like [STORY CONTINUES] inside the prose.`
 
-function buildNextSceneCeilingInstruction(inputCeilingPost: number | null): string {
+export function buildNextSceneCeilingInstruction(inputCeilingPost: number | null): string {
   if (inputCeilingPost == null) {
     return 'End coverage at the first complete scene seam in the new log — not at the end of the input.'
   }
