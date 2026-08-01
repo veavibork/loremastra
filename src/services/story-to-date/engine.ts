@@ -348,11 +348,19 @@ export function looksFoldDigestTruncated(digest: string, responseLimit: number):
  * Prefix of the fold set that fits one Editor call. Folding the entire eligible set in one shot
  * routinely asks for more digest than max_tokens allows; the model truncates mid-prose while we
  * still extend coverage across the full span — dropping scenes between the digest and kept segments.
+ *
+ * A batch of exactly 1 is valid and expected: once a prior fold has produced a single "deep past"
+ * digest and nothing else has aged out of the keep-recent window yet, that lone segment is the
+ * entire fold set. Re-digesting it alone (recursive re-compression, no sibling to merge with) is
+ * how it keeps shrinking instead of being permanently stuck at whatever size it first reached —
+ * see the "Regression" note above executeStoryToDateFoldJob.
  */
 export function selectFoldBatch(fold: FoldableSegment[], responseLimit: number): FoldableSegment[] {
-  if (fold.length < 2) return []
+  if (!fold.length) return []
   const maxTargetWords = foldDigestTargetWords(Number.MAX_SAFE_INTEGER, responseLimit)
 
+  // batch always ends up non-empty: the first segment is admitted unconditionally (the budget
+  // check only applies once length >= 2), so there's nothing to fall back to.
   let batch: FoldableSegment[] = []
   for (const seg of fold) {
     const next = [...batch, seg]
@@ -360,7 +368,6 @@ export function selectFoldBatch(fold: FoldableSegment[], responseLimit: number):
     if (next.length >= 2 && Math.round(mergedWords * FOLD_TARGET_RATIO) > maxTargetWords) break
     batch = next
   }
-  if (batch.length < 2) return fold.slice(0, Math.min(2, fold.length))
   return batch
 }
 
@@ -588,6 +595,31 @@ export function looksNextSceneCoverageSprint(block: string, coverageDelta: numbe
   if (coverageDelta > NEXT_SCENE_MAX_COVERAGE_DELTA) return true
   const words = storyBlockWordCount(block)
   return words / coverageDelta < NEXT_SCENE_MIN_WORDS_PER_COVERED_POST
+}
+
+/**
+ * Heuristic detector for a block whose trailing prose describes an action still unfolding rather
+ * than a resolved beat — the textual signature of coverage landing mid-scene. shouldRetrySeamGate
+ * only catches the model self-reporting coverage exactly at the input ceiling; a model that stops
+ * short of the ceiling but still hasn't found a real seam slips past it, and the one nested
+ * seam-retry only checks that the rolled-back number is smaller, never that the new seam is
+ * actually complete (see the 2026-07-17 finding that the model runs to the ceiling on
+ * essentially every call regardless of the seam instruction — engine.ts's window-sizing note
+ * above NEXT_SCENE_INPUT_WINDOW_POSTS). Kept deliberately narrow — the exact present-progressive
+ * cutoff phrasing observed live (2026-08-01, VM segments) — not general "still unresolved"
+ * narrative facts (a standing rivalry, an unanswered letter) that can legitimately close a
+ * genuinely complete scene.
+ */
+const MID_SCENE_ENDING_PATTERN =
+  /\b(?:is|are|hangs?)\s+(?:still\s+)?(?:in progress|unresolved|unfolding|underway|settling)\b|\bas the (?:beat|scene|moment) continues\b/i
+
+export function looksLikeMidSceneEnding(block: string): boolean {
+  const sentences = block
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .filter(Boolean)
+  const tail = sentences.slice(-2).join(' ')
+  return MID_SCENE_ENDING_PATTERN.test(tail)
 }
 
 export function buildCoverageSprintRetryUserMessage(

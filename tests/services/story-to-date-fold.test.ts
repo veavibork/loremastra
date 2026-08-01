@@ -12,6 +12,7 @@ import {
   foldDigestTargetWords,
   looksFoldDigestTruncated,
   selectFoldBatch,
+  selectFoldSet,
   estimateTokens,
   FOLD_MAX_OUTPUT_TOKEN_RATIO,
   FOLD_PROSE_CHARS_PER_WORD,
@@ -84,10 +85,40 @@ describe('fold digest sizing', () => {
 
   it('whatever batch is selected, the instructed target still fits one response', () => {
     const maxTargetWords = foldDigestTargetWords(Number.MAX_SAFE_INTEGER, 4096)
-    // Oversized pair — batching can't shrink below 2, so the instruction clamp is what saves it.
+    for (const batch of [
+      selectFoldBatch(
+        Array.from({ length: 8 }, (_, i) => seg(`s${i}`, 500)),
+        4096,
+      ),
+      selectFoldBatch([seg('a', 3000), seg('b', 3000)], 4096),
+    ]) {
+      const mergedWords = batch.reduce((n, s) => n + s.content.split(/\s+/).length, 0)
+      expect(foldDigestTargetWords(mergedWords, 4096)).toBeLessThanOrEqual(maxTargetWords)
+    }
+  })
+
+  // Regression context (2026-08-01, VM full-scale save): selectFoldBatch's old fallback
+  // (`fold.slice(0, Math.min(2, fold.length))`) forced a minimum of 2 segments into a batch even
+  // when the first alone was already too large to safely pair with a second — squeezing the
+  // shared target down to maxTargetWords instead of each segment's normal ~50% ratio, and the
+  // model blew past max_tokens every retry (batch selection is deterministic, so it never
+  // recovered on its own). Never forcing a second segment in fixes it: the batch just stays at 1.
+  it("doesn't force a second oversized segment into the batch", () => {
     const batch = selectFoldBatch([seg('a', 3000), seg('b', 3000)], 4096)
-    expect(batch).toHaveLength(2)
-    const mergedWords = batch.reduce((n, s) => n + s.content.split(/\s+/).length, 0)
-    expect(foldDigestTargetWords(mergedWords, 4096)).toBeLessThanOrEqual(maxTargetWords)
+    expect(batch.map((s) => s.id)).toEqual(['a'])
+  })
+
+  // The same old `< 2` fallback also rejected a fold set of exactly 1 segment outright (both here
+  // and in selectFoldBatch's callers) — so once a prior fold left a single "deep past" digest with
+  // no sibling to combine with yet, it could never be recompressed further, no matter how large it
+  // grew relative to the soft cap. A batch of 1 is a valid recursive re-compression, not a no-op.
+  it('folds a lone oversized segment on its own instead of refusing to act', () => {
+    const lone = seg('deep-past', 3000)
+    const recent = seg('recent', 100)
+    const { fold } = selectFoldSet([lone, { ...recent, seq: 1 }])
+    expect(fold.map((s) => s.id)).toEqual(['deep-past'])
+
+    const batch = selectFoldBatch(fold, 4096)
+    expect(batch.map((s) => s.id)).toEqual(['deep-past'])
   })
 })

@@ -19,6 +19,7 @@ import {
   formatCorpusForEditor,
   mergeStoryToDate,
   hasLeakedStoryMarkers,
+  looksLikeMidSceneEnding,
   looksNextSceneCoverageSprint,
   MIN_VERBOSE_IC_POSTS,
   NEXT_SCENE_INPUT_WINDOW_POSTS,
@@ -300,6 +301,11 @@ export async function executeStoryToDateJob(
           lastError = `coverage sprint: +${coverageDelta} posts in ${storyBlockWordCount(candidate.block)} words`
           continue
         }
+      }
+
+      if (looksLikeMidSceneEnding(candidate.block)) {
+        lastError = 'block ends mid-scene (trailing continuation language)'
+        continue
       }
 
       fillStoryToDateSegment(db, segmentId, {

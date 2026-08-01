@@ -14,6 +14,7 @@ import { createBook } from '../../src/db/book-store.js'
 import { createPageWithText } from '../../src/db/content-store.js'
 import {
   buildStoryCorpus,
+  looksLikeMidSceneEnding,
   looksNextSceneCoverageSprint,
   NEXT_SCENE_INPUT_WINDOW_POSTS,
   NEXT_SCENE_MAX_COVERAGE_DELTA,
@@ -125,5 +126,44 @@ describe('looksNextSceneCoverageSprint', () => {
 
   it('still catches thin blocks inside the cap', () => {
     expect(looksNextSceneCoverageSprint(words(40), 20)).toBe(true)
+  })
+})
+
+// Regression context (2026-08-01, VM segments): several live segments ended with the coverage
+// boundary landing mid-scene — trailing sentences the model itself described as still unfolding
+// ("is in progress", "hangs unresolved as the beat continues"). shouldRetrySeamGate only fires
+// when the model's coverage number exactly equals the input ceiling; a lower number that still
+// isn't a real seam slips through untouched. This heuristic catches the trailing language instead.
+describe('looksLikeMidSceneEnding', () => {
+  it('catches the three live failure shapes verbatim', () => {
+    expect(looksLikeMidSceneEnding('The beat is still settling as X moves to comfort Y.')).toBe(
+      true,
+    )
+    expect(
+      looksLikeMidSceneEnding(
+        "X's response - the demand for excision rather than study - is in progress.",
+      ),
+    ).toBe(true)
+    expect(looksLikeMidSceneEnding('Her answers hang unresolved as the beat continues.')).toBe(true)
+  })
+
+  it('accepts a normal resolved ending', () => {
+    expect(
+      looksLikeMidSceneEnding('She agreed to the terms, and the two of them shook hands.'),
+    ).toBe(false)
+  })
+
+  it('only looks at the trailing sentence(s), not earlier scene-setting prose', () => {
+    const block =
+      'The negotiation was still unfolding when Elena arrived. By the end, both sides signed the treaty.'
+    expect(looksLikeMidSceneEnding(block)).toBe(false)
+  })
+
+  it('does not flag a standing narrative fact framed as already-resolved prose', () => {
+    // Deliberately conservative per project discussion: "remains unresolved" describing a
+    // long-standing plot thread (not the current scene) is common, valid closing prose.
+    expect(
+      looksLikeMidSceneEnding('They shook hands and parted, their old rivalry remains unresolved.'),
+    ).toBe(false)
   })
 })

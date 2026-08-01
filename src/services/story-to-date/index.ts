@@ -97,7 +97,7 @@ export function enqueueEligibleFoldJob(
     seq: s.seq,
   }))
   const { fold } = selectFoldSet(segments)
-  if (fold.length < 2) return null
+  if (!fold.length) return null
 
   const editor = getAgentProfile(userId, 'editor')
   const job = createJob(db, {

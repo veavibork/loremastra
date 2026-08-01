@@ -27,8 +27,11 @@ import {
  * Feature A: fold the oldest STORY TO DATE segments into a single "deep past" digest so total
  * memory stays bounded as a story runs indefinitely. The job targets the oldest segment (seq 0);
  * that segment is overwritten with the digest and its coverage extended to the end of the folded
- * span, while the other folded segments are deleted. Recent segments are untouched, so the forward
- * compression pipeline (which resumes from the newest segment's coverage) is unaffected.
+ * span, while the other folded segments (if any) are deleted. A batch of exactly 1 is valid — it's
+ * a recursive re-compression of that one digest with no sibling to merge, which is how a "deep
+ * past" segment keeps shrinking once it's the only thing left in the fold-eligible set. Recent
+ * segments are untouched, so the forward compression pipeline (which resumes from the newest
+ * segment's coverage) is unaffected.
  */
 export async function executeStoryToDateFoldJob(
   db: Database.Database,
@@ -51,11 +54,11 @@ export async function executeStoryToDateFoldJob(
 
   // Deterministic recheck — state may have shifted since enqueue (an edit invalidated segments,
   // or a competing fold already ran). Only proceed if the target is still the oldest fold member.
-  if (fold.length < 2 || fold[0]!.id !== targetSegmentId) return // no-op: nothing worth folding
+  if (!fold.length || fold[0]!.id !== targetSegmentId) return // no-op: nothing worth folding
 
   const editor = getAgentProfile(userId, 'editor')
   const batch = selectFoldBatch(fold, editor.responseLimit)
-  if (batch.length < 2 || batch[0]!.id !== targetSegmentId) return
+  if (!batch.length || batch[0]!.id !== targetSegmentId) return
 
   const last = batch[batch.length - 1]!
   if (last.coverageThroughIcPost == null || !last.coveragePageId) return // can't set digest coverage
