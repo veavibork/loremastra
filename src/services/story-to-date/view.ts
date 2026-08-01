@@ -28,7 +28,7 @@ export interface ActiveMemoryJobView {
 
 export interface StoryToDateViewEntry {
   id: string
-  kind: 'begins' | 'continues'
+  kind: 'begins' | 'continues' | 'fold'
   seq: number
   createdAt: string
   content: string | null

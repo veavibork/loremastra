@@ -148,7 +148,11 @@ export async function executeStoryToDateJob(
   if (!segmentRow || segmentRow.broken) throw new Error('story-to-date segment missing or broken')
   if (segmentRow.content?.trim()) throw new Error('segment already filled')
 
+  // A forward story-to-date job only ever targets a segment it (or the initial kickoff) created
+  // itself — always 'begins'/'continues'. A 'fold' row belongs exclusively to the fold job; this
+  // narrows the type for the bracket-format logic below and doubles as a real invariant check.
   const kind = segmentRow.kind
+  if (kind === 'fold') throw new Error('story-to-date job targeted a fold-tier segment')
   const priorRows = listStoryToDateSegments(db, logbookId)
     .filter((s) => s.seq < segmentRow.seq && s.content?.trim() && !s.broken)
     .sort((a, b) => a.seq - b.seq)

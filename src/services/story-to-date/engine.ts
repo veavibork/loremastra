@@ -264,6 +264,11 @@ export function formatCorpusForEditor(
 
 export type StoryBlockKind = 'begins' | 'continues'
 
+/** Adds the fold tier's own kind to the forward-pipeline's begins/continues kinds — a 'fold' row
+ * never goes through the bracket-format parsing StoryBlockKind governs (extractStoryBlock,
+ * BLOCK_CLOSING, the begins/continues system-prompt builders); it's plain condensed prose. */
+export type SegmentKind = StoryBlockKind | 'fold'
+
 const BLOCK_CLOSING: Record<StoryBlockKind, RegExp> = {
   begins: /\[\/STORY BEGINS\]|\[STORY ENDS\]/i,
   continues: /\[\/STORY CONTINUES\]|\[STORY ENDS\]/i,
@@ -324,7 +329,7 @@ export function extractStoryBlockMissingOpenTag(text: string): string | null {
 }
 
 export interface StoryToDateSegment {
-  kind: StoryBlockKind
+  kind: SegmentKind
   content: string
   coverageThroughPost: number
   coveragePageId: string | null
@@ -401,6 +406,7 @@ export function selectFoldBatch(fold: FoldableSegment[], responseLimit: number):
 
 export interface FoldableSegment {
   id: string
+  kind: SegmentKind
   content: string
   coverageThroughIcPost: number | null
   coveragePageId: string | null
@@ -409,9 +415,16 @@ export interface FoldableSegment {
 
 /**
  * Deterministic split used by BOTH the fold trigger and the fold worker so they always agree on
- * which segments get folded. Always keeps the newest segment, then peels back more newest segments
- * until their cumulative tokens would exceed FOLD_KEEP_RECENT_TOKENS; everything older is the fold
- * set. Segments must be passed in seq-ascending (oldest-first) order.
+ * which segments are old enough to fold. Always keeps the newest segment, then peels back more
+ * newest segments until their cumulative tokens would exceed FOLD_KEEP_RECENT_TOKENS; everything
+ * older is eligible. Segments must be passed in seq-ascending (oldest-first) order.
+ *
+ * This is deliberately kind-agnostic — it just finds "how far back is old." Callers decide what
+ * to do with the eligible prefix: case 1 (append, the common path) filters it to non-fold
+ * begins/continues segments only (see the fold-worker/index.ts callers) — an existing fold-tier
+ * row is always older than anything still in this prefix, so it always ends up here too, but it's
+ * never merged with new material. Case 2 (shrink the fold tier itself) is a separate, narrower
+ * selection — see selectFoldTierShrinkSet.
  */
 export function selectFoldSet(segments: FoldableSegment[]): {
   fold: FoldableSegment[]
@@ -427,6 +440,22 @@ export function selectFoldSet(segments: FoldableSegment[]): {
     keepFromIdx = i
   }
   return { fold: segments.slice(0, keepFromIdx), keep: segments.slice(keepFromIdx) }
+}
+
+/**
+ * Case 2 (rare fallback — only ever tried once case 1 has no new material to append): shrink the
+ * fold tier itself once its own accumulated size rivals the recent-detail tier. Reuses
+ * FOLD_KEEP_RECENT_TOKENS as the trigger threshold rather than inventing a second constant — once
+ * the deep past is as big as what's kept verbatim, it's earned its own compaction pass. Only ever
+ * operates on existing kind='fold' rows, oldest first; never mixed with not-yet-folded material.
+ * Returns [] (nothing to do) when the fold tier doesn't exist yet or is still under threshold.
+ */
+export function selectFoldTierShrinkSet(segments: FoldableSegment[]): FoldableSegment[] {
+  const foldRows = segments.filter((s) => s.kind === 'fold').sort((a, b) => a.seq - b.seq)
+  if (!foldRows.length) return []
+  const totalTokens = foldRows.reduce((sum, s) => sum + estimateTokens(s.content), 0)
+  if (totalTokens <= FOLD_KEEP_RECENT_TOKENS) return []
+  return foldRows
 }
 
 /** Editor prompt for recursively compressing the older half of STORY TO DATE into a "deep past" digest. */

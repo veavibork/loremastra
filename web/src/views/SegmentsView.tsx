@@ -16,7 +16,12 @@ import './SegmentsView.css'
 
 function segmentLabel(seg: StoryToDateSegment): string {
   if (seg.name?.trim()) return seg.name
-  const kind = seg.kind === 'begins' ? 'Story begins' : 'Story continues'
+  const kind =
+    seg.kind === 'begins'
+      ? 'Story begins'
+      : seg.kind === 'fold'
+        ? 'Deep past (folded)'
+        : 'Story continues'
   if (seg.coverageThroughIcPost != null) {
     return `${kind} · through post ${seg.coverageThroughIcPost}`
   }

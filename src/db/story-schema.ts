@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS story_to_date_segment (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   book_id TEXT NOT NULL REFERENCES book(id),
-  kind TEXT NOT NULL CHECK (kind IN ('begins','continues')),
+  kind TEXT NOT NULL CHECK (kind IN ('begins','continues','fold')),
   content TEXT,
   coverage_through_ic_post INTEGER,
   coverage_page_id TEXT REFERENCES page(id),

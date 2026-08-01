@@ -13,10 +13,14 @@ import {
   looksFoldDigestTruncated,
   selectFoldBatch,
   selectFoldSet,
+  selectFoldTierShrinkSet,
   estimateTokens,
+  CHARS_PER_TOKEN_ESTIMATE,
+  FOLD_KEEP_RECENT_TOKENS,
   FOLD_MAX_OUTPUT_TOKEN_RATIO,
   FOLD_PROSE_CHARS_PER_WORD,
   type FoldableSegment,
+  type SegmentKind,
 } from '../../src/services/story-to-date/engine.js'
 
 const RESPONSE_LIMITS = [1024, 2048, 4096, 8192]
@@ -66,8 +70,9 @@ describe('fold digest sizing', () => {
     expect(foldDigestTargetWords(1000, 4096)).toBe(500)
   })
 
-  const seg = (id: string, words: number): FoldableSegment => ({
+  const seg = (id: string, words: number, kind: SegmentKind = 'continues'): FoldableSegment => ({
     id,
+    kind,
     content: proseOfWords(words),
     coverageThroughIcPost: 1,
     coveragePageId: 'p1',
@@ -120,5 +125,72 @@ describe('fold digest sizing', () => {
 
     const batch = selectFoldBatch(fold, 4096)
     expect(batch.map((s) => s.id)).toEqual(['deep-past'])
+  })
+})
+
+// Regression context (2026-08-01, VM story 019fa8c7): folding was re-merging an existing "deep
+// past" fold row together with newly-eligible continues segments in one call every time, asking
+// the model to re-derive the entire settled digest from scratch alongside the new material —
+// which is why a 3-segment merge (a ~5000-token fold row + two small continues segments) blew
+// past its instructed target and hit max_tokens. The fix: two independent tiers. Case 1 (append)
+// only ever touches not-yet-folded segments; case 2 (shrink) only ever touches existing fold rows,
+// and only once the fold tier alone has grown as large as the recent-detail tier.
+describe('fold tier: append vs. shrink split', () => {
+  const seg = (id: string, words: number, kind: SegmentKind, seq: number): FoldableSegment => ({
+    id,
+    kind,
+    content: proseOfWords(words),
+    coverageThroughIcPost: seq + 1,
+    coveragePageId: `p${seq}`,
+    seq,
+  })
+
+  // tokens ≈ words * FOLD_PROSE_CHARS_PER_WORD / CHARS_PER_TOKEN_ESTIMATE for proseOfWords' default
+  // char width — inverting that gives the word count that lands a segment at a target token count.
+  const wordsForTokens = (tokens: number): number =>
+    Math.round((tokens * CHARS_PER_TOKEN_ESTIMATE) / FOLD_PROSE_CHARS_PER_WORD)
+
+  it('selectFoldTierShrinkSet is empty when no fold row exists yet', () => {
+    const segments = [seg('c0', 100, 'continues', 0), seg('c1', 100, 'continues', 1)]
+    expect(selectFoldTierShrinkSet(segments)).toEqual([])
+  })
+
+  it('selectFoldTierShrinkSet is empty while the fold tier is under the recent-tier threshold', () => {
+    const segments = [
+      seg('fold0', wordsForTokens(FOLD_KEEP_RECENT_TOKENS - 200), 'fold', 0),
+      seg('c1', 100, 'continues', 1),
+    ]
+    expect(selectFoldTierShrinkSet(segments)).toEqual([])
+  })
+
+  it('selectFoldTierShrinkSet returns fold rows, oldest first, once their total crosses threshold', () => {
+    const segments = [
+      seg('fold1', wordsForTokens(200), 'fold', 5),
+      seg('fold0', wordsForTokens(FOLD_KEEP_RECENT_TOKENS + 200), 'fold', 0),
+      seg('c2', 100, 'continues', 10),
+    ]
+    expect(selectFoldTierShrinkSet(segments).map((s) => s.id)).toEqual(['fold0', 'fold1'])
+  })
+
+  it('an existing fold row is never merged into a case-1 append batch alongside new material', () => {
+    // Mirrors fold-worker.ts/index.ts's actual filtering: selectFoldSet finds everything outside
+    // the recent window regardless of kind, and callers exclude kind='fold' before batching. The
+    // recent-tail budget (FOLD_KEEP_RECENT_TOKENS) is deliberately blown past by 'recent' + 'c30'
+    // alone so both non-fold segments land in the eligible prefix alongside the fold row.
+    const segments = [
+      seg('fold0', wordsForTokens(3000), 'fold', 0),
+      seg('c29', 400, 'continues', 29),
+      seg('c30', wordsForTokens(FOLD_KEEP_RECENT_TOKENS + 200), 'continues', 30),
+      seg('recent', 100, 'continues', 31),
+    ]
+    const { fold: eligible, keep } = selectFoldSet(segments)
+    expect(eligible.map((s) => s.id)).toEqual(['fold0', 'c29', 'c30'])
+    expect(keep.map((s) => s.id)).toEqual(['recent'])
+
+    const appendCandidates = eligible.filter((s) => s.kind !== 'fold')
+    expect(appendCandidates.map((s) => s.id)).toEqual(['c29', 'c30'])
+
+    const batch = selectFoldBatch(appendCandidates, 4096)
+    expect(batch.some((s) => s.kind === 'fold')).toBe(false)
   })
 })

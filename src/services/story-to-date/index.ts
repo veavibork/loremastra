@@ -21,6 +21,7 @@ import {
   MIN_VERBOSE_IC_POSTS,
   NEXT_SCENE_INPUT_WINDOW_POSTS,
   selectFoldSet,
+  selectFoldTierShrinkSet,
   STORY_TO_DATE_SOFT_CAP_TOKENS,
   type StoryBlockKind,
   type StoryToDateSegment,
@@ -65,9 +66,12 @@ export function wouldTriggerStoryToDateJob(
 }
 
 /**
- * Feature A: when total STORY TO DATE crosses the soft cap, queue a fold job to compress the
- * oldest segments into a "deep past" digest — keeping total memory bounded as a story runs
- * indefinitely. Targets the oldest segment (the fold worker overwrites it and deletes the rest).
+ * Feature A: when total STORY TO DATE crosses the soft cap, queue a fold job — keeping total
+ * memory bounded as a story runs indefinitely. Two candidate operations, checked in order (see
+ * fold-worker.ts's doc comment for the full split): case 1 (append not-yet-folded segments into a
+ * new fold-tier row) always wins when it has anything to do; case 2 (shrink the fold tier itself)
+ * only runs once case 1 finds nothing new to absorb. Whichever wins, the fold worker replaces the
+ * whole batch it's given with one new row and deletes the rest.
  */
 export function enqueueEligibleFoldJob(
   db: Database.Database,
@@ -91,17 +95,20 @@ export function enqueueEligibleFoldJob(
 
   const segments: FoldableSegment[] = rows.map((s) => ({
     id: s.id,
+    kind: s.kind,
     content: s.content!.trim(),
     coverageThroughIcPost: s.coverageThroughIcPost,
     coveragePageId: s.coveragePageId,
     seq: s.seq,
   }))
-  const { fold } = selectFoldSet(segments)
-  if (!fold.length) return null
+  const { fold: eligible } = selectFoldSet(segments)
+  const appendCandidates = eligible.filter((s) => s.kind !== 'fold')
+  const target = appendCandidates[0] ?? selectFoldTierShrinkSet(segments)[0]
+  if (!target) return null
 
   const editor = getAgentProfile(userId, 'editor')
   const job = createJob(db, {
-    targetStoryToDateId: fold[0]!.id,
+    targetStoryToDateId: target.id,
     jobType: 'story-to-date-fold',
     priority: 4, // below forward story-to-date (5): forward compression keeps the story playable, folding is housekeeping
     slotCost: editor.concurrencyCost,

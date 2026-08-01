@@ -7,9 +7,8 @@ export const STORY_TO_DATE_FOLD_TIMEOUT_MS = 10 * 60_000
 import {
   listStoryToDateSegments,
   getStoryToDateSegment,
-  setStoryToDateSegmentContent,
-  setStoryToDateSegmentCoverage,
-  setStoryToDateSegmentName,
+  createStoryToDateSegment,
+  fillStoryToDateSegment,
   deleteStoryToDateSegment,
 } from '../../db/story-to-date-store.js'
 import { getAgentProfile } from '../agent-config.js'
@@ -17,6 +16,7 @@ import {
   buildFoldSystem,
   selectFoldSet,
   selectFoldBatch,
+  selectFoldTierShrinkSet,
   estimateTokens,
   foldDigestTargetWords,
   foldWordCount,
@@ -25,14 +25,22 @@ import {
 } from './engine.js'
 
 /**
- * Feature A: fold the oldest STORY TO DATE segments into a single "deep past" digest so total
- * memory stays bounded as a story runs indefinitely. The job targets the oldest segment (seq 0);
- * that segment is overwritten with the digest and its coverage extended to the end of the folded
- * span, while the other folded segments (if any) are deleted. A batch of exactly 1 is valid — it's
- * a recursive re-compression of that one digest with no sibling to merge, which is how a "deep
- * past" segment keeps shrinking once it's the only thing left in the fold-eligible set. Recent
- * segments are untouched, so the forward compression pipeline (which resumes from the newest
- * segment's coverage) is unaffected.
+ * Feature A: keep total STORY TO DATE memory bounded as a story runs indefinitely, via two
+ * distinct operations sharing this one job type:
+ *
+ * Case 1 (append — the common path): segments that have aged out of the recent-detail window
+ * (selectFoldSet) get condensed into a brand-new kind='fold' row, positioned right after the
+ * existing fold tier (see the seq-reuse comment below). Existing fold-tier rows are never part of
+ * this call — the model only ever compresses not-yet-folded material, so it never has to
+ * re-derive content that's already settled.
+ *
+ * Case 2 (shrink the fold tier itself — rare, only tried once case 1 has nothing new to absorb):
+ * once the fold tier's own accumulated size rivals the recent-detail tier (selectFoldTierShrinkSet),
+ * its oldest rows get recompressed among themselves, further shrinking the deep past without ever
+ * touching not-yet-folded material.
+ *
+ * Both cases execute identically once a batch is chosen: merge the batch's content, ask the
+ * Editor to condense it, replace the whole batch with one new fold row.
  */
 export async function executeStoryToDateFoldJob(
   db: Database.Database,
@@ -45,21 +53,25 @@ export async function executeStoryToDateFoldJob(
   const rows = listStoryToDateSegments(db, logbookId).filter((s) => s.content?.trim() && !s.broken)
   const segments: FoldableSegment[] = rows.map((s) => ({
     id: s.id,
+    kind: s.kind,
     content: s.content!.trim(),
     coverageThroughIcPost: s.coverageThroughIcPost,
     coveragePageId: s.coveragePageId,
     seq: s.seq,
   }))
 
-  const { fold } = selectFoldSet(segments)
+  const editor = getAgentProfile(userId, 'editor')
+
+  const { fold: eligible } = selectFoldSet(segments)
+  const appendCandidates = eligible.filter((s) => s.kind !== 'fold')
+  let batch = selectFoldBatch(appendCandidates, editor.responseLimit)
+  if (!batch.length) {
+    batch = selectFoldBatch(selectFoldTierShrinkSet(segments), editor.responseLimit)
+  }
 
   // Deterministic recheck — state may have shifted since enqueue (an edit invalidated segments,
-  // or a competing fold already ran). Only proceed if the target is still the oldest fold member.
-  if (!fold.length || fold[0]!.id !== targetSegmentId) return // no-op: nothing worth folding
-
-  const editor = getAgentProfile(userId, 'editor')
-  const batch = selectFoldBatch(fold, editor.responseLimit)
-  if (!batch.length || batch[0]!.id !== targetSegmentId) return
+  // or a competing fold already ran). Only proceed if the target is still the oldest eligible member.
+  if (!batch.length || batch[0]!.id !== targetSegmentId) return // no-op: nothing worth folding
 
   const last = batch[batch.length - 1]!
   if (last.coverageThroughIcPost == null || !last.coveragePageId) return // can't set digest coverage
@@ -115,18 +127,31 @@ export async function executeStoryToDateFoldJob(
     return
   }
 
-  const target = getStoryToDateSegment(db, targetSegmentId)
-  if (!target || target.broken) return
+  // Late safety check — the LLM call can take several minutes; reconfirm every batch member is
+  // still present and unbroken before replacing them (a concurrent edit could have invalidated one).
+  for (const seg of batch) {
+    const row = getStoryToDateSegment(db, seg.id)
+    if (!row || row.broken) return
+  }
 
-  setStoryToDateSegmentContent(db, targetSegmentId, digest)
-  setStoryToDateSegmentCoverage(db, targetSegmentId, {
-    coverageThroughIcPost: last.coverageThroughIcPost,
-    coveragePageId: last.coveragePageId,
-  })
-  // The digest now spans many scenes; its old single-scene name no longer fits (Archives display only).
-  setStoryToDateSegmentName(db, targetSegmentId, '')
-
-  for (const seg of batch.slice(1)) {
+  for (const seg of batch) {
     deleteStoryToDateSegment(db, seg.id)
   }
+  // New fold row takes the oldest folded segment's seq — that's what keeps it sorted correctly
+  // relative to any earlier fold-tier row (always lower seq) and any remaining segment (always
+  // higher seq), without needing fractional/UUID ordering keys. Safe because batches are always a
+  // contiguous, oldest-first prefix of what's currently eligible (see engine.ts's selectFoldSet
+  // doc comment) — nothing ever needs to be inserted between two untouched rows.
+  const newSegment = createStoryToDateSegment(db, {
+    bookId: logbookId,
+    kind: 'fold',
+    seq: batch[0]!.seq,
+  })
+  fillStoryToDateSegment(db, newSegment.id, {
+    content: digest,
+    coverageThroughIcPost: last.coverageThroughIcPost,
+    coveragePageId: last.coveragePageId,
+    inputCeilingIcPost: last.coverageThroughIcPost,
+    inputCeilingPageId: last.coveragePageId,
+  })
 }

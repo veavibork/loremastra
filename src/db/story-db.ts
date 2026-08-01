@@ -198,6 +198,36 @@ function dropTagTablesIfExist(db: Database.Database): void {
   db.exec(`DROP TABLE IF EXISTS tag_index; DROP TABLE IF EXISTS tags;`)
 }
 
+/** Same table-rename technique as migrateJobTypeCheck — adds 'fold' to story_to_date_segment.kind CHECK. */
+function migrateStoryToDateKindCheck(db: Database.Database): void {
+  const row = db
+    .prepare(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'story_to_date_segment'`,
+    )
+    .get() as { sql: string } | undefined
+  if (!row || row.sql.includes("'fold'")) return
+  db.exec(`ALTER TABLE story_to_date_segment RENAME TO story_to_date_segment_pre_fold_migration`)
+  ensureColumn(db, 'story_to_date_segment_pre_fold_migration', 'name', 'TEXT')
+  ensureColumn(db, 'story_to_date_segment_pre_fold_migration', 'audit_verdict', 'TEXT')
+  ensureColumn(db, 'story_to_date_segment_pre_fold_migration', 'audit_missing', 'TEXT')
+  ensureColumn(db, 'story_to_date_segment_pre_fold_migration', 'audit_at', 'TEXT')
+}
+
+function finishStoryToDateKindCheckMigration(db: Database.Database): void {
+  const exists = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'story_to_date_segment_pre_fold_migration'`,
+    )
+    .get()
+  if (!exists) return
+  db.exec(`
+    INSERT INTO story_to_date_segment (id, created_at, book_id, kind, content, coverage_through_ic_post, coverage_page_id, input_ceiling_ic_post, input_ceiling_page_id, seq, name, hidden, broken, audit_verdict, audit_missing, audit_at)
+    SELECT id, created_at, book_id, kind, content, coverage_through_ic_post, coverage_page_id, input_ceiling_ic_post, input_ceiling_page_id, seq, name, hidden, broken, audit_verdict, audit_missing, audit_at
+    FROM story_to_date_segment_pre_fold_migration;
+    DROP TABLE story_to_date_segment_pre_fold_migration;
+  `)
+}
+
 export function closeStoryDb(storyId: string): void {
   const db = openStoryDbs.get(storyId)
   if (!db) return
@@ -234,6 +264,7 @@ export function getStoryDb(
     migrateJobTypeCheck(db)
     migrateJobTypeWorldbookCompact(db)
     migrateJobTypeSegmentAudit(db)
+    migrateStoryToDateKindCheck(db)
     dropTagTablesIfExist(db)
     db.exec(STORY_SCHEMA_SQL)
     ensureColumn(db, 'story_state', 'current_page_id', 'TEXT REFERENCES page(id)')
@@ -254,6 +285,7 @@ export function getStoryDb(
     finishJobTypeCheckMigration(db)
     finishJobTypeWorldbookCompactMigration(db)
     finishJobTypeSegmentAuditMigration(db)
+    finishStoryToDateKindCheckMigration(db)
     backfillSelectedForks(db)
     if (!options?.skipRecovery) recoverStaleJobs(db)
   } catch (err) {

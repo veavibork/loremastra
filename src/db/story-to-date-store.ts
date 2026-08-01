@@ -2,13 +2,13 @@ import type Database from 'better-sqlite3'
 import { newId } from '../lib/uuid.js'
 import { nowIso } from '../lib/time.js'
 import { requestJobCancel } from '../queue/cancel.js'
-import type { StoryBlockKind } from '../services/story-to-date/engine.js'
+import type { SegmentKind } from '../services/story-to-date/engine.js'
 
 export interface StoryToDateSegmentRow {
   id: string
   createdAt: string
   bookId: string
-  kind: StoryBlockKind
+  kind: SegmentKind
   content: string | null
   coverageThroughIcPost: number | null
   coveragePageId: string | null
@@ -29,7 +29,7 @@ interface RawSegmentRow {
   id: string
   created_at: string
   book_id: string
-  kind: StoryBlockKind
+  kind: SegmentKind
   content: string | null
   coverage_through_ic_post: number | null
   coverage_page_id: string | null
@@ -104,7 +104,7 @@ export function getStoryToDateSegment(
 
 export function createStoryToDateSegment(
   db: Database.Database,
-  input: { bookId: string; kind: StoryBlockKind; seq: number },
+  input: { bookId: string; kind: SegmentKind; seq: number },
 ): StoryToDateSegmentRow {
   const id = newId()
   const createdAt = nowIso()
