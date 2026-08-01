@@ -17,6 +17,7 @@ import {
   buildStoryCorpus,
   extractCoverage,
   extractStoryBlock,
+  extractStoryBlockMissingOpenTag,
   formatCorpusForEditor,
   mergeStoryToDate,
   hasLeakedStoryMarkers,
@@ -119,13 +120,19 @@ interface ParsedResponse {
   raw: string
   block: string
   coverageThroughPost: number
+  repairedMissingOpenTag: boolean
 }
 
 function parseResponse(raw: string, kind: StoryBlockKind): ParsedResponse | null {
-  const block = extractStoryBlock(raw, kind)
   const coverageThroughPost = extractCoverage(raw)
+  let block = extractStoryBlock(raw, kind)
+  let repairedMissingOpenTag = false
+  if (!block) {
+    block = extractStoryBlockMissingOpenTag(raw)
+    repairedMissingOpenTag = block != null
+  }
   if (!block || coverageThroughPost == null) return null
-  return { raw, block, coverageThroughPost }
+  return { raw, block, coverageThroughPost, repairedMissingOpenTag }
 }
 
 export async function executeStoryToDateJob(
@@ -248,6 +255,13 @@ export async function executeStoryToDateJob(
           { segmentId, kind, attempt, model: editor.model, rawPreview: raw.slice(0, 1500) },
         )
         continue
+      }
+
+      if (candidate.repairedMissingOpenTag) {
+        createLogger({ storyId, jobType: 'story-to-date' }).info(
+          'repaired missing opening story marker',
+          { segmentId, kind, attempt, model: editor.model },
+        )
       }
 
       candidate = {

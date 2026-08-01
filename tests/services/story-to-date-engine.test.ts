@@ -14,6 +14,7 @@ import { createBook } from '../../src/db/book-store.js'
 import { createPageWithText } from '../../src/db/content-store.js'
 import {
   buildStoryCorpus,
+  extractStoryBlockMissingOpenTag,
   looksLikeMidSceneEnding,
   looksNextSceneCoverageSprint,
   NEXT_SCENE_INPUT_WINDOW_POSTS,
@@ -165,5 +166,40 @@ describe('looksLikeMidSceneEnding', () => {
     expect(
       looksLikeMidSceneEnding('They shook hands and parted, their old rivalry remains unresolved.'),
     ).toBe(false)
+  })
+})
+
+// Regression context (2026-08-01, VM story 019fa8c7): GLM-5.2 repeatedly (8/8 samples across
+// several job retries, same segment) wrote clean, complete prose plus a valid closing
+// [COVERAGE] tag but never emitted the opening [STORY CONTINUES] bracket at all — not a
+// truncation or garbling issue, just the literal open tag missing every time. Repairing this
+// specific shape is worthwhile since every other quality gate (leaked-marker check, duplicate
+// overlap, mid-scene-ending, chain validation) still runs on the repaired candidate downstream.
+describe('extractStoryBlockMissingOpenTag', () => {
+  it('repairs the live GLM-5.2 failure shape verbatim', () => {
+    const raw =
+      'The locker room scene between Lex and Kit resolved into its governing dynamic. ' +
+      'Kit named her terms directly, and Lex accepted without pushing back. Delphine observed ' +
+      'via radiator.\n\n[COVERAGE]438[/COVERAGE]'
+    expect(extractStoryBlockMissingOpenTag(raw)).toBe(
+      'The locker room scene between Lex and Kit resolved into its governing dynamic. ' +
+        'Kit named her terms directly, and Lex accepted without pushing back. Delphine observed ' +
+        'via radiator.',
+    )
+  })
+
+  it('does not repair when a stray marker fragment suggests messier corruption', () => {
+    const raw = 'Something happened. [STORY ENDS] but here is more.\n\n[COVERAGE]12[/COVERAGE]'
+    expect(extractStoryBlockMissingOpenTag(raw)).toBeNull()
+  })
+
+  it('does not repair when there is no valid closing coverage tag', () => {
+    const raw = 'Something happened, with no coverage tag anywhere in sight.'
+    expect(extractStoryBlockMissingOpenTag(raw)).toBeNull()
+  })
+
+  it('does not repair an empty body before the coverage tag', () => {
+    const raw = '[COVERAGE]12[/COVERAGE]'
+    expect(extractStoryBlockMissingOpenTag(raw)).toBeNull()
   })
 })

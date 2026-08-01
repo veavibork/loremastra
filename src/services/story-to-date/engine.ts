@@ -307,6 +307,22 @@ export function extractCoverage(text: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+/**
+ * Repair for an observed GLM-5.2 failure mode: clean, complete prose plus a valid closing
+ * [COVERAGE] tag, but the literal opening bracket ([STORY BEGINS]/[STORY CONTINUES]) is
+ * missing entirely. Only repairs when nothing else looks off — any stray fragment of a STORY
+ * marker elsewhere means a messier, different corruption that should still fail normally and
+ * go through the caller's retry/fallback path rather than being force-accepted.
+ */
+export function extractStoryBlockMissingOpenTag(text: string): string | null {
+  const trimmed = text.trim()
+  if (hasLeakedStoryMarkers(trimmed)) return null
+  const coverageMatch = /\[COVERAGE\]\d+\[\/COVERAGE\]/i.exec(trimmed)
+  if (!coverageMatch || coverageMatch.index <= 0) return null
+  const body = trimmed.slice(0, coverageMatch.index).trim()
+  return body ? sanitizeStoryBlockContent(body) : null
+}
+
 export interface StoryToDateSegment {
   kind: StoryBlockKind
   content: string
