@@ -9,7 +9,8 @@ No LLM prompt magic — the "prompts" here are just test fixtures designed to fo
 ```bash
 KEY=your_featherless_key
 API=https://api.featherless.ai/v1/chat/completions
-# 1. replace MODEL_ID_HERE in the req-*.json files
+# 1. edit the "model" field in the req-*.json files to the model you're testing
+#    (they ship with a real id already set, currently moonshotai/Kimi-K2.7-Code)
 # 2. run a test, save raw SSE
 curl -sN --max-time 280 $API -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d @req-toolcall.json > stream1.txt

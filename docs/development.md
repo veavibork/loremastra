@@ -1,8 +1,17 @@
 # Loremaster development log
 
-Detailed milestone history and implementation notes. For the current session handoff and open
-items, see [next-session.md](next-session.md). (A separate roadmap.md backlog existed through
-2026-07-12; it was removed as stale — open work lives in next-session.md now.)
+Detailed milestone history and implementation notes. This is a point-in-time journal, not a living
+reference — entries below describe what was true when they were written and are not retroactively
+corrected when later work supersedes them (that's what a later, dated entry is for). For the
+current session handoff and open items, see [next-session.md](next-session.md). (A separate
+roadmap.md backlog existed through 2026-07-12; it was removed as stale — open work lives in
+next-session.md now.) For current architecture and terminology, see `loremaster.md`, not this file.
+
+**Reading note:** early entries below (through roughly 2026-07-03) describe a user-curated **tag
+system** gating worldbook injection as a live, central mechanism. Tags were fully removed
+2026-07-03 (`9585ba6`) in favor of unconditional worldbook injection — see loremaster.md's Tag
+System section (marked retired) for the current-state explanation. Treat every tag reference below
+as historical, not current.
 
 Two checkpoints ahead: **Vertical Slice** (every core mechanism touched at least once, end-to-end, with
 a minimal real UI) and **Phase 1 Complete** (everything loremaster.md scopes to Phase 1, excluding the
@@ -67,7 +76,7 @@ scene titles (`archive-name` on `target_story_to_date_id` — tab display only).
 **Retired (do not reintroduce casually):** per-post compress jobs, decad `[EVENT SUMMARY]` blocks,
 tag-driven compress/archive promotion in assembly, setup/kickoff archive blocks.
 
-Harness for prompt iteration: `scripts/story-to-date-experiment.ts`, [story-to-date-experiment.md](story-to-date-experiment.md).
+Harness for prompt iteration: `scripts/story-to-date-experiment.ts` and `scripts/story-to-date-guidance-ab.ts` (no companion markdown doc — see [docs/providers/editor-model-eval-methodology-2026-08-01.md](providers/editor-model-eval-methodology-2026-08-01.md) for the reusable methodology written up around the latter).
 
 ---
 
@@ -133,7 +142,7 @@ but the moment a page is hidden it's excluded from `assembleAuthorPrompt` entire
 blocks would only ever serve a future Logs/Debug UI (Milestone E) that doesn't exist yet, and building
 them now would mean either a synchronous wait on compression to finish inside the approve request or a
 new state-based trigger with non-standard window boundaries. Trimmed as low-value-right-now, not
-overlooked — see `src/services/kickoff.ts`.
+overlooked — see `src/services/story-transition.ts` (renamed from `kickoff.ts`, see the Phase 2 rename log below).
 
 **→ Vertical Slice reached.** A user can start a story, build a worldbook by talking to the Editor
 (with tool calls landing correctly and a live preview to catch it when they don't), kick off, and play
@@ -243,7 +252,7 @@ story is currently active, not a cross-story view.
 
 - ~~Config-driven layout system~~ — done, pulled forward ahead of E (see above).
 - **MCP dev server** — `src/mcp/dev-server.ts`, a stdio MCP server (registered in `.mcp.json`, run via
-  `npm run mcp`) exposing `list_stories`, `get_worldbook`, `get_tags` (with live matched-post counts),
+  `npm run mcp`) exposing `list_stories`, `get_worldbook`,
   `get_queue_status` (jobs + slot usage), `get_recent_log`, and `tail_dev_server_log` — all reading the
   same SQLite files the main HTTP server does, directly, rather than round-tripping through HTTP (this
   is meant to work whether or not the dev server happens to be running). Verified end-to-end with a real
@@ -303,7 +312,7 @@ stay out of scope unless explicitly requested.
 
 **Phase 1 — Purge Dead Code:** Deleted `archive-worker.ts`, `compress-worker.ts`, `compression.ts`, `memory-config.ts`, `src/experiments/`. Removed `gen_extract` column (text-store, schema, log-view), `compress` job type, `sourcebook` book type. Cleaned `COMPRESSION_ENABLED` imports, simplified `postNeedsCompress` to stub.
 
-**Phase 2 — Backend Renames (12 files):** `memory-manifest.ts` → `context-manifest.ts`, `memory-invalidation.ts` → `context-invalidation.ts`, `content-stamp.ts` → `content-fingerprint.ts`, `play-tab.ts` → `display-preferences.ts`, `toggle-presets.ts` → `generation-presets.ts`, `worker-lanes.ts` → `job-lanes.ts`, `story-to-date-corpus.ts` → `story-to-date-engine.ts`, `kickoff.ts` → `story-transition.ts`, `worldbook-pc.ts` → `worldbook-assembly.ts`, `api-coordinator.ts` → `api-limiter.ts`, `outbound-log.ts` → `outbound-telemetry.ts`. Merged `story-to-date-admin.ts` into `story-to-date.ts`.
+**Phase 2 — Backend Renames (11 files):** `memory-manifest.ts` → `context-manifest.ts`, `memory-invalidation.ts` → `context-invalidation.ts`, `content-stamp.ts` → `content-fingerprint.ts`, `play-tab.ts` → `display-preferences.ts`, `toggle-presets.ts` → `generation-presets.ts`, `worker-lanes.ts` → `job-lanes.ts`, `story-to-date-corpus.ts` → `story-to-date-engine.ts`, `kickoff.ts` → `story-transition.ts`, `worldbook-pc.ts` → `worldbook-assembly.ts`, `outbound-log.ts` → `outbound-telemetry.ts`. Merged `story-to-date-admin.ts` into `story-to-date.ts`. (`api-coordinator.ts` → `api-limiter.ts` was actually a **frontend** rename, `web/src/api-coordinator.ts` → `web/src/lib/api-limiter.ts` — miscounted here originally; see Phase 5.)
 
 **Phase 3 — Content Changes:** Deduplicated `AgentRole` to `model-config-store.ts`. Renamed `StoryPhase 'story'` → `'active'`, `book_type 'game'` → `'story'`, `memory_content_stamp` → `content_hash`. Renamed `/memory` → `/context` routes. Renamed `archive-name` → `segment-name` job type. Removed legacy archive system (`archive-store.ts`, `archive.ts`, `archive-eligibility.ts`, `archive-view.ts`, `purgeLegacyArchives`, archive tables from schema).
 
@@ -437,6 +446,8 @@ removed from `src/prompts.ts` and the prompt catalog entirely — no replacement
   CSS survives as `PromptMessage.css`, now imported directly by `MemoryView.tsx`.
 - New Story > Summary tab (`SummaryView.tsx`) — **legacy:** showed `gen_extract` per post; compression
   retired 2026-07-04. Candidate for removal. Archives tab now manages story-to-date segments.
+  (Since removed — see the Disambiguation resolution entry below: `SummaryView.tsx` deleted, Archives
+  renamed to Segments.)
 - `DEFAULT_LAYOUT_CONFIG` (`src/services/layout.ts`) updated to match (Preview removed, Summary added
   after Logs). Since a layout config had already been persisted to `data/global.sqlite` from an earlier
   session (the active row wins over the code default — see `GET /api/layout`), that row was updated
@@ -480,7 +491,8 @@ data into files is the "encrypt one user's data as a unit" future goal, not cont
 **Superseded (2026-07-03, later same day):** the "Featherless stays single shared" decision above
 was reversed once real multi-user login existed. Each user now stores their own Featherless and
 Horde key, encrypted at rest (`users.featherless_key_encrypted`/`horde_key_encrypted`, AES-256-GCM
-via `src/crypto.ts`, keyed off a single `APP_MASTER_KEY` env secret), managed from the Agents tab
+via `src/lib/crypto.ts` (moved from `src/crypto.ts` — see Phase 4 file moves), keyed off a single
+`APP_MASTER_KEY` env secret), managed from the Agents tab
 (`ApiKeysSection.tsx`) via `/api/account/{featherless,horde}-key`. `concurrency-feed.ts` and
 `slots.ts` were both reworked to track concurrency per userId instead of one process-wide/global
 counter, since each user now has their own independent account limit. `.env` no longer holds
@@ -663,7 +675,8 @@ performance, and UX edge cases surfaced by real VM sessions.
 
 ### Frontend refactor (Phases 1–7) — ✅ done, 2026-07-13
 
-Full frontend overhaul per `docs/refactor/frontend-roadmap.md`. 7 phases, all complete:
+Full frontend overhaul per a `docs/refactor/frontend-roadmap.md` plan doc (deleted after execution,
+same convention as the Disambiguation resolution plan above). 7 phases, all complete:
 
 - **Phase 1 (Cleanup):** Dead archive code deleted from api.ts (86 lines). CSS files renamed
   (ArchivesView→SegmentsView, MemoryView→ContextView). `storage-keys.ts` created. `bun.lock`
@@ -692,7 +705,8 @@ Full frontend overhaul per `docs/refactor/frontend-roadmap.md`. 7 phases, all co
 ### StoryView polling elimination — ✅ done, 2026-07-15
 
 Eliminated the dual-update architecture (SSE streaming + 1s polling) in `web/src/views/StoryView.tsx`
-in favor of a single SSE-only update path. Three-phase refactor per `storyview-roadmap.md`:
+in favor of a single SSE-only update path. Three-phase refactor per a `storyview-roadmap.md` plan
+doc (deleted after execution, same convention as other plan docs referenced above):
 
 - **Phase 1 (Extract & Clarify):** Extracted 70-line `watchJob` callback into switch-table
   (`streamHandlers.ts`, 207 lines). Moved `syncPendingWaitPhases` + helpers into

@@ -1,6 +1,7 @@
 # Model format probe — design plan
 
-_Drafted 2026-07-19. Status: agreed in discussion, not yet built._
+_Drafted 2026-07-19. Status: fully implemented and shipped 2026-07-19 — see the ✅ markers on each
+build-order step below. Kept as the design record/rationale, not a live plan._
 
 ## Problem
 

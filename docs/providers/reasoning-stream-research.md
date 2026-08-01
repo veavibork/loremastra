@@ -17,6 +17,16 @@ the routing mechanism below).
 > See [model-shape-probe-2026-07-17.md](model-shape-probe-2026-07-17.md) for the evidence and the
 > new design. The rest of this document is kept as the historical record of how the old mechanism
 > was diagnosed and built — still useful context, no longer current behavior.
+>
+> **Note on internal file paths below:** later refactors moved several files this document cites.
+> `src/queue/pipeline-runner.ts` no longer exists — `streamWithFallback` now lives in
+> `src/queue/provider-dispatch.ts`, and the rest of that file's logic (including
+> `setJobGenerationOptions`) moved to `src/queue/dispatch.ts`. `emitReasoningDelta` no longer
+> exists either — current trace routing uses `emitAnswer`/`emitInlineThinking` in
+> `provider-dispatch.ts`. The retry route this doc describes as living in `src/routes/stories.ts`
+> is now in `src/routes/stories/posts.ts` (`stories.ts` is just a re-export shim). Don't use the
+> paths below to navigate current code — they're accurate only as a record of where things lived
+> in 2026-07-04.
 
 ## Probe scripts
 

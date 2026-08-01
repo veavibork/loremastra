@@ -72,7 +72,7 @@ Backend `src/`:
 - `index.ts` — server entrypoint (Hono app, listens on port 4113)
 - `config.ts`, `prompts.ts` — top-level configuration modules
 - `lib/` — shared utilities (`time.ts`, `uuid.ts`, `crypto.ts`, `validation-hook.ts`, `errors.ts`)
-- `routes/` — HTTP route handlers (`stories.ts`, `agents.ts`, `account.ts`, `sessions.ts`, `settings-spaces.ts`, `layout.ts`, `prompts.ts`, `client-errors.ts`)
+- `routes/` — HTTP route handlers (`stories/` sub-router — `index.ts`, `context.ts`, `events.ts`, `fork.ts`, `jobs.ts`, `messages.ts`, `position.ts`, `posts.ts`, `segments.ts`, `worldbook.ts` — plus `agents.ts`, `account.ts`, `sessions.ts`, `settings-spaces.ts`, `layout.ts`, `prompts.ts`, `client-errors.ts`, `model-profiles.ts`, `preference-profiles.ts`)
 - `db/` — SQLite stores and schema (one `*-store.ts` per entity, plus `global-schema.ts`, `story-schema.ts`, `global-db.ts`, `story-db.ts`)
 - `services/` — business logic (story-to-date, worldbook, story transition, context invalidation, worldbook assembly, history, post-index, fork, layout)
 - `queue/` — job queue, concurrency, worker-lane logic
@@ -97,9 +97,10 @@ Frontend `web/src/`:
 - Frontend uses project references: `web/tsconfig.json` → `tsconfig.app.json` (app, `src/`) +
   `tsconfig.node.json` (Vite config). App config is `strict`-adjacent with `noUnusedLocals`,
   `noUnusedParameters`, `noFallthroughCasesInSwitch`, bundler module resolution, `noEmit`.
-- **Typecheck gotcha:** Root `tsconfig.json` has `"files": []` with only project references —
-  `npx tsc --noEmit` checks nothing. Use `npx tsc --noEmit -p tsconfig.app.json` for frontend
-  typechecking.
+- **Typecheck gotcha:** `web/tsconfig.json` (not the repo-root `tsconfig.json`, which is the
+  real backend config described above) has `"files": []` with only project references — running
+  `npx tsc --noEmit` from inside `web/` checks nothing. Use `npx tsc --noEmit -p tsconfig.app.json`
+  for frontend typechecking.
 
 ---
 

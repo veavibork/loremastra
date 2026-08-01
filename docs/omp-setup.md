@@ -79,11 +79,13 @@ Before relying on a new model in OMP, test it empirically. The kit lives in
 
 - `req-toolcall.json` — long single tool-call to detect mid-stream arg corruption
 - `req-multitool.json` — two tool calls in one turn to detect duplicate tool-call IDs
+- `extract-tool-call-code.py` — pulls the generated code out of a captured tool-call response
 - `parse.py` — reconstruct tool-call args and report validity / duplicate IDs / reasoning field
 
 ```bash
 cd src/inference/schema
-# Replace MODEL_ID_HERE in req-toolcall.json first
+# Both fixtures ship with a real model id already set (currently moonshotai/Kimi-K2.7-Code) —
+# edit the top-level "model" field in req-toolcall.json directly to test a different model.
 KEY=$CLINE_WORKER_API_KEY API=https://api.featherless.ai/v1/chat/completions \
   bash -c 'curl -sN --max-time 280 "$API" \
     -H "Authorization: Bearer $KEY" \

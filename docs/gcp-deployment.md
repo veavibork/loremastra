@@ -212,5 +212,6 @@ sudo journalctl -u loremaster -n 5        # expect "[shutdown] SIGTERM received"
                                           # process (graceful stop) then "Loremaster listening"
 ```
 
-The frontend header shows the live commit hash — verify the deploy landed before debugging
-anything else (see reference_loremaster_build_info_header memory / app header).
+The frontend header shows the live commit hash and build time (`__BUILD_INFO__`, wired in
+`web/vite.config.ts` and rendered in `web/src/App.tsx`) — verify the deploy landed before
+debugging anything else.

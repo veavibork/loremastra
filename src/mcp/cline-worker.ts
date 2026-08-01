@@ -10,7 +10,9 @@
  *
  * Configuration:
  *   CLINE_WORKER_API_KEY  — Featherless API key (required)
- *   CLINE_WORKER_MODEL    — model id (default: NousResearch/Hermes-3-Llama-3.1-8B)
+ *   CLINE_WORKER_MODEL    — model id. .env.example ships an explicit recommendation
+ *                           (NousResearch/Hermes-3-Llama-3.1-8B); if the var is left
+ *                           entirely unset, this file's own fallback below is used instead.
  *
  * Registered in .mcp.json as "cline-worker". Runs as a standalone stdio MCP server,
  * same pattern as src/mcp/dev-server.ts.
@@ -187,7 +189,7 @@ server.registerTool(
   'ask_worker',
   {
     description:
-      'Ask a cheap 1-slot Featherless model (Hermes-3) a question about the codebase. ' +
+      `Ask a cheap 1-slot Featherless model (${MODEL}) a question about the codebase. ` +
       'Provide file paths to include as context, or a search pattern to grep first. ' +
       'The model reads the provided context and answers concisely. ' +
       "Use this for simple lookups ('where is X defined', 'what does this function do') " +

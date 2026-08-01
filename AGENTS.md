@@ -10,7 +10,7 @@ Monorepo: `src/` (backend, port 4113) and `web/` (frontend, port 5173). Vite dev
 
 Request flow: browser → `sessionGuard` middleware (single-active-session enforcement on all HTTP) → route handler (Zod validation) → service layer (business logic) → DB stores or queue dispatch → inference providers.
 
-Background work runs through a job queue (`src/queue/dispatch.ts`): a 500ms scan loop claims jobs by priority (prose > story-to-date > fold > worldbook-compact > naming). Concurrency is governed by per-model slot costs, not fixed lanes — slot costs naturally enforce parallelism limits.
+Background work runs through a job queue (`src/queue/dispatch.ts`): a 500ms scan loop dispatches prose jobs first, then background job types in a fixed order (`WORKER_JOB_TYPES` in `dispatch.ts`: story-to-date, fold, story/segment naming, worldbook-compact, segment-audit). Concurrency is governed by per-model slot costs (Featherless's own `concurrency_cost`, read live from `/account/concurrency/stream`), not fixed lanes — slot costs naturally enforce parallelism limits.
 
 ## Key Directories
 

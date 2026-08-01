@@ -945,7 +945,7 @@ for (const [category, values] of Object.entries(TAG_VALUES)) {
   }
 }
 
-writeFileSync('src/data/featherless-tag-ratings.json', JSON.stringify(output, null, 2) + '\n')
+writeFileSync('src/defaults/featherless-tag-ratings.json', JSON.stringify(output, null, 2) + '\n')
 
 let overrideCount = 0
 let totalCount = 0
@@ -956,5 +956,5 @@ for (const values of Object.values(output)) {
   }
 }
 console.log(
-  `Wrote src/data/featherless-tag-ratings.json — ${totalCount} tags, ${overrideCount} with non-default ratings.`,
+  `Wrote src/defaults/featherless-tag-ratings.json — ${totalCount} tags, ${overrideCount} with non-default ratings.`,
 )

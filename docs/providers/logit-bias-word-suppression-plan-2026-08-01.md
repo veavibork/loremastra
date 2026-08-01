@@ -14,12 +14,18 @@ it explains why the 2026-07-02 "no path to token-level control" conclusion no lo
    — no chat-template rework needed) for at least `zai-org/GLM-5.2`. Confirmed via a wide-range
    stress ban (not representative of real use, but decisive) and via precise single/multi-token bans
    on a forced test phrase.
-2. Real tokenizers for these exact Featherless model ids are downloadable from HuggingFace —
-   `zai-org/GLM-5.2` and `moonshotai/Kimi-K2.7-Code` both confirmed (`tokenizer.json` present, no
-   auth needed for GLM; Kimi ships a `tiktoken.model` + custom `tokenization_kimi.py` instead of a
-   plain `tokenizer.json`, so its loading path will differ). This means real word→token-id lookup is
-   possible — no guessing, no bisection needed. `/v1/tokenize` remains useless for this (count only,
-   re-confirmed); irrelevant now that the HF route works.
+2. **Unreconciled contradiction, flag before resuming:** this bullet originally claimed real
+   tokenizers for both `zai-org/GLM-5.2` and `moonshotai/Kimi-K2.7-Code` were downloadable from
+   HuggingFace (`tokenizer.json` for GLM; a `tiktoken.model` + custom `tokenization_kimi.py` for
+   Kimi). `featherless-notes.md`'s 2026-08-01 correction section — which this doc calls
+   "prerequisite reading" — states the opposite for Kimi: HF repo lookups for these exact model
+   ids **404'd** (`moonshotai/Kimi-K2.5`, `moonshotai/Kimi-K2.7-Code` both tried; likely a
+   private/gated repo or a Featherless-internal naming convention with no 1:1 public HF mapping).
+   These can't both be true as written. GLM-5.2's tokenizer access is solidly confirmed either
+   way (real token ids used throughout the findings below); **re-verify the Kimi-K2.7-Code claim
+   from scratch before relying on it** — don't assume either doc is the correct one without
+   re-running the lookup. `/v1/tokenize` remains useless for this regardless (count only,
+   re-confirmed).
 3. **A word needs its full variant set banned to reliably suppress it, not just one spelling.**
    Demonstrated on "Patricia" against GLM-5.2's real tokenizer:
 
@@ -40,8 +46,12 @@ it explains why the 2026-07-02 "no path to token-level control" conclusion no lo
 ### 1. A pure-JS/WASM tokenizer, not a Python dependency
 
 This investigation used Python + `huggingface_hub` + `tokenizers` as a research scratchpad — fine
-for a one-off probe, wrong for production. This app is Node/TS end to end with no Python anywhere in
-its stack or GCP deployment story (see `docs/gcp-deployment.md`); adding Python as a runtime
+for a one-off probe, wrong for production. This app is Node/TS end to end with no Python in its
+_runtime/production_ stack or GCP deployment story (see `docs/gcp-deployment.md`) — the repo does
+contain a small dev-only Python toolkit (`src/inference/schema/parse.py`,
+`extract-tool-call-code.py`, a manual curl+Python API-verification kit, see
+`src/inference/schema/README.md`), but nothing Python-based ships or runs in production. Adding
+Python as a runtime
 dependency just for this would be a real, ongoing deployment burden (VM provisioning, pip installs,
 version drift) for a feature that doesn't need it. HuggingFace's `tokenizers` library ships real
 Node bindings (NAPI, no WASM-in-browser complexity) that load the identical `tokenizer.json` files
@@ -65,8 +75,9 @@ Two responsibilities, likely one module (`src/inference/token-ban-resolver.ts` o
 
 ### 3. A fallback path for models without a public tokenizer
 
-Some models on Featherless will be gated or won't have a resolvable HF repo (this project hasn't hit
-that case yet — both models tried had public tokenizer files — but should assume it'll happen).
+Some models on Featherless will be gated or won't have a resolvable HF repo (GLM-5.2's was solidly
+confirmed public; Kimi-K2.7-Code's status is exactly the unreconciled contradiction flagged above —
+resolve that first, since it may already be a live example of this exact case).
 Needs a defined degraded behavior: skip banning silently and log it, surface a warning in the Agents
 UI ("word suppression unavailable for this model"), or fall back to the existing hard-stop behavior
 for that specific word. Silent-and-logged is probably right — a missing nice-to-have shouldn't block
@@ -75,18 +86,26 @@ generation — but worth a real decision, not a default-by-accident.
 ### 4. Config surface
 
 A per-role "words/phrases to suppress" list. This is the original motivation behind the
-now-narrowed banned-phrase feature (`src/services/stop-list.ts`, `docs/providers/featherless-notes.md`'s
-2026-07-02 decision) — that feature kept only hard-stop-on-match behavior once word-suppression was
-believed unachievable. Now that it might be achievable, decide: extend `stop-list.ts` with a second
-mode (suppress vs. hard-stop), or ship this as a distinct, new setting entirely. Recommend reusing
-the existing UI surface if the semantics don't get confusing to a user configuring both modes at
-once — a fresh decision to make when this project resumes, not answered here.
+now-narrowed banned-phrase feature — originally `src/services/stop-list.ts`
+(`docs/providers/featherless-notes.md`'s 2026-07-02 decision), but that file was itself replaced
+the same day: the current mechanism is `src/services/refusal-detection.ts`'s `matchesRefusalPrefix`
+reading from a `banned-phrases` settings-space entry, scoped narrowly to Worker/Editor
+compress/archive jobs only (deliberately _not_ applied to Author prose or Editor setup replies —
+see that file's docstring). Now that word-level suppression might be achievable, decide: extend
+the `banned-phrases` settings space with a second mode (suppress vs. the current prefix-detect/fail
+behavior), or ship this as a distinct, new setting entirely — and whether it should stay scoped to
+compress/archive or extend to prose. Recommend reusing the existing UI surface if the semantics
+don't get confusing to a user configuring both modes at once — a fresh decision to make when this
+project resumes, not answered here.
 
 ### 5. Scope check before generalizing
 
 Everything above is confirmed on `zai-org/GLM-5.2` only. Before assuming it applies broadly:
 
-- Re-run the same forced-phrase test against `moonshotai/Kimi-K3` (the current Author model) —
+- Re-run the same forced-phrase test against `moonshotai/Kimi-K3` (the Author model in use as of
+  this writing per the user's own account — note the hardcoded fallback in `src/config.ts` is
+  `deepseek-ai/DeepSeek-V4-Pro`; the live Config > Agents setting is a per-user DB override not
+  visible from source, so confirm the actual current Author model before re-running this) —
   confirm `logit_bias` has a real effect on its `/v1/chat/completions` output too, not just GLM's.
 - Confirm Kimi's tokenizer (`tiktoken.model` + custom Python tokenization code, not a plain
   `tokenizer.json`) is actually loadable via the Node tokenizer library chosen in step 1 — its

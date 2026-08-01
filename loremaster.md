@@ -30,12 +30,13 @@ The following shorthand is used consistently throughout this document and codeba
 | **users**                 | LM's expected population: fewer than ten people                                                                                          |
 | **story**                 | A single RP session/save slot — the core unit of LM's service                                                                            |
 | **ERP**                   | Explicit/adult roleplay content — the primary content type LM is built to support                                                        |
-| **tag**                   | A keyword associated with a worldbook entry or post; the primary mechanism for lore retrieval                                            |
 | **verbose**               | The full text of a single post (~200 tokens)                                                                                             |
 | **story-to-date segment** | An Editor-generated rolling recap (`[STORY BEGINS]` / `[STORY CONTINUES]`), merged into one `[STORY TO DATE]` block in the Author prompt |
 | **Segments tab**          | UI for inspecting/editing story-to-date segments and optional scene titles (tab-only; not injected into Author prompt assembly)          |
 
 **Retired (2026-07-04):** per-post **compression** (`gen_extract`) and **decad archive blocks** (`[EVENT SUMMARY]`/`archive`/`archive_member`) are fully removed (2026-07-12 disambiguation resolution). Do not reintroduce without an explicit design decision.
+
+**Retired (2026-07-03):** the **tag** system (user-curated keywords gating which worldbook entries got injected into a given prompt) is fully removed — `tag_index`/`tags` tables are dropped on every DB open (`src/db/story-db.ts`), and there is no tag UI anywhere in the frontend. `assembleAuthorPrompt` (`src/services/history.ts`) now injects every non-hidden worldbook entry (CONTENT/ROSTER/MEMORY alike) unconditionally — see the Tag System section below, kept as a historical record, not current behavior.
 
 ---
 
@@ -45,7 +46,7 @@ Loremaster is a lightweight, private roleplaying platform for a small number of 
 
 The market's weaknesses that LM directly addresses:
 
-- **Context window degradation:** Long stories break down as the context fills. Characters forget facts, flatten into caricatures, and repeat themselves. LM addresses this through rolling `[STORY TO DATE]` recaps, worldbook injection, and tag-driven lore retrieval.
+- **Context window degradation:** Long stories break down as the context fills. Characters forget facts, flatten into caricatures, and repeat themselves. LM addresses this through rolling `[STORY TO DATE]` recaps and unconditional worldbook injection.
 - **Provider inflexibility:** ERP requires uninhibited models. Model and provider selection is the primary guardrail strategy — prompt engineering plays a supporting role, not a defensive one.
 - **Schema incoherence:** Market worldbooks are freeform. LM uses a consistent shared schema across all lore entries, prompts, and tooling, which keeps the LLM's inputs predictable and structured.
 
@@ -107,15 +108,15 @@ deltas/contradictions to earlier ones, not replacements. Always injected into ev
 prompt, in creation order.
 
 **ROSTER** — A character, faction, creature, or location worth remembering — whatever the
-Editor judges is worth recording, with no forced subdivision by kind. Tag-triggered like any
-other non-CONTENT entry, not always-injected.
+Editor judges is worth recording, with no forced subdivision by kind. Always injected into every
+Author prompt alongside CONTENT (tag-gating was retired 2026-07-03 — see Tag System).
 
 **MEMORY** — A story-state fact or event worth remembering going forward (an established
-promise, a revealed secret, a changed relationship) — also tag-triggered, not always-injected.
+promise, a revealed secret, a changed relationship) — also always injected, not tag-gated.
 
 ### Bracket Format
 
-```
+```text
 [CONTENT]
 A frontier mining town under Zhentarim influence, tone: grounded low fantasy, welcomes moral
 ambiguity, off the table: sexual violence.
@@ -134,31 +135,23 @@ identifies an entry by its type plus an auto-truncated preview of its first line
 
 ---
 
-## Tag System
+## Tag System (retired 2026-07-03)
 
-Tags are the primary mechanism connecting user posts to worldbook entries. LM's tagging is **user-curated**, not LLM-inferred.
+**This entire section describes a mechanism that no longer exists — kept as a historical record
+of the design, not as current behavior.** Tags were LM's original mechanism for connecting user
+posts to worldbook entries: user-curated (not LLM-inferred) keywords, indexed via retroactive grep
+against post and worldbook text, whose "active set" at prompt time gated which non-CONTENT
+worldbook entries (ROSTER/MEMORY) got pulled into a given Author prompt.
 
-Inference-based auto-tagging was evaluated and rejected. The results were unreliable and introduced errors into the retrieval pipeline. The user-curated approach trades automation for determinism — which is the right tradeoff here.
-
-### How Tags Work
-
-- Tags are pure grep/index constructs. There is no pointer from a tag to a worldbook entry or
-  from an entry to a tag — a tag "belongs" to whatever content it happens to textually match,
-  posts and worldbook entries alike (2026-07-03: an earlier design let the user manually point a
-  tag at a specific entry; dropped in favor of matching everything the same way).
-- A tag must be a single word, letters only, at least three characters (`/^[A-Za-z]{3,}$/`).
-- Tags are maintained by the user in a tag cloud visible throughout the story phase.
-- When a tag is added or edited, the back end performs a retroactive grep across all existing posts and worldbook entries and stores the resulting index (which content contains that tag). The grep runs against verbose post text (`gen_package`) and worldbook entry content.
-- **Tag activation at prompt time (2026-07-03):** which tags are "live" for a generation is determined by a **query**, not only by tags matched on the trigger post alone. The query is built from the latest user message plus up to two recent assistant turns (KAI-style). Word-boundary grep against the tag cloud yields the active set. The Memory panel's prompt inspector can override this set for what-if simulation via the `tags` query param on `/prompt-preview`.
-- At prompt assembly time, the active tag set drives which non-CONTENT worldbook entries (ROSTER/MEMORY) get pulled into the prompt (via the tag index against entry content). CONTENT entries are always injected regardless of tags.
-- Tags whose match doesn't resolve to a worldbook entry are evaluated before tags that do, during prompt assembly. This prioritizes surface area (events, references) over known lore, since the lore is already in the worldbook.
-
-### Tag Cloud Lifecycle
-
-- **Setup phase:** The user creates tags as the worldbook takes shape. Tags are entirely
-  user-created — the Editor never creates, edits, or points a tag at anything (2026-07-03).
-- **Story phase:** Tags are live and visible. The user adds tags as new characters, locations, or concepts emerge. Low friction is a hard UI requirement here — tagging during play must be fast.
-- **Post-edit:** Any tag change triggers a retroactive re-index of existing posts and worldbook entries.
+Dropped 2026-07-03 (`9585ba6`, "Drop tag tables and indexing — remove dead tag-store, tag-index,
+and retrieval code") in favor of simply injecting every non-hidden worldbook entry into every
+Author prompt unconditionally — see `assembleAuthorPrompt` in `src/services/history.ts`. The
+`tags`/`tag_index` tables are actively dropped on every DB open (`src/db/story-db.ts`) so they
+can't silently reappear. There is no tag UI anywhere in the current frontend, and no `get_tags`
+MCP tool. Do not reintroduce tagging without an explicit design decision — if worldbook injection
+ever needs to be selective again (e.g. context-budget pressure from a very large worldbook), that
+should be evaluated fresh against what unconditional injection has actually cost in practice, not
+assumed to need the old tag-gating mechanism back.
 
 ---
 
@@ -194,7 +187,7 @@ Run locally with `npm run mcp`. Tools include: `list_stories`, `get_worldbook`, 
 
 Equivalent HTTP routes for curl/automation (session required unless `DEV_BYPASS_SESSION_GUARD` is set on the server):
 
-```
+```text
 GET  /api/stories/:id/context/summary
 GET  /api/stories/:id/context/manifest
 POST /api/stories/:id/context/backfill   { "enqueueJobs": true }
@@ -229,7 +222,9 @@ This is the core of LM's context management (shipped 2026-07-04). Older history 
 - **Seam gate:** if coverage equals the input ceiling (mid-scene cut), one retry with step-back instructions.
 - **Sprint gate:** a continues block claiming more than 32 posts (`NEXT_SCENE_MAX_COVERAGE_DELTA`, margin above the window for hidden turns), or fewer than 2.5 words per claimed post, is rejected with a rewrite retry.
 
-Implementation: `src/services/story-to-date/` (`index.ts` trigger/enqueue, `worker.ts` job execution, `engine.ts` corpus + gates), `src/services/history.ts` (assembly). Local iteration harness: `scripts/story-to-date-experiment.ts` (see [docs/story-to-date-experiment.md](docs/story-to-date-experiment.md)).
+Implementation: `src/services/story-to-date/` (`index.ts` trigger/enqueue, `worker.ts` job execution, `engine.ts` corpus + gates), `src/services/history.ts` (assembly). Local iteration harnesses: `scripts/story-to-date-experiment.ts` and `scripts/story-to-date-guidance-ab.ts` (guidance/sampler/model A-B testing against a synced VM save — see [docs/providers/editor-model-eval-methodology-2026-08-01.md](docs/providers/editor-model-eval-methodology-2026-08-01.md) for the reusable methodology).
+
+**Structural-failure repair (2026-08-01):** if the Editor's response has a clean, well-formed closing `[COVERAGE]N[/COVERAGE]` tag but omits the opening `[STORY BEGINS]`/`[STORY CONTINUES]` bracket entirely — an observed `zai-org/GLM-5.2` failure mode, otherwise indistinguishable from a good response — `extractStoryBlockMissingOpenTag` (`engine.ts`) repairs it by treating everything before the coverage tag as the block, but only when no other marker debris is present elsewhere in the text. The repaired candidate still passes through every other quality gate (duplicate-overlap, coverage-sprint, mid-scene-ending, chain validation) unchanged.
 
 ### Content stamps and invalidation
 
@@ -349,22 +344,28 @@ Tapping the icon expands or collapses the navigation menu. The four primary menu
 
 Tapping a section button expands that section to occupy the main screen area. Tapping it again closes it. Tapping a different button closes the current section and opens the new one. Each section uses the same icon-sized tab components for sub-navigation.
 
-The goal is that a user never needs to be in more than one section to accomplish a task. Lore and Story are the two sections in active use during play. Config is for pre-session tuning. Debug is for when something's wrong.
+The goal is that a user never needs to be in more than one section to accomplish a task. Lore and Story are the two sections in active use during play. Config is for pre-session tuning. **Debug was retired as a standalone section (2026-07-03) — live queue/worker state was merged into Story > Queue instead of staying a fifth destination.**
 
 **Lore**
-Two-column layout. The left column holds the Tags panel, always visible. The right column has tabs for Memory, Worldbook, and related lore views during play.
+Tabs for Context and Worldbook. (The Tags panel described in earlier design iterations of this
+section was removed along with the tag system itself — see Tag System — there is no left-column
+tag UI in the current frontend.)
 
-- _Tags_ — tag management; create, edit, hide (toggle), delete (toggle), filter (toggle).
-- _Memory_ — assembled prompt inspector: shows the finalized prompt as it would be sent, with each component's source identified (worldbook, `[STORY TO DATE]`, verbose posts).
+- _Context_ (`ContextView.tsx`) — assembled prompt inspector: shows the finalized prompt as it would be sent, with each component's source identified (worldbook, `[STORY TO DATE]`, verbose posts).
 - _Worldbook_ — worldbook management; create, edit, hide (toggle), delete. Entry type (CONTENT/ROSTER/MEMORY) is a discrete flag; content is freeform prose.
 
 **Story**
-Tabs include Saves, Logs, **Archives**, and Summary.
+Tabs: Saves, Logs, Queue, Segments (`SavesView.tsx`/`LogsView.tsx`/`QueueView.tsx`/`SegmentsView.tsx`
+— see `web/src/components/Registry.tsx` for the authoritative tab-id → component mapping).
 
 - _Saves_ — session/slot management; load, name, rename, and switch between active stories and branches.
-- _Logs_ — recent activity telemetry: timestamps, input text, observed tags, prompt text, response text, token counts, turnaround times, error codes.
+- _Logs_ — recent activity telemetry: timestamps, input text, prompt text, response text, token counts, turnaround times, error codes.
+- _Queue_ — live queue/worker state (this absorbed the earlier separate Debug section — see below).
 - _Segments_ — **shipped UI for story-to-date segments** (2026-07-04): collapse/expand, edit/save content, requeue pending segments, optional Worker-generated scene titles, token counts. This is the management surface for `[STORY TO DATE]` memory; titles from naming jobs appear here only.
-- _Summary_ — removed (2026-07-12); the legacy `gen_extract` view was cleaned up in the disambiguation resolution.
+
+**Retired:** the Tags panel (Lore section) and Summary tab (Story section, the legacy `gen_extract`
+view) were both removed 2026-07-03/2026-07-12 alongside the tag system and per-post-compression
+retirements above.
 
 **Config**
 Two tabs: Agents and Prompts.
@@ -372,10 +373,10 @@ Two tabs: Agents and Prompts.
 - _Agents_ — model and parameter selection per agent (Editor, Author, Worker). Controls for reasoning mode toggle and token budget per agent. Controls for concurrent thread counts allowed.
 - _Prompts_ — the prompt template for each element, exposed for direct editing. Not expected to be used frequently, but must not require SSH access. Any changes made to prompts are per-user and do not alter the defaults.
 
-Config previously had a third tab, Preview, duplicating Lore > Memory's assembled-prompt inspector outside of play. Dropped (2026-07-03) as a redundant surface — Memory already covers the same need.
+Config previously had a third tab, Preview, duplicating Lore > Context's assembled-prompt inspector outside of play. Dropped (2026-07-03) as a redundant surface — Context already covers the same need.
 
-**Debug**
-Live queue state and worker status. Distinct from Logs (which is historical) — Debug shows what's happening right now: what's queued, what's in flight, what's blocked, and why.
+**Debug (retired as a standalone section, 2026-07-03)**
+Live queue state and worker status now lives in Story > Queue instead — distinct from Story > Logs (which is historical): Queue shows what's happening right now: what's queued, what's in flight, what's blocked, and why.
 
 **Settings** (gear icon, not a primary section button)
 Lower-frequency than the four primary sections. Contains:
@@ -431,11 +432,23 @@ This is not a substitute for real security practices — it is a trust model app
 
 Featherless is the primary provider; the AI Horde was added as a second provider during the multi-user milestone (2026-07-03). Each user independently configures their own Featherless and Horde API keys from the Agents tab — both are encrypted at rest using the server's `APP_MASTER_KEY` (`AES-256-GCM`).
 
-Featherless ($25/mo tier) uses an OpenAI-compatible API with streaming, capped at 32k context, four simultaneous connections per account. Larger models (Editor/Author) consume all four slots. The Horde is async submit-then-poll — no streaming, no account-wide concurrency signal — and uses its own dispatch path with a local cap on outstanding submissions rather than reusing the Featherless slot system. See the Multi-User & Second Provider Milestone section for integration details.
+Featherless uses an OpenAI-compatible API with streaming. Account-wide concurrency is governed by
+a per-model `concurrency_cost` (from Featherless's own model catalog) against a total slot budget
+set by the account's plan tier — not a fixed connection count baked into this app. LM reads the
+live limit and in-flight usage straight from Featherless's real-time `GET
+/account/concurrency/stream` feed (`src/queue/concurrency-feed.ts`) rather than hardcoding a
+number, since the total budget and per-model costs are both plan- and catalog-dependent and have
+already changed at least once during this project's life — see
+[docs/providers/featherless-notes.md](docs/providers/featherless-notes.md) for the empirical
+findings behind this. The Horde is async submit-then-poll — no streaming, no account-wide
+concurrency signal — and uses its own dispatch path with a local cap on outstanding submissions
+rather than reusing the Featherless slot system. See the Multi-User & Second Provider Milestone
+section for integration details.
 
 Ranked-choice model fallback (trying a second model if the first is unavailable) works within each provider independently. Generic OpenAI-compatible endpoints and additional providers remain deferred.
 
 The provider boundary is cleanly separated at the module level: `src/inference/featherless.ts`, `src/inference/horde.ts`, and their respective config modules handle provider-specific transport. The pipeline runner branches on provider at the dispatch level; extracting a common adapter interface is a known, deliberately deferred improvement (tracked as F-032 in a since-retired refactor evaluation).
+
 ---
 
 ## Multi-User & Second Provider Milestone
@@ -496,5 +509,7 @@ Phase 1 is complete — Loremaster is a purpose-built TypeScript application, de
 - **Dev tooling:** MCP server (`npm run mcp`), testing (vitest + playwright — `npm test`, `npm run test:e2e`), linting (oxlint — `npm run lint`), formatting (Prettier — `npm run format`), smoke tests (`npx tsx scripts/test-memory-pipeline-smoke.ts`), experiment harnesses
 
 Deferred from Phase 1: full encryption at rest for story content, preference-profile CRUD, input-bar weapon wheel, bespoke touch-first chrome. See `docs/next-session.md` for open items.
+
+Since Phase 1 closed, ongoing hardening has continued against the live deployment: single-active-session eviction, real-time client-error surfacing, a coverage/fold audit pass over the story-to-date pipeline (bounded-memory folding, mid-scene-ending detection, and a repair path for an Editor-model-specific formatting quirk — see the Story-to-Date Memory Pipeline section above), a runtime format-drift tripwire for prompt/response shape mismatches, and an evaluation that promoted the production Editor model to `zai-org/GLM-5.2`. `docs/development.md` has the full milestone-by-milestone history; `docs/providers/` has the empirical provider findings behind several of these changes.
 
 When beginning a development session, see `CLAUDE.md` for the session checklist and `docs/development.md` for milestone history.

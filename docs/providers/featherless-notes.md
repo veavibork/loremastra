@@ -98,7 +98,7 @@ immediately since a different model wouldn't fix those. Status-code-aware _retry
 opposed to model fallback) for 500/503 specifically is still open — right now a 500/503 either
 succeeds on a fallback model or fails the job outright, with no same-model retry-after-wait.
 
-## Concurrency stream — `GET /account/concurrency` (SSE or single-poll)
+## Concurrency stream — `GET /account/concurrency/stream` (SSE)
 
 **Path corrected 2026-07-02** — no `/v1` prefix. The original note had it as `/v1/account/concurrency`,
 which 404s; every other endpoint in this file lives under `/v1`, so that prefix was an easy
@@ -106,14 +106,16 @@ transcription slip. Re-confirmed live: reports real-time `limit`, `used_cost`, `
 `requests[]` array (id, cost, model, started_at, duration_ms) for the whole account. This is
 authoritative ground truth for what's actually in flight — a real upgrade over our local in-memory
 slot counter (`src/queue/slots.ts`), which can drift from reality (e.g., blind to other processes using
-the same key, or to Featherless's own accounting). Worth switching to before this matters in practice
-(multiple concurrent users). Not urgent while it's a single local dev instance.
+the same key, or to Featherless's own accounting). **Wired in 2026-07-03** —
+`src/queue/concurrency-feed.ts` keeps a persistent per-user connection to this feed and is the primary
+source of truth for slot availability; the local counter in `slots.ts` is now a fallback only, used
+when the feed is unhealthy/disconnected.
 
 ### Aborting a stream client-side does NOT cancel it server-side
 
 **Tested live 2026-07-02.** Started a streaming completion with a long `max_tokens`, forcibly killed
-the client connection 2 seconds in (`timeout 2 curl ...`), then polled `/account/concurrency` once a
-second afterward. The request stayed listed as in-flight — `duration_ms` climbing continuously — for
+the client connection 2 seconds in (`timeout 2 curl ...`), then polled `/account/concurrency/stream`
+once a second afterward. The request stayed listed as in-flight — `duration_ms` climbing continuously — for
 21+ seconds after the client had already disconnected, still consuming its `used_cost` slot the whole
 time. **Featherless keeps generating (and billing the concurrency slot) for the full original
 duration regardless of the client dropping the connection.** This matches what was seen manually in
@@ -127,9 +129,9 @@ free the real Featherless-side concurrency slot, which stays occupied until the 
 finishes on its own. This is exactly the drift scenario the section above already warned about,
 except now confirmed to be actively happening on every timeout/abort we already do today, not just a
 theoretical future risk. Doesn't block using abort for UX/local-bookkeeping reasons (it's still
-strictly better than waiting out the full generation before retrying), but reinforces that the
-TODO below (switch to real `/account/concurrency` polling) is closer to "load-bearing" than
-"someday," once multiple concurrent generations are common enough for the drift to cause real 503s.
+strictly better than waiting out the full generation before retrying) — this drift is exactly why
+the real feed (see above, wired 2026-07-03) is the primary source of truth rather than the local
+counter alone.
 
 ## `/v1/tokenize`
 
