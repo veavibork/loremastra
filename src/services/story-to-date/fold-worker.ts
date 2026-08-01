@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import { completeChatWithMeta } from '../../inference/featherless.js'
+import { createLogger } from '../../inference/outbound-telemetry.js'
 
 /** Large merged segments can legitimately take several minutes — still bounded. */
 export const STORY_TO_DATE_FOLD_TIMEOUT_MS = 10 * 60_000
@@ -78,21 +79,41 @@ export async function executeStoryToDateFoldJob(
   })
   const digest = content.trim()
   if (!digest) throw new Error('fold produced empty digest')
+  const foldLog = createLogger({ jobType: 'story-to-date-fold' })
+  const foldLogDetail = {
+    targetSegmentId,
+    batchIds: batch.map((s) => s.id),
+    batchSeqs: batch.map((s) => s.seq),
+    model: editor.model,
+    finishReason,
+    targetWords,
+    mergedInputTokens: foldTokens,
+    digestEstimatedTokens: estimateTokens(digest),
+    digestPreview: digest.slice(0, 1500),
+  }
   // finish_reason is ground truth for a max_tokens cutoff; the length estimate is only a
   // backstop for providers that omit it (a compliant target-length digest sits well under it).
   if (finishReason === 'length') {
+    foldLog.warn('fold digest truncated at Editor max_tokens', foldLogDetail)
     throw new Error(
       `fold digest truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`,
     )
   }
   if (finishReason === null && looksFoldDigestTruncated(digest, editor.responseLimit)) {
+    foldLog.warn('fold digest likely truncated at Editor max_tokens', foldLogDetail)
     throw new Error(
       `fold digest likely truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`,
     )
   }
   // Guard against a non-compressing result — if the model returned something as large as the input,
   // applying it would churn without shrinking anything. Leave the segments as they are.
-  if (estimateTokens(digest) >= foldTokens) return
+  if (estimateTokens(digest) >= foldTokens) {
+    foldLog.warn(
+      'fold digest did not shrink relative to input — leaving segments unchanged',
+      foldLogDetail,
+    )
+    return
+  }
 
   const target = getStoryToDateSegment(db, targetSegmentId)
   if (!target || target.broken) return
