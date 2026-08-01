@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import type { ChatMessage } from '../../inference/featherless.js'
 import { completeChat } from '../../inference/featherless.js'
+import { createLogger } from '../../inference/outbound-telemetry.js'
 import {
   fillStoryToDateSegment,
   getStoryToDateSegment,
@@ -242,6 +243,10 @@ export async function executeStoryToDateJob(
 
       if (!candidate) {
         lastError = 'missing block or coverage'
+        createLogger({ storyId, jobType: 'story-to-date' }).warn(
+          'parse failure: missing block or coverage',
+          { segmentId, kind, attempt, model: editor.model, rawPreview: raw.slice(0, 1500) },
+        )
         continue
       }
 
