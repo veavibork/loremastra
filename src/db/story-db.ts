@@ -198,7 +198,16 @@ function dropTagTablesIfExist(db: Database.Database): void {
   db.exec(`DROP TABLE IF EXISTS tag_index; DROP TABLE IF EXISTS tags;`)
 }
 
-/** Same table-rename technique as migrateJobTypeCheck — adds 'fold' to story_to_date_segment.kind CHECK. */
+/**
+ * Same table-rename technique as migrateJobTypeCheck — adds 'fold' to story_to_date_segment.kind
+ * CHECK. Unlike the jobs migrations above, this renames a table OTHER tables foreign-key INTO
+ * (jobs.target_story_to_date_id) — confirmed empirically that SQLite's ALTER TABLE RENAME
+ * unconditionally rewrites jobs' FK clause to follow the rename (not gated by legacy_alter_table),
+ * so jobs would otherwise end up pointing at this temporary table name once it's dropped in
+ * finishStoryToDateKindCheckMigration. foreign_keys=OFF here (paired with the same in that
+ * function) just lets the drop proceed without erroring on a soon-to-be-stale reference;
+ * repairJobsStoryToDateReference (run at the end of getStoryDb) fixes the reference itself.
+ */
 function migrateStoryToDateKindCheck(db: Database.Database): void {
   const row = db
     .prepare(
@@ -206,6 +215,7 @@ function migrateStoryToDateKindCheck(db: Database.Database): void {
     )
     .get() as { sql: string } | undefined
   if (!row || row.sql.includes("'fold'")) return
+  db.pragma('foreign_keys = OFF')
   db.exec(`ALTER TABLE story_to_date_segment RENAME TO story_to_date_segment_pre_fold_migration`)
   ensureColumn(db, 'story_to_date_segment_pre_fold_migration', 'name', 'TEXT')
   ensureColumn(db, 'story_to_date_segment_pre_fold_migration', 'audit_verdict', 'TEXT')
@@ -220,12 +230,63 @@ function finishStoryToDateKindCheckMigration(db: Database.Database): void {
     )
     .get()
   if (!exists) return
+  // foreign_keys=OFF independently here, not just relying on migrateStoryToDateKindCheck having
+  // set it — that function no-ops on a retry (story_to_date_segment's CHECK already has 'fold'),
+  // but this leftover table can still be sitting there needing cleanup from an earlier partial
+  // run, and jobs' FK clause (rewritten by that earlier rename) still blocks the drop otherwise.
+  // repairJobsStoryToDateReference fixes jobs' stale FK clause itself, further down.
+  // INSERT OR IGNORE (not a bare INSERT) — an earlier run of this exact function can have already
+  // copied the rows across and thrown on the FK-blocked drop before foreign_keys=OFF existed here,
+  // leaving both tables populated; a bare INSERT would then fail on the duplicate primary keys.
+  db.pragma('foreign_keys = OFF')
   db.exec(`
-    INSERT INTO story_to_date_segment (id, created_at, book_id, kind, content, coverage_through_ic_post, coverage_page_id, input_ceiling_ic_post, input_ceiling_page_id, seq, name, hidden, broken, audit_verdict, audit_missing, audit_at)
+    INSERT OR IGNORE INTO story_to_date_segment (id, created_at, book_id, kind, content, coverage_through_ic_post, coverage_page_id, input_ceiling_ic_post, input_ceiling_page_id, seq, name, hidden, broken, audit_verdict, audit_missing, audit_at)
     SELECT id, created_at, book_id, kind, content, coverage_through_ic_post, coverage_page_id, input_ceiling_ic_post, input_ceiling_page_id, seq, name, hidden, broken, audit_verdict, audit_missing, audit_at
     FROM story_to_date_segment_pre_fold_migration;
     DROP TABLE story_to_date_segment_pre_fold_migration;
   `)
+  db.pragma('foreign_keys = ON')
+}
+
+/**
+ * Repairs jobs.target_story_to_date_id's FK clause after migrateStoryToDateKindCheck's rename —
+ * SQLite unconditionally rewrites it to point at the temporary migration table name, which is
+ * dropped shortly after, leaving jobs referencing a table that no longer exists. Runs
+ * unconditionally at the very end of getStoryDb (cheap no-op once jobs' schema is already
+ * correct), so it also self-heals any story DB that already hit this in an earlier release —
+ * no manual repair needed on already-affected files.
+ */
+function repairJobsStoryToDateReference(db: Database.Database): void {
+  const row = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'`)
+    .get() as { sql: string } | undefined
+  if (!row || row.sql.includes('REFERENCES story_to_date_segment(id)')) return
+  db.pragma('foreign_keys = OFF')
+  db.exec(`ALTER TABLE jobs RENAME TO jobs_pre_fk_repair`)
+  ensureColumn(db, 'jobs_pre_fk_repair', 'model', 'TEXT')
+  ensureColumn(db, 'jobs_pre_fk_repair', 'token_estimate', 'INTEGER')
+  ensureColumn(db, 'jobs_pre_fk_repair', 'input_token_estimate', 'INTEGER')
+  ensureColumn(db, 'jobs_pre_fk_repair', 'horde_request_id', 'TEXT')
+  ensureColumn(db, 'jobs_pre_fk_repair', 'elapsed_ms', 'INTEGER')
+  ensureColumn(db, 'jobs_pre_fk_repair', 'result_summary', 'TEXT')
+  db.exec(STORY_SCHEMA_SQL) // recreates jobs fresh (IF NOT EXISTS) with a correct FK now that
+  // story_to_date_segment exists under its real name again; every other table already exists.
+  // STORY_SCHEMA_SQL's base jobs definition predates these ensureColumn-only columns, so the
+  // fresh table needs them added back before the copy-back below can reference them.
+  ensureColumn(db, 'jobs', 'model', 'TEXT')
+  ensureColumn(db, 'jobs', 'token_estimate', 'INTEGER')
+  ensureColumn(db, 'jobs', 'input_token_estimate', 'INTEGER')
+  ensureColumn(db, 'jobs', 'horde_request_id', 'TEXT')
+  ensureColumn(db, 'jobs', 'elapsed_ms', 'INTEGER')
+  ensureColumn(db, 'jobs', 'result_summary', 'TEXT')
+  // INSERT OR IGNORE — same idempotency reasoning as finishStoryToDateKindCheckMigration.
+  db.exec(`
+    INSERT OR IGNORE INTO jobs (id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, input_token_estimate, horde_request_id, elapsed_ms, result_summary)
+    SELECT id, created_at, target_text_id, target_story_to_date_id, job_type, status, priority, slot_cost, started_at, finished_at, error, cancel_requested, model, token_estimate, input_token_estimate, horde_request_id, elapsed_ms, result_summary
+    FROM jobs_pre_fk_repair;
+    DROP TABLE jobs_pre_fk_repair;
+  `)
+  db.pragma('foreign_keys = ON')
 }
 
 export function closeStoryDb(storyId: string): void {
@@ -286,6 +347,7 @@ export function getStoryDb(
     finishJobTypeWorldbookCompactMigration(db)
     finishJobTypeSegmentAuditMigration(db)
     finishStoryToDateKindCheckMigration(db)
+    repairJobsStoryToDateReference(db)
     backfillSelectedForks(db)
     if (!options?.skipRecovery) recoverStaleJobs(db)
   } catch (err) {
