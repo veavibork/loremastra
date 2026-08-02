@@ -350,8 +350,14 @@ export function mergeStoryToDate(segments: StoryToDateSegment[]): string {
 export const STORY_TO_DATE_SOFT_CAP_TOKENS = 6000
 /** Newest segments (by cumulative token budget) kept detailed; everything older is eligible to fold. */
 export const FOLD_KEEP_RECENT_TOKENS = 3000
-/** Fold output aims for this fraction of the folded input's word count (the model routinely beats it). */
-export const FOLD_TARGET_RATIO = 0.5
+/** Fold output aims for this fraction of the folded input's word count. Was 0.5 through 2026-08-01
+ * on the (wrong) assumption the model would compress well past whatever ratio it was given —
+ * confirmed via a real A/B (docs/providers/fold-compression-tuning-2026-08-02.md) that the model
+ * reliably tracks close to the instructed ratio rather than beating it, so 0.5 just meant "compress
+ * to half," not the much tighter digest the fold tier is supposed to produce. 0.2 held up clean
+ * (no dropped facts) across repeated trials; 0.1 started producing wrong details once the 200-word
+ * floor no longer masked it — see that doc before pushing lower. */
+export const FOLD_TARGET_RATIO = 0.2
 /** The instructed digest target aims at this fraction of Editor max_tokens (in chars/4 estimate terms), leaving real headroom for a model that writes exactly to target. */
 export const FOLD_TARGET_OUTPUT_TOKEN_RATIO = 0.7
 /** Backstop rejection line when the provider omits finish_reason — outputs estimated at or above this fraction of max_tokens are treated as truncated. MUST sit above FOLD_TARGET_OUTPUT_TOKEN_RATIO, or a model that obeys the instructed target gets rejected every time (this exact bug shipped: target 0.85·0.7 words/token vs reject 0.85·0.92 chars/4 overlapped, and every VM fold failed "likely truncated"). The primary truncation signal is finish_reason === "length" from the API, not this estimate. */
@@ -370,6 +376,27 @@ export function foldDigestTargetWords(mergedWords: number, responseLimit: number
     (targetOutTokens * CHARS_PER_TOKEN_ESTIMATE) / FOLD_PROSE_CHARS_PER_WORD,
   )
   return Math.min(Math.max(200, Math.round(mergedWords * FOLD_TARGET_RATIO)), maxWords)
+}
+
+/** Headroom over the instructed word target used to compute the real per-call maxTokens sent to
+ * the API — see foldCeilingTokens. Wide enough that a compliant response has room to breathe,
+ * tight enough that a genuinely non-compliant one still gets cut well short of the full
+ * responseLimit rather than being allowed to run all the way to it. */
+export const FOLD_CEILING_MULTIPLIER = 1.3
+
+/**
+ * Real per-call token ceiling tied to the instructed target, not the model's full responseLimit.
+ * Confirmed 2026-08-02 (docs/providers/fold-compression-tuning-2026-08-02.md): the instructed
+ * target alone is a request the model can freely exceed while still finishing well under
+ * responseLimit — every arm in that A/B ended with finish_reason "stop", none were ever actually
+ * cut off, because nothing tied the API's real maxTokens to what was asked for. This makes the
+ * target an enforced ceiling too, not just a prompt suggestion.
+ */
+export function foldCeilingTokens(targetWords: number, responseLimit: number): number {
+  const targetTokens = Math.ceil(
+    (targetWords * FOLD_PROSE_CHARS_PER_WORD) / CHARS_PER_TOKEN_ESTIMATE,
+  )
+  return Math.min(responseLimit, Math.ceil(targetTokens * FOLD_CEILING_MULTIPLIER))
 }
 
 /** Backstop only — used when completeChatWithMeta got no finish_reason back. */

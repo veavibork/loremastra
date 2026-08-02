@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  foldCeilingTokens,
   foldDigestTargetWords,
   looksFoldDigestTruncated,
   selectFoldBatch,
@@ -16,6 +17,7 @@ import {
   selectFoldTierShrinkSet,
   estimateTokens,
   CHARS_PER_TOKEN_ESTIMATE,
+  FOLD_CEILING_MULTIPLIER,
   FOLD_KEEP_RECENT_TOKENS,
   FOLD_MAX_OUTPUT_TOKEN_RATIO,
   FOLD_PROSE_CHARS_PER_WORD,
@@ -65,9 +67,10 @@ describe('fold digest sizing', () => {
     },
   )
 
-  it('small inputs target half their word count, floored at 200', () => {
+  it('small inputs floor at 200; larger inputs target 20% of their word count', () => {
     expect(foldDigestTargetWords(300, 4096)).toBe(200)
-    expect(foldDigestTargetWords(1000, 4096)).toBe(500)
+    expect(foldDigestTargetWords(1000, 4096)).toBe(200) // 1000*0.2=200, floor and ratio agree here
+    expect(foldDigestTargetWords(3000, 4096)).toBe(600) // 3000*0.2=600, ratio binds
   })
 
   const seg = (id: string, words: number, kind: SegmentKind = 'continues'): FoldableSegment => ({
@@ -81,11 +84,13 @@ describe('fold digest sizing', () => {
 
   it('selectFoldBatch packs segments until the target would exceed one Editor call', () => {
     const batch = selectFoldBatch(
-      Array.from({ length: 8 }, (_, i) => seg(`s${i}`, 500)),
+      Array.from({ length: 25 }, (_, i) => seg(`s${i}`, 500)),
       4096,
     )
-    // maxTargetWords ≈ 1911 → 7 × 500-word segments (target 1750) fit; the 8th (target 2000) doesn't.
-    expect(batch.map((s) => s.id)).toEqual(['s0', 's1', 's2', 's3', 's4', 's5', 's6'])
+    // maxTargetWords ≈ 1911 → at ratio 0.2, 19 × 500-word segments (target 1900) fit; the 20th
+    // (target 2000) doesn't. Needs more segments than at the old 0.5 ratio to demonstrate the
+    // cutoff at all, since a tighter ratio means more raw input fits under the same target cap.
+    expect(batch.map((s) => s.id)).toEqual(Array.from({ length: 19 }, (_, i) => `s${i}`))
   })
 
   it('whatever batch is selected, the instructed target still fits one response', () => {
@@ -109,7 +114,9 @@ describe('fold digest sizing', () => {
   // model blew past max_tokens every retry (batch selection is deterministic, so it never
   // recovered on its own). Never forcing a second segment in fixes it: the batch just stays at 1.
   it("doesn't force a second oversized segment into the batch", () => {
-    const batch = selectFoldBatch([seg('a', 3000), seg('b', 3000)], 4096)
+    // 5000+5000 words at ratio 0.2 -> target 2000, over maxTargetWords (1911); needs bigger
+    // segments than at the old 0.5 ratio to still exceed the cap and demonstrate this.
+    const batch = selectFoldBatch([seg('a', 5000), seg('b', 5000)], 4096)
     expect(batch.map((s) => s.id)).toEqual(['a'])
   })
 
@@ -192,5 +199,40 @@ describe('fold tier: append vs. shrink split', () => {
 
     const batch = selectFoldBatch(appendCandidates, 4096)
     expect(batch.some((s) => s.kind === 'fold')).toBe(false)
+  })
+})
+
+// Regression context (2026-08-02, VM story 019fa8c7): a real fold call showed
+// inputTokens=6379, outputTokens=2169 -- ~34% output/input, almost exactly the old
+// FOLD_TARGET_RATIO (0.5) applied to the merged input. The model was obeying the instructed
+// target; the target itself wasn't tight enough, and nothing tied the API's real maxTokens to it
+// either -- every arm in the tuning A/B finished via finish_reason "stop", never actually cut off,
+// because the call always used the full responseLimit regardless of what was asked for.
+// foldCeilingTokens closes that gap: the API's real ceiling now tracks the instructed target.
+describe('foldCeilingTokens', () => {
+  it('computes a ceiling from the target, not the flat responseLimit', () => {
+    const targetWords = 200
+    const targetTokens = Math.ceil(
+      (targetWords * FOLD_PROSE_CHARS_PER_WORD) / CHARS_PER_TOKEN_ESTIMATE,
+    )
+    const ceiling = foldCeilingTokens(targetWords, 4096)
+    expect(ceiling).toBe(Math.ceil(targetTokens * FOLD_CEILING_MULTIPLIER))
+    expect(ceiling).toBeLessThan(4096) // meaningfully tighter than the full model ceiling
+  })
+
+  it('never exceeds the model responseLimit even for a very large target', () => {
+    expect(foldCeilingTokens(100_000, 4096)).toBe(4096)
+  })
+
+  it('gives a compliant response real headroom above the bare target', () => {
+    // FOLD_CEILING_MULTIPLIER should leave room for a response that lands somewhat over target
+    // without getting cut off -- otherwise a merely slightly-verbose (not runaway) response would
+    // spuriously trip the truncation check.
+    const targetWords = 500
+    const targetTokens = Math.ceil(
+      (targetWords * FOLD_PROSE_CHARS_PER_WORD) / CHARS_PER_TOKEN_ESTIMATE,
+    )
+    const ceiling = foldCeilingTokens(targetWords, 4096)
+    expect(ceiling).toBeGreaterThan(targetTokens)
   })
 })

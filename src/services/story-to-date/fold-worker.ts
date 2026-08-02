@@ -18,6 +18,7 @@ import {
   selectFoldBatch,
   selectFoldTierShrinkSet,
   estimateTokens,
+  foldCeilingTokens,
   foldDigestTargetWords,
   foldWordCount,
   looksFoldDigestTruncated,
@@ -84,8 +85,11 @@ export async function executeStoryToDateFoldJob(
     { role: 'user' as const, content: `Older memory to condense (chronological):\n\n${merged}` },
   ]
 
+  // Tied to the instructed target (not the flat model ceiling) so the target is actually
+  // enforced, not just requested — see foldCeilingTokens' doc comment.
+  const maxTokens = foldCeilingTokens(targetWords, editor.responseLimit)
   const { content, finishReason } = await completeChatWithMeta(editor, apiKey, messages, {
-    maxTokens: editor.responseLimit,
+    maxTokens,
     timeoutMs: STORY_TO_DATE_FOLD_TIMEOUT_MS,
     signal,
   })
@@ -99,22 +103,23 @@ export async function executeStoryToDateFoldJob(
     model: editor.model,
     finishReason,
     targetWords,
+    maxTokensSent: maxTokens,
     mergedInputTokens: foldTokens,
     digestEstimatedTokens: estimateTokens(digest),
     digestPreview: digest.slice(0, 1500),
   }
   // finish_reason is ground truth for a max_tokens cutoff; the length estimate is only a
   // backstop for providers that omit it (a compliant target-length digest sits well under it).
+  // Both check against maxTokens (this call's real, target-derived ceiling), not the model's
+  // full responseLimit — that's the whole point of tying maxTokens to the target.
   if (finishReason === 'length') {
     foldLog.warn('fold digest truncated at Editor max_tokens', foldLogDetail)
-    throw new Error(
-      `fold digest truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`,
-    )
+    throw new Error(`fold digest truncated at Editor max_tokens (${maxTokens}) — refusing to apply`)
   }
-  if (finishReason === null && looksFoldDigestTruncated(digest, editor.responseLimit)) {
+  if (finishReason === null && looksFoldDigestTruncated(digest, maxTokens)) {
     foldLog.warn('fold digest likely truncated at Editor max_tokens', foldLogDetail)
     throw new Error(
-      `fold digest likely truncated at Editor max_tokens (${editor.responseLimit}) — refusing to apply`,
+      `fold digest likely truncated at Editor max_tokens (${maxTokens}) — refusing to apply`,
     )
   }
   // Guard against a non-compressing result — if the model returned something as large as the input,
