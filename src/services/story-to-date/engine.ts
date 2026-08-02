@@ -613,14 +613,27 @@ export function shouldRetrySeamGate(
   return inputCeilingPost != null && coverageThroughPost === inputCeilingPost
 }
 
-/** Model sometimes appends a meta-note about the coverage ceiling itself instead of ending on the
- * last in-fiction beat, e.g. "The conversation was still ongoing when coverage ended." That's
- * a note about the summarization process, not story memory — drop it if it's the block's last
- * sentence. */
+/**
+ * Model sometimes appends a meta-note about the coverage ceiling itself instead of ending on the
+ * last in-fiction beat, e.g. "The conversation was still ongoing when coverage ended." or "The
+ * beat was still open... no scene-closing transition." That's a note about the summarization
+ * process, not story memory — drop it if it's the block's last sentence.
+ *
+ * Confirmed against every stored segment on the VM (2026-08-02, 92 segments across 21 stories)
+ * before widening past the original "when coverage ended" wording: a bare keyword scan for "the
+ * scene" / "ongoing" / "unresolved" anywhere in the last sentence would have wrongly stripped 6
+ * real, resolved endings (e.g. "The scene's emotional climax is now fully articulated between
+ * them.", "...Jess's ongoing vigil..."). None of those end on a bare state predicate the way
+ * every real meta-note does, so this stays anchored to the end of the sentence rather than
+ * matching the words anywhere in it.
+ */
+const TRAILING_COVERAGE_META_NOTE_PATTERN =
+  /\bwhen (?:coverage|the scene) (?:ended|closed)[.!?]*$|\bno scene-closing transition[.!?]*$|\b(?:was|were|remained|is|are)\s+(?:still\s+)?(?:ongoing|in progress|unresolved|developing|open|underway|unfolding|settling)[.!?]*$/i
+
 function stripTrailingCoverageEndedSentence(paragraph: string): string {
   const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean)
   const last = sentences[sentences.length - 1]
-  if (last && /\bwhen coverage ended[.!?]*$/i.test(last.trim())) sentences.pop()
+  if (last && TRAILING_COVERAGE_META_NOTE_PATTERN.test(last.trim())) sentences.pop()
   return sentences.join(' ')
 }
 

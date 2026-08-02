@@ -190,6 +190,35 @@ describe('sanitizeStoryBlockContent coverage-ended trailing sentence', () => {
     const block = 'She agreed to the terms, and the two of them shook hands.'
     expect(sanitizeStoryBlockContent(block)).toBe(block)
   })
+
+  // Real variants found live on the VM (story 019fa8c7) beyond the original "when coverage
+  // ended" wording, plus one story (019f25e0) whose stored segments use "the scene"/"ongoing"
+  // as ordinary narrative vocabulary in an already-resolved ending — a bare keyword scan on
+  // those two words would have wrongly stripped them; the anchored predicate/clause pattern
+  // below does not.
+  it('strips the other real coverage-ceiling meta-note shapes', () => {
+    expect(
+      sanitizeStoryBlockContent('The privacy concern remained unresolved when the scene closed.'),
+    ).toBe('')
+    expect(
+      sanitizeStoryBlockContent(
+        'Kit went quiet. The beat was still open — aftercare unresolved, no scene-closing transition.',
+      ),
+    ).toBe('Kit went quiet.')
+    expect(sanitizeStoryBlockContent('MOBY reached the seabed. The inspection was ongoing.')).toBe(
+      'MOBY reached the seabed.',
+    )
+  })
+
+  it('does not strip "the scene"/"ongoing" used as ordinary resolved narrative prose', () => {
+    const endings = [
+      "Mads relays the warning, then leaves them to recover, hinting at Jess's ongoing vigil.",
+      'The scene is set for the next eruption of group-chat creativity, a quiet bridge to what comes next.',
+      "The upload completes, the desk attendant left agog at the scene he's witnessed.",
+      "The scene's emotional climax is now fully articulated between them.",
+    ]
+    for (const block of endings) expect(sanitizeStoryBlockContent(block)).toBe(block)
+  })
 })
 
 // Regression context (2026-08-01, VM story 019fa8c7): GLM-5.2 repeatedly (8/8 samples across
