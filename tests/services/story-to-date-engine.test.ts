@@ -222,16 +222,19 @@ describe('sanitizeStoryBlockContent coverage-ended trailing sentence', () => {
 
   // Real variants found live on the VM in a later check (2026-08-02, story 019fa8c7, 66
   // segments stored at the time): present-tense "when coverage ends" (as opposed to "ended"),
-  // and a bare "remains pending." ending. "pending" deliberately allows the present-tense verb
-  // ("remains"/"is"/"are") the other state words don't — per project decision, a summary that
-  // stays silent on an outcome already implies it didn't happen, so there's no legitimate
-  // narrative reason for a summary to call out something as still-pending the way "remains
-  // unresolved" can legitimately close on a standing plot thread.
-  it('strips present-tense "when coverage ends" and a bare "remains pending" ending', () => {
+  // and a bare "remains pending." ending. "pending" and "unresolved" deliberately allow the
+  // present-tense verb ("remains"/"is"/"are") the other state words don't — per project
+  // decision, a summary that stays silent on an outcome already implies it didn't happen, so
+  // there's no legitimate reason for a *summary* to call out something as still-pending or
+  // unresolved, even though that framing is fine as in-fiction prose elsewhere in the story.
+  it('strips present-tense "when coverage ends" and bare "remains pending"/"remains unresolved" endings', () => {
     expect(sanitizeStoryBlockContent('The question was still hanging when coverage ends.')).toBe('')
     expect(
       sanitizeStoryBlockContent('Junie made her case. The consent conversation remains pending.'),
     ).toBe('Junie made her case.')
+    expect(
+      sanitizeStoryBlockContent('Kit shrugged it off. The custody question remains unresolved.'),
+    ).toBe('Kit shrugged it off.')
   })
 })
 

@@ -629,16 +629,16 @@ export function shouldRetrySeamGate(
  *
  * Widened again 2026-08-02 for "when coverage ends" (present tense) and a bare "remains
  * pending." ending, re-checked against all 66 segments then stored on the VM (4 real matches,
- * all genuine meta-notes, no false positives). "pending" deliberately allows the present-tense
- * "remains"/"is"/"are" verb forms the other state words don't (see "unresolved" below) — the
- * user's call: a summary that stays silent on an outcome already implies it didn't happen, so
- * there's no legitimate narrative reason to call out something as still-pending the way "their
- * rivalry remains unresolved" can legitimately close on a standing plot thread. "unresolved"
- * itself stays past-tense-only ("remained", not "remains") pending a separate decision on
- * whether to relax it the same way.
+ * all genuine meta-notes, no false positives). "pending" and "unresolved" deliberately allow the
+ * present-tense "remains"/"is"/"are" verb forms the other state words don't — the user's call: a
+ * summary that stays silent on an outcome already implies it didn't happen, so there's no
+ * legitimate narrative reason for a *summary* to call out something as still-pending or
+ * unresolved, unlike prose elsewhere in the story which legitimately can ("their rivalry remains
+ * unresolved" as a standing-plot-thread beat is fine in-fiction — it's only the meta-note shape
+ * at the very end of a story-to-date block that this strips).
  */
 const TRAILING_COVERAGE_META_NOTE_PATTERN =
-  /\bwhen (?:coverage|the scene) (?:ended|closed|ends|closes)[.!?]*$|\bno scene-closing transition[.!?]*$|\b(?:was|were|remained|is|are)\s+(?:still\s+)?(?:ongoing|in progress|unresolved|developing|open|underway|unfolding|settling)[.!?]*$|\b(?:was|were|remained|remains|is|are)\s+(?:still\s+)?pending[.!?]*$/i
+  /\bwhen (?:coverage|the scene) (?:ended|closed|ends|closes)[.!?]*$|\bno scene-closing transition[.!?]*$|\b(?:was|were|remained|is|are)\s+(?:still\s+)?(?:ongoing|in progress|developing|open|underway|unfolding|settling)[.!?]*$|\b(?:was|were|remained|remains|is|are)\s+(?:still\s+)?(?:pending|unresolved)[.!?]*$/i
 
 function stripTrailingCoverageEndedSentence(paragraph: string): string {
   const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean)
