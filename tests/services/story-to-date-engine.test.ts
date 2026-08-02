@@ -17,6 +17,7 @@ import {
   extractStoryBlockMissingOpenTag,
   looksLikeMidSceneEnding,
   looksNextSceneCoverageSprint,
+  sanitizeStoryBlockContent,
   NEXT_SCENE_INPUT_WINDOW_POSTS,
   NEXT_SCENE_MAX_COVERAGE_DELTA,
 } from '../../src/services/story-to-date/engine.js'
@@ -166,6 +167,28 @@ describe('looksLikeMidSceneEnding', () => {
     expect(
       looksLikeMidSceneEnding('They shook hands and parted, their old rivalry remains unresolved.'),
     ).toBe(false)
+  })
+})
+
+// Regression context (2026-08-02): the model sometimes appends a meta-note about the coverage
+// ceiling itself (e.g. "The conversation was still ongoing when coverage ended.") instead of
+// ending on the last in-fiction beat — a note about the summarization process, not story memory.
+describe('sanitizeStoryBlockContent coverage-ended trailing sentence', () => {
+  it('strips the trailing sentence verbatim', () => {
+    const block =
+      'Kit found the note and read it twice. The conversation was still ongoing when coverage ended.'
+    expect(sanitizeStoryBlockContent(block)).toBe('Kit found the note and read it twice.')
+  })
+
+  it('only strips it from the end, not mid-block', () => {
+    const block =
+      'It was unclear when coverage ended for the prior scene, but Kit pressed on regardless. They reached the dock by nightfall.'
+    expect(sanitizeStoryBlockContent(block)).toBe(block)
+  })
+
+  it('leaves a normal resolved ending untouched', () => {
+    const block = 'She agreed to the terms, and the two of them shook hands.'
+    expect(sanitizeStoryBlockContent(block)).toBe(block)
   })
 })
 

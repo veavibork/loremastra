@@ -613,10 +613,21 @@ export function shouldRetrySeamGate(
   return inputCeilingPost != null && coverageThroughPost === inputCeilingPost
 }
 
+/** Model sometimes appends a meta-note about the coverage ceiling itself instead of ending on the
+ * last in-fiction beat, e.g. "The conversation was still ongoing when coverage ended." That's
+ * a note about the summarization process, not story memory — drop it if it's the block's last
+ * sentence. */
+function stripTrailingCoverageEndedSentence(paragraph: string): string {
+  const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean)
+  const last = sentences[sentences.length - 1]
+  if (last && /\bwhen coverage ended[.!?]*$/i.test(last.trim())) sentences.pop()
+  return sentences.join(' ')
+}
+
 /** Strip echoed bracket labels the model sometimes pastes into memory prose. Preserves paragraph breaks. */
 export function sanitizeStoryBlockContent(text: string): string {
   const stripped = stripLeakedStoryMarkers(text).replace(/\r\n/g, '\n')
-  return stripped
+  const paragraphs = stripped
     .split(/\n{2,}/)
     .map((para) =>
       para
@@ -625,7 +636,11 @@ export function sanitizeStoryBlockContent(text: string): string {
         .trim(),
     )
     .filter(Boolean)
-    .join('\n\n')
+  if (paragraphs.length) {
+    const lastIndex = paragraphs.length - 1
+    paragraphs[lastIndex] = stripTrailingCoverageEndedSentence(paragraphs[lastIndex])
+  }
+  return paragraphs.filter(Boolean).join('\n\n')
 }
 
 function storyBlockWordList(text: string): string[] {
