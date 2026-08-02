@@ -219,6 +219,20 @@ describe('sanitizeStoryBlockContent coverage-ended trailing sentence', () => {
     ]
     for (const block of endings) expect(sanitizeStoryBlockContent(block)).toBe(block)
   })
+
+  // Real variants found live on the VM in a later check (2026-08-02, story 019fa8c7, 66
+  // segments stored at the time): present-tense "when coverage ends" (as opposed to "ended"),
+  // and a bare "remains pending." ending. "pending" deliberately allows the present-tense verb
+  // ("remains"/"is"/"are") the other state words don't — per project decision, a summary that
+  // stays silent on an outcome already implies it didn't happen, so there's no legitimate
+  // narrative reason for a summary to call out something as still-pending the way "remains
+  // unresolved" can legitimately close on a standing plot thread.
+  it('strips present-tense "when coverage ends" and a bare "remains pending" ending', () => {
+    expect(sanitizeStoryBlockContent('The question was still hanging when coverage ends.')).toBe('')
+    expect(
+      sanitizeStoryBlockContent('Junie made her case. The consent conversation remains pending.'),
+    ).toBe('Junie made her case.')
+  })
 })
 
 // Regression context (2026-08-01, VM story 019fa8c7): GLM-5.2 repeatedly (8/8 samples across
